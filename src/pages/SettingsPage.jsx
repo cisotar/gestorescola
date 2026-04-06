@@ -360,7 +360,9 @@ function SubjectSelector({ store, selectedIds, onChange }) {
 
 function TabTeachers() {
   const store = useAppStore()
-  const [modal,  setModal]  = useState(false)
+  const [modal,       setModal]       = useState(false)
+  const [schedModal,  setSchedModal]  = useState(false)
+  const [schedTeacher, setSchedTeacher] = useState(null)
   const [editId, setEditId] = useState(null)
   const [form,   setForm]   = useState({ name: '', email: '', celular: '', subjectIds: [] })
 
@@ -498,8 +500,27 @@ function TabTeachers() {
             <button className="btn btn-dark flex-1" onClick={save}>Salvar</button>
             <button className="btn btn-ghost" onClick={() => setModal(false)}>Cancelar</button>
           </div>
+          {editId && (
+            <button
+              className="btn btn-ghost w-full mt-1"
+              onClick={() => {
+                const t = store.teachers.find(x => x.id === editId)
+                setSchedTeacher(t)
+                setSchedModal(true)
+              }}
+            >
+              🗓 Ver/Editar Grade Horária
+            </button>
+          )}
         </div>
       </Modal>
+
+      <ScheduleGridModal
+        open={schedModal}
+        onClose={() => setSchedModal(false)}
+        teacher={schedTeacher}
+        store={store}
+      />
     </div>
   )
 }
@@ -684,13 +705,24 @@ function TabSchedules() {
   )
 }
 
+// ─── ScheduleGridModal — abre grade em modal (reutilizável) ──────────────────
+
+export function ScheduleGridModal({ open, onClose, teacher, store }) {
+  if (!teacher) return null
+  return (
+    <Modal open={open} onClose={onClose} title={`Grade de Horários — ${teacher.name}`} size="xl">
+      <ScheduleGrid teacher={teacher} store={store} />
+    </Modal>
+  )
+}
+
 function ScheduleGrid({ teacher, store }) {
   const { addSchedule, removeSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
 
   const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
-  // Apenas segmentos onde o professor tem matéria associada — item 2
+  // Apenas segmentos onde o professor tem matéria associada
   const teacherSegIds = [...new Set(
     (teacher.subjectIds ?? []).flatMap(sid => {
       const subj = store.subjects.find(s => s.id === sid)
@@ -703,8 +735,6 @@ function ScheduleGrid({ teacher, store }) {
 
   return (
     <div>
-      <div className="font-bold text-sm mb-4">{teacher.name} — Grade de Horários</div>
-
       {relevantSegments.length === 0 && (
         <p className="text-sm text-t3 py-4">Este professor não tem matérias associadas a nenhum segmento.</p>
       )}
@@ -744,8 +774,19 @@ function ScheduleGrid({ teacher, store }) {
                         const mine = store.schedules.filter(s =>
                           s.teacherId === teacher.id && s.timeSlot === slot && s.day === day
                         )
+                        // Conflito de professor: já tem aula neste slot/dia
+                        const teacherConflict = mine.length > 0
+                        // Número de turmas ainda disponíveis neste slot/dia
+                        const occupiedTurmas = store.schedules
+                          .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+                          .map(s => s.turma)
+                        const allTurmas = seg.grades.flatMap(g =>
+                          g.classes.map(c => `${g.name} ${c.letter}`)
+                        )
+                        const freeTurmas = allTurmas.filter(t => !occupiedTurmas.includes(t))
+
                         return (
-                          <td key={day} className="px-1.5 py-1.5 align-top">
+                          <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                             <div className="space-y-1">
                               {mine.map(s => {
                                 const subj = store.subjects.find(x => x.id === s.subjectId)
@@ -760,10 +801,24 @@ function ScheduleGrid({ teacher, store }) {
                                   </div>
                                 )
                               })}
-                              <button
-                                onClick={() => setModal({ segId: seg.id, turno, aulaIdx: p.aulaIdx, day })}
-                                className="w-full text-center text-[10px] text-t3 hover:text-navy py-1 rounded-lg hover:bg-surf2 transition-colors border border-dashed border-bdr hover:border-bdr"
-                              >＋</button>
+
+                              {/* Bloquear + se professor já tem aula neste horário */}
+                              {teacherConflict ? (
+                                <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
+                                  title="Professor já tem aula neste horário">
+                                  🔒
+                                </div>
+                              ) : freeTurmas.length === 0 ? (
+                                <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg bg-surf2 border border-dashed border-bdr"
+                                  title="Todas as turmas já têm professor neste horário">
+                                  —
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setModal({ segId: seg.id, turno, aulaIdx: p.aulaIdx, day })}
+                                  className="w-full text-center text-[10px] text-t3 hover:text-navy py-1 rounded-lg hover:bg-surf2 transition-colors border border-dashed border-bdr hover:border-bdr"
+                                >＋</button>
+                              )}
                             </div>
                           </td>
                         )
@@ -796,8 +851,9 @@ function ScheduleGrid({ teacher, store }) {
 
 function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, store, onSave }) {
   const seg = store.segments.find(s => s.id === segId)
+  const slot = `${segId}|${turno}|${aulaIdx}`
 
-  // Apenas matérias do professor que pertencem a este segmento — item 2
+  // Apenas matérias do professor que pertencem a este segmento
   const mySubjs = (teacher.subjectIds ?? [])
     .map(sid => store.subjects.find(s => s.id === sid))
     .filter(Boolean)
@@ -811,17 +867,23 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
   const [turma,  setTurma]  = useState('')
 
   const grades = seg?.grades ?? []
-  const turmas = grade
+  const allTurmasForGrade = grade
     ? (grades.find(g => g.name === grade)?.classes ?? []).map(c => `${grade} ${c.letter}`)
     : []
 
+  // Turmas já ocupadas por outro professor neste slot/dia
+  const occupiedTurmas = new Set(
+    store.schedules
+      .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+      .map(s => s.turma)
+  )
+
   const save = () => {
     if (!turma) { alert('Selecione a turma.'); return }
-    const slot = `${segId}|${turno}|${aulaIdx}`
     if (store.schedules.find(s => s.teacherId === teacher.id && s.day === day && s.timeSlot === slot))
       { alert('Conflito: professor já tem aula neste horário.'); return }
-    if (store.schedules.find(s => s.turma === turma && s.day === day && s.timeSlot === slot))
-      { alert('Conflito: esta turma já tem aula neste horário.'); return }
+    if (occupiedTurmas.has(turma))
+      { alert('Conflito: esta turma já tem professor neste horário.'); return }
     onSave({ teacherId: teacher.id, subjectId: subjId || null, turma, day, timeSlot: slot })
   }
 
@@ -846,8 +908,17 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
           <label className="lbl">Turma</label>
           <select className="inp" value={turma} onChange={e => setTurma(e.target.value)}>
             <option value="">Selecione…</option>
-            {turmas.map(t => <option key={t} value={t}>{t}</option>)}
+            {allTurmasForGrade.map(t => (
+              <option key={t} value={t} disabled={occupiedTurmas.has(t)}>
+                {t}{occupiedTurmas.has(t) ? ' — 🔒 ocupada' : ''}
+              </option>
+            ))}
           </select>
+          {occupiedTurmas.size > 0 && grade && (
+            <p className="text-[11px] text-amber-600 mt-1">
+              🔒 Turmas com professor já alocado neste horário aparecem bloqueadas.
+            </p>
+          )}
         </div>
         <div className="flex gap-2 pt-2">
           <button className="btn btn-dark flex-1" onClick={save}>Adicionar</button>
@@ -974,8 +1045,9 @@ function TabProfile({ teacher }) {
   const store = useAppStore()
   const { teacher: authTeacher } = useAuthStore()
   const t = teacher ?? authTeacher
-  const [celular,  setCelular]  = useState(t?.celular ?? '')
-  const [selSubjs, setSelSubjs] = useState(t?.subjectIds ?? [])
+  const [celular,     setCelular]     = useState(t?.celular ?? '')
+  const [selSubjs,    setSelSubjs]    = useState(t?.subjectIds ?? [])
+  const [schedModal,  setSchedModal]  = useState(false)
 
   if (!t) return <p className="text-t3 text-sm">Perfil não disponível.</p>
 
@@ -990,11 +1062,14 @@ function TabProfile({ teacher }) {
         <div className="w-12 h-12 rounded-full bg-navy text-white flex items-center justify-center text-xl font-extrabold shrink-0">
           {t.name.charAt(0)}
         </div>
-        <div>
+        <div className="flex-1">
           <div className="font-extrabold text-lg">{t.name}</div>
           <div className="text-sm text-t2">{t.email ?? ''}</div>
           <div className="text-xs text-t3 mt-0.5">{store.schedules.filter(s => s.teacherId === t.id).length} aulas cadastradas</div>
         </div>
+        <button className="btn btn-ghost btn-sm shrink-0" onClick={() => setSchedModal(true)}>
+          🗓 Minha Grade
+        </button>
       </div>
 
       <div>
@@ -1022,6 +1097,13 @@ function TabProfile({ teacher }) {
       </div>
 
       <button className="btn btn-dark" onClick={save}>Salvar alterações</button>
+
+      <ScheduleGridModal
+        open={schedModal}
+        onClose={() => setSchedModal(false)}
+        teacher={store.teachers.find(x => x.id === t.id) ?? t}
+        store={store}
+      />
     </div>
   )
 }
