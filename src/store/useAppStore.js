@@ -53,7 +53,7 @@ const useAppStore = create((set, get) => ({
   hydrate: (data) => set({ ...data, loaded: true }),
 
   // ─── Persistência ──────────────────────────────────────────────────────────
-  save: async (msg) => {
+  save: async () => {
     const s = get()
     _saveToLS(s)
     try {
@@ -253,15 +253,45 @@ const useAppStore = create((set, get) => ({
     get().save()
   },
   deleteAbsenceSlot: (absenceId, slotId) => {
-    set(s => {
-      const newAbs = _deleteAbsenceSlot(absenceId, slotId, s.absences)
-      return { absences: newAbs }
-    })
+    set(s => ({ absences: _deleteAbsenceSlot(absenceId, slotId, s.absences) }))
     get().save()
   },
   deleteAbsence: (id) => {
     set(s => ({ absences: _deleteAbsence(id, s.absences) }))
     deleteDocById('absences', id)
+    get().save()
+  },
+
+  // Remove todos os substitutos de um professor em uma data (mantém as faltas)
+  clearDaySubstitutes: (teacherId, date) => {
+    set(s => ({
+      absences: s.absences.map(ab => {
+        if (ab.teacherId !== teacherId) return ab
+        const slots = ab.slots.map(sl =>
+          sl.date === date ? { ...sl, substituteId: null } : sl
+        )
+        const covered = slots.filter(sl => sl.substituteId).length
+        const status  = covered === 0 ? 'open' : covered < slots.length ? 'partial' : 'covered'
+        return { ...ab, slots, status }
+      }),
+    }))
+    get().save()
+  },
+
+  // Remove todas as faltas (e substitutos) de um professor em uma data
+  clearDayAbsences: (teacherId, date) => {
+    set(s => ({
+      absences: s.absences
+        .map(ab => {
+          if (ab.teacherId !== teacherId) return ab
+          const slots = ab.slots.filter(sl => sl.date !== date)
+          if (!slots.length) return null
+          const covered = slots.filter(sl => sl.substituteId).length
+          const status  = covered === 0 ? 'open' : covered < slots.length ? 'partial' : 'covered'
+          return { ...ab, slots, status }
+        })
+        .filter(Boolean),
+    }))
     get().save()
   },
 

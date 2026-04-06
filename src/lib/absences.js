@@ -40,31 +40,66 @@ export function isBusy(teacherId, date, timeSlot, schedules, absences) {
 }
 
 // ─── Ranking de candidatos ────────────────────────────────────────────────────
+// Critérios (em ordem de prioridade):
+//   0 — mesma matéria + mesmo segmento
+//   1 — mesma matéria + outro segmento
+//   2 — mesma área   + mesmo segmento
+//   3 — mesma área   + outro segmento
+//   4 — outra área
+// Desempate: menor carga horária mensal
 
-export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teachers, schedules, absences, subjects) {
+export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teachers, schedules, absences, subjects, areas) {
+  // Extrai o segmentId do timeSlot (formato: segmentId|turno|aulaIdx)
+  const slotSegmentId = timeSlot?.split('|')[0] ?? null
+
   const absentAreaId = subjectId
     ? subjects.find(s => s.id === subjectId)?.areaId ?? null
     : null
 
-  const sameSubject = (t) => subjectId ? (t.subjectIds ?? []).includes(subjectId) : false
-  const sameArea    = (t) => absentAreaId
-    ? (t.subjectIds ?? []).some(sid => subjects.find(s => s.id === sid)?.areaId === absentAreaId)
-    : false
-  const matchScore  = (t) => sameSubject(t) ? 0 : sameArea(t) ? 1 : 2
+  const teacherInSegment = (t) =>
+    slotSegmentId
+      ? (t.subjectIds ?? []).some(sid => {
+          const subj = subjects.find(s => s.id === sid)
+          const area = subj ? (areas ?? []).find(a => a.id === subj.areaId) : null
+          return (area?.segmentIds ?? []).includes(slotSegmentId)
+        })
+      : false
 
-  const today = new Date().toISOString().split('T')[0]
+  const scoreOf = (t) => {
+    const sameSubj = subjectId ? (t.subjectIds ?? []).includes(subjectId) : false
+    const sameArea = absentAreaId
+      ? (t.subjectIds ?? []).some(sid => subjects.find(s => s.id === sid)?.areaId === absentAreaId)
+      : false
+    const sameSeg = teacherInSegment(t)
+
+    if (sameSubj && sameSeg) return 0
+    if (sameSubj)            return 1
+    if (sameArea && sameSeg) return 2
+    if (sameArea)            return 3
+    return 4
+  }
+
+  const matchOf = (score) => {
+    if (score <= 1) return 'subject'
+    if (score <= 3) return 'area'
+    return 'other'
+  }
 
   const candidates = teachers
     .filter(t => t.id !== absentTeacherId && !isBusy(t.id, date, timeSlot, schedules, absences))
-    .map(t => ({
-      teacher: t,
-      load:    monthlyLoad(t.id, date, schedules, absences),
-      match:   sameSubject(t) ? 'subject' : sameArea(t) ? 'area' : 'other',
-    }))
+    .map(t => {
+      const score = scoreOf(t)
+      return {
+        teacher: t,
+        load:    monthlyLoad(t.id, date, schedules, absences),
+        match:   matchOf(score),
+        sameSeg: score === 0 || score === 2,
+        score,
+      }
+    })
 
   return candidates.sort((a, b) => {
-    const ga = matchScore(a.teacher), gb = matchScore(b.teacher)
-    if (ga !== gb) return ga - gb
+    if (a.score !== b.score) return a.score - b.score
     return a.load - b.load
   })
 }

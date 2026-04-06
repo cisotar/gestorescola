@@ -4,6 +4,13 @@ import useAuthStore from '../store/useAuthStore'
 import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, weekStart, formatISO, parseDate } from '../lib/helpers'
 import { getAulas, slotLabel } from '../lib/periods'
 import { toast } from '../hooks/useToast'
+import {
+  openPDF,
+  generateTeacherHTML,
+  generateByDayHTML,
+  generateByWeekHTML,
+  generateByMonthHTML,
+} from '../lib/reports'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -51,7 +58,7 @@ export default function AbsencesPage() {
   const store    = useAppStore()
   const { role } = useAuthStore()
   const isAdmin  = role === 'admin'
-  const [mode, setMode]       = useState('teacher') // teacher | day | week | month
+  const [mode, setMode]             = useState('teacher')
   const [selTeacher, setSelTeacher] = useState(null)
   const [selDate,    setSelDate]    = useState(null)
   const [weekRef,    setWeekRef]    = useState(null)
@@ -76,7 +83,6 @@ export default function AbsencesPage() {
         <h1 className="text-xl font-extrabold tracking-tight">Relatório de Ausências</h1>
       </div>
 
-      {/* Tabs de modo */}
       <div className="flex gap-1.5 flex-wrap mb-5">
         {tabs.map(t => (
           <button
@@ -84,16 +90,14 @@ export default function AbsencesPage() {
             onClick={() => { setMode(t.id); setSelTeacher(null); setSelDate(null) }}
             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors border
               ${mode === t.id ? 'bg-navy text-white border-navy' : 'bg-surf text-t2 border-bdr hover:border-t3'}`}
-          >
-            {t.label}
-          </button>
+          >{t.label}</button>
         ))}
       </div>
 
       {mode === 'teacher' && <ViewByTeacher store={store} isAdmin={isAdmin} allSlots={allSlots} selTeacher={selTeacher} setSelTeacher={setSelTeacher} />}
-      {mode === 'day'     && <ViewByDay     store={store} isAdmin={isAdmin} allSlots={allSlots} selDate={selDate} setSelDate={setSelDate} />}
-      {mode === 'week'    && <ViewByWeek    store={store} isAdmin={isAdmin} allSlots={allSlots} weekRef={weekRef} setWeekRef={setWeekRef} />}
-      {mode === 'month'   && <ViewByMonth   store={store} isAdmin={isAdmin} allSlots={allSlots} monthRef={monthRef} setMonthRef={setMonthRef} />}
+      {mode === 'day'     && <ViewByDay     store={store} isAdmin={isAdmin} allSlots={allSlots} selDate={selDate}       setSelDate={setSelDate} />}
+      {mode === 'week'    && <ViewByWeek    store={store} isAdmin={isAdmin} allSlots={allSlots} weekRef={weekRef}       setWeekRef={setWeekRef} />}
+      {mode === 'month'   && <ViewByMonth   store={store} isAdmin={isAdmin} allSlots={allSlots} monthRef={monthRef}     setMonthRef={setMonthRef} />}
     </div>
   )
 }
@@ -101,19 +105,51 @@ export default function AbsencesPage() {
 // ─── View: Por Professor ──────────────────────────────────────────────────────
 
 function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) {
+  const [filter, setFilter] = useState('all') // 'all' | 'day' | 'week' | 'month'
+  const [filterDate,  setFilterDate]  = useState(new Date().toISOString().split('T')[0])
+  const [filterMonth, setFilterMonth] = useState(new Date().getMonth())
+  const [filterYear,  setFilterYear]  = useState(new Date().getFullYear())
+
   const withAbs = store.teachers.filter(t =>
     allSlots.some(sl => sl.teacherId === t.id)
   ).sort((a, b) => a.name.localeCompare(b.name))
 
+  const buildFilter = () => {
+    if (filter === 'all')   return { type: 'all' }
+    if (filter === 'day')   return { type: 'day', date: filterDate }
+    if (filter === 'month') return { type: 'month', year: filterYear, month: filterMonth }
+    if (filter === 'week') {
+      const ws = weekStart(filterDate)
+      const we = (() => { const d = parseDate(ws); d.setDate(d.getDate() + 4); return formatISO(d) })()
+      return { type: 'week', weekStart: ws, weekEnd: we }
+    }
+    return null
+  }
+
+  const handlePDF = () => {
+    if (!selTeacher) return
+    openPDF(generateTeacherHTML(selTeacher, buildFilter(), store))
+  }
+
   const detail = selTeacher ? (() => {
     const teacher = store.teachers.find(t => t.id === selTeacher)
     if (!teacher) return null
+    const f = buildFilter()
+    const slots = allSlots
+      .filter(sl => sl.teacherId === selTeacher)
+      .filter(sl => {
+        if (!f || f.type === 'all') return true
+        if (f.type === 'day')   return sl.date === f.date
+        if (f.type === 'week')  return sl.date >= f.weekStart && sl.date <= f.weekEnd
+        if (f.type === 'month') {
+          const d = parseDate(sl.date)
+          return d.getFullYear() === f.year && d.getMonth() === f.month
+        }
+        return true
+      })
     const byDate = {}
-    allSlots.filter(sl => sl.teacherId === selTeacher).forEach(sl => {
-      if (!byDate[sl.date]) byDate[sl.date] = []
-      byDate[sl.date].push(sl)
-    })
-    return { teacher, byDate }
+    slots.forEach(sl => { if (!byDate[sl.date]) byDate[sl.date] = []; byDate[sl.date].push(sl) })
+    return { teacher, byDate, total: slots.length }
   })() : null
 
   return (
@@ -160,11 +196,12 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) 
             </div>
           </div>
         ) : (() => {
-          const { teacher, byDate } = detail
+          const { teacher, byDate, total } = detail
           const cv = colorOfTeacher(teacher, store)
           return (
             <div>
-              <div className="flex items-center gap-3 p-4 rounded-xl border-2 mb-4"
+              {/* Header do professor + filtros */}
+              <div className="flex items-start gap-3 p-4 rounded-xl border-2 mb-3"
                 style={{ background: cv.bg, borderColor: cv.bd }}>
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-extrabold shrink-0"
                   style={{ background: cv.tg, color: cv.tx }}>{teacher.name.charAt(0)}</div>
@@ -172,28 +209,67 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) 
                   <div className="font-extrabold text-base" style={{ color: cv.tx }}>{teacher.name}</div>
                   <div className="text-xs opacity-70" style={{ color: cv.tx }}>{teacherSubjectNames(teacher, store.subjects) || '—'}</div>
                 </div>
+                <button onClick={handlePDF} className="btn btn-ghost btn-xs shrink-0">📄 PDF</button>
               </div>
-              <div className="space-y-3">
-                {Object.keys(byDate).sort().map(date => {
-                  const slots = byDate[date]
-                  const covered = slots.filter(s => s.substituteId).length
-                  const statusColor = covered === slots.length ? 'text-ok' : covered > 0 ? 'text-amber-600' : 'text-err'
-                  return (
-                    <div key={date} className="card">
-                      <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-bdr">
-                        <div>
-                          <div className="font-bold text-sm">{dateToDayLabel(date)}</div>
-                          <div className="font-mono text-xs text-t2">{formatBR(date)}</div>
+
+              {/* Filtros de período */}
+              <div className="flex gap-2 flex-wrap mb-4 items-center">
+                {['all','day','week','month'].map(f => (
+                  <button key={f} onClick={() => setFilter(f)}
+                    className={`btn btn-xs ${filter === f ? 'btn-dark' : 'btn-ghost'}`}>
+                    {f === 'all' ? 'Todos' : f === 'day' ? 'Por Dia' : f === 'week' ? 'Por Semana' : 'Por Mês'}
+                  </button>
+                ))}
+                {filter === 'day' && (
+                  <input type="date" className="inp !w-auto py-1 text-xs" value={filterDate}
+                    onChange={e => setFilterDate(e.target.value)} />
+                )}
+                {filter === 'week' && (
+                  <input type="date" className="inp !w-auto py-1 text-xs" value={filterDate}
+                    onChange={e => setFilterDate(e.target.value)} />
+                )}
+                {filter === 'month' && (
+                  <div className="flex gap-1.5 flex-wrap">
+                    {MONTH_NAMES.map((m, i) => (
+                      <button key={i} onClick={() => setFilterMonth(i)}
+                        className={`btn btn-xs ${filterMonth === i ? 'btn-dark' : 'btn-ghost'}`}>{m.slice(0,3)}</button>
+                    ))}
+                    <input type="number" className="inp !w-20 py-1 text-xs" value={filterYear}
+                      onChange={e => setFilterYear(Number(e.target.value))} />
+                  </div>
+                )}
+                <span className="text-xs text-t3 ml-1">{total} aula{total !== 1 ? 's' : ''}</span>
+              </div>
+
+              {/* Registros */}
+              {Object.keys(byDate).length === 0 ? (
+                <div className="card text-center py-8">
+                  <div className="text-2xl mb-2">✅</div>
+                  <div className="text-sm text-t2">Nenhuma ausência no período selecionado</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.keys(byDate).sort().map(date => {
+                    const slots = byDate[date]
+                    const covered = slots.filter(s => s.substituteId).length
+                    const statusColor = covered === slots.length ? 'text-ok' : covered > 0 ? 'text-amber-600' : 'text-err'
+                    return (
+                      <div key={date} className="card">
+                        <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-bdr">
+                          <div>
+                            <div className="font-bold text-sm">{dateToDayLabel(date)}</div>
+                            <div className="font-mono text-xs text-t2">{formatBR(date)}</div>
+                          </div>
+                          <div className={`text-xs font-bold ${statusColor}`}>
+                            {covered === slots.length ? '✓ Coberta' : covered > 0 ? `⚠ ${covered}/${slots.length}` : '✕ Sem sub.'}
+                          </div>
                         </div>
-                        <div className={`text-xs font-bold ${statusColor}`}>
-                          {covered === slots.length ? '✓ Coberta' : covered > 0 ? `⚠ ${covered}/${slots.length}` : '✕ Sem sub.'}
-                        </div>
+                        {slots.map(sl => <SlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin} />)}
                       </div>
-                      {slots.map(sl => <SlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin} />)}
-                    </div>
-                  )
-                })}
-              </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           )
         })()}
@@ -209,6 +285,8 @@ function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate }) {
   const date  = selDate ?? today
   const datesWithAbs = [...new Set(allSlots.map(s => s.date))].sort().reverse()
   const slotsOnDate  = allSlots.filter(sl => sl.date === date)
+
+  const handlePDF = () => openPDF(generateByDayHTML(date, store))
 
   return (
     <div>
@@ -230,6 +308,9 @@ function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate }) {
             </div>
           </div>
         )}
+        {slotsOnDate.length > 0 && (
+          <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+        )}
       </div>
       {slotsOnDate.length === 0 ? (
         <div className="card text-center py-10">
@@ -246,6 +327,7 @@ function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate }) {
 // ─── View: Por Semana ─────────────────────────────────────────────────────────
 
 function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef }) {
+  const [filterTeacher, setFilterTeacher] = useState('')
   const refDate = weekRef ? parseDate(weekRef) : new Date()
   const monISO  = weekStart(formatISO(refDate))
   const monDate = parseDate(monISO)
@@ -259,16 +341,36 @@ function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef }) {
   const days = Array.from({ length: 5 }, (_, i) => {
     const d = new Date(monDate); d.setDate(monDate.getDate() + i); return formatISO(d)
   })
-  const weekSlots = allSlots.filter(sl => sl.date >= monISO && sl.date <= friISO)
+
+  const weekSlots = allSlots
+    .filter(sl => sl.date >= monISO && sl.date <= friISO)
+    .filter(sl => !filterTeacher || sl.teacherId === filterTeacher)
+
+  const teachersThisWeek = [...new Set(allSlots.filter(sl => sl.date >= monISO && sl.date <= friISO).map(sl => sl.teacherId))]
+    .map(tid => store.teachers.find(t => t.id === tid)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+
+  const handlePDF = () => openPDF(generateByWeekHTML(monISO, filterTeacher || null, store))
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
         <button className="btn btn-ghost btn-sm text-lg px-2" onClick={prev}>‹</button>
         <div className="font-bold text-sm min-w-[200px] text-center">{weekLabel}</div>
         <button className="btn btn-ghost btn-sm text-lg px-2" onClick={next}>›</button>
         <button className="btn btn-ghost btn-xs text-accent" onClick={() => setWeekRef(null)}>Hoje</button>
+
+        {teachersThisWeek.length > 0 && (
+          <select className="inp !w-auto py-1 text-xs ml-2" value={filterTeacher} onChange={e => setFilterTeacher(e.target.value)}>
+            <option value="">Todos os professores</option>
+            {teachersThisWeek.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
+
+        {weekSlots.length > 0 && (
+          <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+        )}
       </div>
+
       {weekSlots.length === 0 ? (
         <div className="card text-center py-10">
           <div className="text-3xl mb-2">✅</div>
@@ -293,24 +395,38 @@ function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef }) {
 // ─── View: Por Mês ────────────────────────────────────────────────────────────
 
 function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef }) {
+  const [filterTeacher, setFilterTeacher] = useState('')
   const refDate = monthRef ? parseDate(monthRef) : new Date()
   const year    = refDate.getFullYear()
   const month   = refDate.getMonth()
 
-  const monthSlots = allSlots.filter(sl => {
-    const d = parseDate(sl.date)
-    return d.getFullYear() === year && d.getMonth() === month
-  })
+  const monthSlots = allSlots
+    .filter(sl => {
+      const d = parseDate(sl.date)
+      return d.getFullYear() === year && d.getMonth() === month
+    })
+    .filter(sl => !filterTeacher || sl.teacherId === filterTeacher)
+
+  const teachersThisMonth = [...new Set(
+    allSlots.filter(sl => {
+      const d = parseDate(sl.date)
+      return d.getFullYear() === year && d.getMonth() === month
+    }).map(sl => sl.teacherId)
+  )].map(tid => store.teachers.find(t => t.id === tid)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
 
   const byDate = {}
   monthSlots.forEach(sl => { if (!byDate[sl.date]) byDate[sl.date] = []; byDate[sl.date].push(sl) })
 
+  const handlePDF = () => openPDF(generateByMonthHTML(year, month, filterTeacher || null, store))
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-5 flex-wrap">
-        <button className="btn btn-ghost btn-xs text-lg px-2" onClick={() => setMonthRef(formatISO(new Date(year, month - 1, 1)))}>‹</button>
+        <button className="btn btn-ghost btn-xs text-lg px-2"
+          onClick={() => setMonthRef(formatISO(new Date(year, month - 1, 1)))}>‹</button>
         <span className="font-bold text-sm">{year}</span>
-        <button className="btn btn-ghost btn-xs text-lg px-2" onClick={() => setMonthRef(formatISO(new Date(year, month + 1, 1)))}>›</button>
+        <button className="btn btn-ghost btn-xs text-lg px-2"
+          onClick={() => setMonthRef(formatISO(new Date(year, month + 1, 1)))}>›</button>
         <div className="flex gap-1 flex-wrap">
           {MONTH_NAMES.map((name, idx) => (
             <button key={idx}
@@ -321,7 +437,19 @@ function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef }) {
           ))}
         </div>
         <button className="btn btn-ghost btn-xs text-accent" onClick={() => setMonthRef(null)}>Hoje</button>
+
+        {teachersThisMonth.length > 0 && (
+          <select className="inp !w-auto py-1 text-xs" value={filterTeacher} onChange={e => setFilterTeacher(e.target.value)}>
+            <option value="">Todos os professores</option>
+            {teachersThisMonth.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
+
+        {monthSlots.length > 0 && (
+          <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+        )}
       </div>
+
       {monthSlots.length === 0 ? (
         <div className="card text-center py-10">
           <div className="text-3xl mb-2">✅</div>

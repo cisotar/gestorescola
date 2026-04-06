@@ -5,6 +5,7 @@ import { DAYS } from '../lib/constants'
 import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, businessDaysBetween } from '../lib/helpers'
 import { getPeriodos, slotLabel } from '../lib/periods'
 import { rankCandidates, createAbsence as _buildAbsence } from '../lib/absences'
+import { generateDayHTML, openPDF } from '../lib/reports'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
 
@@ -25,9 +26,9 @@ function getWeekDates(offset = 0) {
 // ─── TeacherCard ─────────────────────────────────────────────────────────────
 
 function TeacherCard({ teacher, selected, onClick, store }) {
-  const cv      = colorOfTeacher(teacher, store)
-  const nAulas  = store.schedules.filter(s => s.teacherId === teacher.id).length
-  const hasAbs  = (store.absences ?? []).some(ab => ab.teacherId === teacher.id)
+  const cv     = colorOfTeacher(teacher, store)
+  const nAulas = store.schedules.filter(s => s.teacherId === teacher.id).length
+  const hasAbs = (store.absences ?? []).some(ab => ab.teacherId === teacher.id)
 
   return (
     <button
@@ -45,19 +46,144 @@ function TeacherCard({ teacher, selected, onClick, store }) {
       </div>
       <div className="flex flex-col items-end gap-1 shrink-0">
         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-          style={{ background: cv.tg, color: cv.tx }}>
-          {nAulas}
-        </span>
+          style={{ background: cv.tg, color: cv.tx }}>{nAulas}</span>
         {hasAbs && <span className="text-[9px] text-err font-bold">● falta</span>}
       </div>
     </button>
   )
 }
 
+// ─── SubPicker ────────────────────────────────────────────────────────────────
+
+function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store, compact = false }) {
+  const [open, setOpen] = useState(false)
+  const { assignSubstitute } = useAppStore()
+
+  const candidates = useMemo(() =>
+    rankCandidates(teacherId, date, slot, subjectId,
+      store.teachers, store.schedules, store.absences, store.subjects, store.areas),
+    [teacherId, date, slot, subjectId, store]
+  )
+
+  const curSub = (() => {
+    const ab = store.absences?.find(a => a.id === absenceId)
+    const sl = ab?.slots.find(s => s.id === slotId)
+    return sl?.substituteId ? store.teachers.find(t => t.id === sl.substituteId) : null
+  })()
+
+  // Rótulo de match com indicador de segmento
+  const matchLabel = (c) => {
+    const base = c.match === 'subject' ? '⭐ mesma matéria'
+               : c.match === 'area'    ? '🔵 mesma área'
+               : '⚪ outra área'
+    const seg  = c.sameSeg ? ' · mesmo segmento' : ' · outro segmento'
+    return base + (c.match !== 'other' ? seg : '')
+  }
+
+  if (compact) {
+    // Versão inline Top 3
+    const top3 = candidates.slice(0, 3)
+    if (!top3.length) return <div className="text-[11px] text-t3 mt-1.5 italic">Nenhum disponível</div>
+    return (
+      <div className="mt-1.5 space-y-1">
+        <div className="text-[10px] font-bold text-t2 uppercase tracking-wider">Sugestões</div>
+        {top3.map(c => (
+          <div key={c.teacher.id} className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                assignSubstitute(absenceId, slotId, c.teacher.id)
+                toast(`Substituto: ${c.teacher.name}`, 'ok')
+              }}
+              className="flex-1 flex items-center gap-1.5 text-left px-2 py-1 rounded-lg bg-surf border border-bdr hover:border-navy hover:bg-surf2 transition-all text-[11px]"
+            >
+              <span className="font-bold truncate">{c.teacher.name}</span>
+              <span className="text-t3 shrink-0">{c.load}h</span>
+            </button>
+            <span className="text-[9px] text-t3 shrink-0">
+              {c.match === 'subject' ? '⭐' : c.match === 'area' ? '🔵' : '⚪'}
+              {c.sameSeg ? '🏫' : ''}
+            </span>
+          </div>
+        ))}
+        <button
+          className="text-[11px] text-navy underline underline-offset-2"
+          onClick={() => setOpen(true)}
+        >ver todos ({candidates.length})</button>
+
+        <Modal open={open} onClose={() => setOpen(false)} title="Selecionar Substituto">
+          <FullCandidateList
+            candidates={candidates} curSub={curSub} matchLabel={matchLabel}
+            store={store}
+            onSelect={(t) => {
+              assignSubstitute(absenceId, slotId, t.id)
+              toast(`Substituto: ${t.name}`, 'ok')
+              setOpen(false)
+            }}
+          />
+        </Modal>
+      </div>
+    )
+  }
+
+  // Versão modal completa (botão de troca)
+  return (
+    <>
+      <button
+        className="text-[11px] text-navy underline underline-offset-2"
+        onClick={() => setOpen(true)}
+      >
+        {curSub ? '↺ Trocar' : '+ Escolher substituto'}
+      </button>
+
+      <Modal open={open} onClose={() => setOpen(false)} title="Selecionar Substituto">
+        <FullCandidateList
+          candidates={candidates} curSub={curSub} matchLabel={matchLabel}
+          store={store}
+          onSelect={(t) => {
+            assignSubstitute(absenceId, slotId, t.id)
+            toast(`Substituto: ${t.name}`, 'ok')
+            setOpen(false)
+          }}
+        />
+      </Modal>
+    </>
+  )
+}
+
+function FullCandidateList({ candidates, curSub, matchLabel, store, onSelect }) {
+  if (!candidates.length) return (
+    <p className="text-center text-t3 py-8 text-sm">Nenhum professor disponível.</p>
+  )
+  return (
+    <div className="space-y-1.5">
+      {candidates.map(c => {
+        const cv    = colorOfTeacher(c.teacher, store)
+        const isCur = c.teacher.id === curSub?.id
+        return (
+          <button
+            key={c.teacher.id}
+            onClick={() => onSelect(c.teacher)}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left
+              ${isCur ? 'border-navy bg-surf2' : 'border-bdr hover:border-t3 hover:bg-surf2'}`}
+          >
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cv.dt }} />
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-sm">{c.teacher.name}</div>
+              <div className="text-[11px] text-t2">{matchLabel(c)} · {c.load} aulas/mês</div>
+            </div>
+            {isCur && <span className="text-[11px] font-bold text-ok shrink-0">atual ✓</span>}
+            <span className="text-t3 text-lg shrink-0">›</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── DayModal ─────────────────────────────────────────────────────────────────
 
 function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
-  const { createAbsence, assignSubstitute, deleteAbsenceSlot } = useAppStore()
+  const { createAbsence, assignSubstitute, deleteAbsenceSlot, clearDaySubstitutes, clearDayAbsences } = useAppStore()
   if (!open || !teacher || !date) return null
 
   const dayLabel = dateToDayLabel(date)
@@ -76,6 +202,12 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
       absMap[s.timeSlot] = { absenceId: ab.id, slotId: s.id, substituteId: s.substituteId }
     })
   })
+
+  const anyAbsent    = Object.keys(absMap).length > 0
+  const anyHasSub    = Object.values(absMap).some(a => a.substituteId)
+  const allAbsent    = mine.length > 0 && mine.every(s => absMap[s.timeSlot])
+  const allHasSub    = anyAbsent && Object.values(absMap).every(a => a.substituteId)
+  const allNotCov    = anyAbsent && !Object.values(absMap).some(a => a.substituteId)
 
   const handleMarkAbsent = (p, sched) => {
     createAbsence(teacher.id, [{
@@ -99,23 +231,59 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
       if (substituteId) return
       const sched = mine.find(s => s.timeSlot === slot)
       const top = rankCandidates(teacher.id, date, slot, sched?.subjectId,
-        store.teachers, store.schedules, store.absences, store.subjects)[0]
+        store.teachers, store.schedules, store.absences, store.subjects, store.areas)[0]
       if (top) assignSubstitute(absenceId, slotId, top.teacher.id)
     })
     toast('Substituições confirmadas', 'ok')
     onClose()
   }
 
+  const handleClearSubs = () => {
+    if (!confirm('Remover todos os substitutos deste dia? As faltas continuam registradas.')) return
+    clearDaySubstitutes(teacher.id, date)
+    toast('Substitutos removidos', 'ok')
+  }
+
+  const handleClearAll = () => {
+    if (!confirm('Remover todas as faltas e substitutos deste dia?')) return
+    clearDayAbsences(teacher.id, date)
+    toast('Faltas removidas', 'ok')
+    onClose()
+  }
+
+  const handleDownloadPDF = () => {
+    openPDF(generateDayHTML(date, teacher.id, store))
+  }
+
   return (
     <Modal open={open} onClose={onClose} title={`${teacher.name} — ${dayLabel} ${formatBR(date)}`} size="lg">
-      {/* Ações rápidas (admin) */}
+      {/* Barra de ações rápidas (admin) */}
       {isAdmin && mine.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-4 p-3 bg-surf2 rounded-xl">
-          {mine.some(s => !absMap[s.timeSlot]) && (
-            <button className="btn btn-dark btn-sm" onClick={handleMarkAll}>Marcar dia inteiro</button>
+          {!allAbsent && (
+            <button className="btn btn-dark btn-sm" onClick={handleMarkAll}>
+              Marcar dia inteiro
+            </button>
           )}
-          {Object.values(absMap).some(a => !a.substituteId) && (
-            <button className="btn btn-ghost btn-sm" onClick={handleAcceptAll}>✓ Aceitar sugestões</button>
+          {anyAbsent && !allHasSub && (
+            <button className="btn btn-ghost btn-sm" onClick={handleAcceptAll}>
+              ✓ Aceitar sugestões
+            </button>
+          )}
+          {anyHasSub && (
+            <button className="btn btn-ghost btn-sm text-amber-700" onClick={handleClearSubs}>
+              ↺ Remover substitutos
+            </button>
+          )}
+          {anyAbsent && (
+            <button className="btn btn-danger btn-sm" onClick={handleClearAll}>
+              ✕ Remover todas as faltas
+            </button>
+          )}
+          {allHasSub && (
+            <button className="btn btn-ghost btn-sm ml-auto" onClick={handleDownloadPDF}>
+              📄 Baixar PDF
+            </button>
           )}
         </div>
       )}
@@ -129,7 +297,10 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
           const subj  = store.subjects.find(x => x.id === sched?.subjectId)
 
           return (
-            <div key={p.aulaIdx} className={`p-3 rounded-xl border ${abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' : sched ? 'bg-surf border-bdr' : 'bg-surf2/50 border-bdr/50 opacity-50'}`}>
+            <div key={p.aulaIdx} className={`p-3 rounded-xl border ${
+              abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' :
+              sched ? 'bg-surf border-bdr' :
+              'bg-surf2/50 border-bdr/50 opacity-50'}`}>
               <div className="flex items-start gap-3">
                 {/* Horário */}
                 <div className="text-center min-w-[60px] shrink-0">
@@ -137,7 +308,7 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                   <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
                 </div>
 
-                {/* Info */}
+                {/* Info + sugestões inline */}
                 <div className="flex-1 min-w-0">
                   {sched ? (
                     <>
@@ -146,7 +317,7 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                       {abs && (
                         <div className="mt-1.5">
                           {sub ? (
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
                               {isAdmin && (
                                 <SubPicker
@@ -162,6 +333,7 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                                 absenceId={abs.absenceId} slotId={abs.slotId}
                                 teacherId={teacher.id} date={date} slot={p.slot}
                                 subjectId={sched.subjectId} store={store}
+                                compact
                               />
                             )
                           )}
@@ -202,84 +374,19 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
   )
 }
 
-// ─── SubPicker ────────────────────────────────────────────────────────────────
-
-function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store }) {
-  const [open, setOpen] = useState(false)
-  const { assignSubstitute } = useAppStore()
-
-  const candidates = useMemo(() =>
-    rankCandidates(teacherId, date, slot, subjectId,
-      store.teachers, store.schedules, store.absences, store.subjects),
-    [teacherId, date, slot, subjectId, store]
-  )
-
-  const curSub = (() => {
-    const ab = store.absences?.find(a => a.id === absenceId)
-    const sl = ab?.slots.find(s => s.id === slotId)
-    return sl?.substituteId ? store.teachers.find(t => t.id === sl.substituteId) : null
-  })()
-
-  const matchLabel = { subject: '⭐ mesma matéria', area: '🔵 mesma área', other: '⚪ outra área' }
-
-  return (
-    <>
-      <button
-        className="text-[11px] text-navy underline underline-offset-2"
-        onClick={() => setOpen(true)}
-      >
-        {curSub ? '↺ Trocar' : '+ Escolher substituto'}
-      </button>
-
-      <Modal open={open} onClose={() => setOpen(false)} title="Selecionar Substituto">
-        {candidates.length === 0 ? (
-          <p className="text-center text-t3 py-8 text-sm">Nenhum professor disponível.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {candidates.map(({ teacher: t, load, match }) => {
-              const cv = colorOfTeacher(t, store)
-              const isCur = t.id === curSub?.id
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => {
-                    assignSubstitute(absenceId, slotId, t.id)
-                    toast(`Substituto: ${t.name}`, 'ok')
-                    setOpen(false)
-                  }}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left
-                    ${isCur ? 'border-navy bg-surf2' : 'border-bdr hover:border-t3 hover:bg-surf2'}`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cv.dt }} />
-                  <div className="flex-1">
-                    <div className="font-bold text-sm">{t.name}</div>
-                    <div className="text-[11px] text-t2">{matchLabel[match]} · {load} aulas/mês</div>
-                  </div>
-                  {isCur && <span className="text-[11px] font-bold text-ok">atual ✓</span>}
-                  <span className="text-t3 text-lg">›</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </Modal>
-    </>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
-  const store   = useAppStore()
-  const { role }= useAuthStore()
-  const isAdmin = role === 'admin'
+  const store    = useAppStore()
+  const { role } = useAuthStore()
+  const isAdmin  = role === 'admin'
 
   const [selectedTeacher, setSelectedTeacher] = useState(null)
   const [selectedSeg,     setSelectedSeg]     = useState(null)
   const [weekOffset,      setWeekOffset]       = useState(0)
   const [modalDate,       setModalDate]        = useState(null)
 
-  const dates = getWeekDates(weekOffset)
+  const dates     = getWeekDates(weekOffset)
   const weekLabel = `${formatBR(dates[0])} – ${formatBR(dates[4])}`
   const todayISO  = new Date().toISOString().split('T')[0]
 
@@ -353,13 +460,11 @@ export default function CalendarPage() {
         {/* Grade semanal */}
         {teacher && seg ? (
           <div>
-            {/* Header do professor */}
             <div className="card mb-4 flex items-center gap-4 flex-wrap">
               <div className="flex-1">
                 <div className="font-extrabold text-base">{teacher.name}</div>
                 <div className="text-xs text-t2">{teacherSubjectNames(teacher, store.subjects) || '—'} · {mine.length} aulas cadastradas</div>
               </div>
-              {/* Navegação de semana */}
               <div className="flex items-center gap-2">
                 <button className="btn btn-ghost btn-sm" onClick={() => setWeekOffset(w => w - 1)}>←</button>
                 <span className="text-xs font-mono font-semibold text-t2 whitespace-nowrap">{weekLabel}</span>
@@ -433,10 +538,8 @@ export default function CalendarPage() {
               </div>
             </div>
 
-            {/* Botão marcar período (admin) */}
-            {isAdmin && (
-              <RangeAbsenceBar teacher={teacher} dates={dates} store={store} />
-            )}
+            {/* Marcar período (admin) */}
+            {isAdmin && <RangeAbsenceBar teacher={teacher} dates={dates} store={store} />}
           </div>
         ) : (
           <div className="flex items-center justify-center h-48 text-t3">
@@ -463,7 +566,7 @@ export default function CalendarPage() {
 function RangeAbsenceBar({ teacher, dates, store }) {
   const { createAbsence } = useAppStore()
   const [from, setFrom] = useState(dates[0])
-  const [to, setTo]     = useState(dates[4])
+  const [to,   setTo]   = useState(dates[4])
 
   const handle = () => {
     if (!from || !to || from > to) { alert('Selecione um intervalo válido.'); return }
