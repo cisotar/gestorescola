@@ -15,11 +15,11 @@ export default function SettingsPage() {
   const isAdmin = role === 'admin'
 
   const ADMIN_TABS = [
-    { id: 'segments',    label: '🏫 Gestão de turmas' },
-    { id: 'disciplines', label: '📚 Gestão de disciplinas' },
-    { id: 'teachers',    label: '👩‍🏫 Gestão de professores' },
-    { id: 'periods',     label: '⏰ Gestão de períodos' },
-    { id: 'schedules',   label: '🗓  Horários de aulas' },
+    { id: 'segments',    label: '🏫 Segmentos' },
+    { id: 'disciplines', label: '📚 Disciplinas' },
+    { id: 'teachers',    label: '👩‍🏫 Professores' },
+    { id: 'periods',     label: '⏰ Períodos' },
+    { id: 'schedules',   label: '🗓 Horários' },
     { id: 'admin',       label: '🔐 Administração' },
   ]
 
@@ -395,6 +395,7 @@ function TabTeachers() {
             })
           ).sort((a, b) => a.name.localeCompare(b.name))
 
+
           return (
             <div key={seg.id} className="card">
               <div className="font-bold text-sm mb-3 pb-2 border-b border-bdr">
@@ -425,6 +426,46 @@ function TabTeachers() {
             </div>
           )
         })}
+
+        {/* Professores sem matéria associada a nenhum segmento */}
+        {(() => {
+          const unassigned = store.teachers.filter(t =>
+            !(t.subjectIds ?? []).some(sid => {
+              const subj = store.subjects.find(s => s.id === sid)
+              const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
+              return (area?.segmentIds ?? []).length > 0
+            })
+          ).sort((a, b) => a.name.localeCompare(b.name))
+          if (!unassigned.length) return null
+          return (
+            <div className="card border-dashed border-warn/50 bg-amber-50/30">
+              <div className="font-bold text-sm mb-3 pb-2 border-b border-bdr text-amber-700">
+                ⚠ Sem segmento definido <span className="text-xs font-normal text-t3 ml-1">{unassigned.length} prof.</span>
+              </div>
+              <div className="space-y-2">
+                {unassigned.map(t => {
+                  const ct = store.schedules.filter(s => s.teacherId === t.id).length
+                  return (
+                    <div key={t.id} className="flex items-center gap-2 p-2 rounded-xl border border-bdr hover:border-t3 transition-colors bg-surf">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-amber-100 text-amber-700">
+                        {t.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">{t.name}</div>
+                        <div className="text-[11px] text-amber-600 truncate">Sem matéria associada — clique em ✏️ para configurar</div>
+                      </div>
+                      <span className="text-xs text-t2 shrink-0">{ct} aulas</span>
+                      <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
+                      <button className="btn btn-ghost btn-xs text-err" onClick={() => {
+                        if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
+                      }}>✕</button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       <Modal open={modal} onClose={() => setModal(false)} title={editId ? 'Editar Professor' : 'Novo Professor'}>
