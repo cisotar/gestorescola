@@ -1,6 +1,6 @@
 import { db } from './firebase'
 import {
-  doc, getDoc, getDocs, setDoc, deleteDoc,
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   collection, writeBatch, serverTimestamp, query, where,
 } from 'firebase/firestore'
 
@@ -178,6 +178,36 @@ export async function approveTeacher(pendingId, state, setState) {
 
 export async function rejectTeacher(pendingId) {
   await deleteDoc(doc(db, 'pending_teachers', pendingId))
+}
+
+// ─── Saves parciais do professor (não-admin) ──────────────────────────────────
+
+/**
+ * Professor atualiza apenas seus próprios campos em /teachers/{id}.
+ * Usa updateDoc para acionar a regra "allow update" (não "allow write").
+ */
+export async function saveTeacherSelf(teacherId, fields) {
+  const allowed = {}
+  ;['celular', 'whatsapp', 'subjectIds'].forEach(k => {
+    if (fields[k] !== undefined) allowed[k] = fields[k]
+  })
+  if (!Object.keys(allowed).length) return
+  await updateDoc(doc(db, 'teachers', teacherId), allowed)
+}
+
+/**
+ * Professor cria ou sobrescreve seu próprio slot de horário em /schedules/{id}.
+ * O objeto `sched` precisa ter `teacherId` igual ao uid do professor.
+ */
+export async function saveScheduleSelf(sched) {
+  await setDoc(doc(db, 'schedules', sched.id), sched)
+}
+
+/**
+ * Professor remove seu próprio slot de horário.
+ */
+export async function deleteScheduleSelf(schedId) {
+  await deleteDoc(doc(db, 'schedules', schedId))
 }
 
 // ─── LocalStorage fallback ────────────────────────────────────────────────────
