@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-bg font-sans text-t1 antialiased;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
+           font-semibold text-sm transition-all duration-150 cursor-pointer border-0
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-dark {
+    @apply bg-navy text-white hover:bg-t2;
+  }
+  .btn-ghost {
+    @apply bg-surf2 text-t1 border border-bdr hover:bg-bdr;
+  }
+  .btn-danger {
+    @apply bg-err-l text-err border border-red-200 hover:bg-red-100;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+  .btn-xs {
+    @apply px-2 py-1 text-xs;
+  }
+
+  .card {
+    @apply bg-surf rounded-xl border border-bdr p-5;
+  }
+
+  .inp {
+    @apply w-full px-3 py-2 rounded-lg border border-bdr bg-surf text-t1
+           text-sm placeholder-t3 focus:outline-none focus:ring-2 focus:ring-navy/20
+           focus:border-navy transition-colors;
+  }
+
+  .lbl {
+    @apply block text-xs font-bold text-t2 uppercase tracking-wider mb-1.5;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold;
+  }
+
+  .pill {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold
+           bg-surf2 text-t2 border border-bdr;
+  }
+
+  /* Scrollbar personalizado */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.bdr') transparent;
+  }
+  .scroll-thin::-webkit-scrollbar { width: 4px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: theme('colors.bdr'); border-radius: 99px; }
+}
