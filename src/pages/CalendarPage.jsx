@@ -235,7 +235,6 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
       if (top) assignSubstitute(absenceId, slotId, top.teacher.id)
     })
     toast('Substituições confirmadas', 'ok')
-    onClose()
   }
 
   const handleClearSubs = () => {
@@ -485,7 +484,12 @@ export default function CalendarPage() {
                       {dates.map((date, i) => {
                         const isToday = date === todayISO
                         return (
-                          <th key={date} className={`px-2 py-2.5 text-center text-xs font-bold min-w-[110px] ${isToday ? 'bg-accent-l text-accent' : 'text-t2'}`}>
+                          <th key={date}
+                            onClick={() => setModalDate(date)}
+                            title={`Abrir ${DAYS[i]} ${formatBR(date)}`}
+                            className={`px-2 py-2.5 text-center text-xs font-bold min-w-[110px] cursor-pointer transition-colors
+                              ${isToday ? 'bg-accent-l text-accent hover:bg-accent-l/70' : 'text-t2 hover:bg-bdr/60'}`}
+                          >
                             <div>{DAYS[i]}</div>
                             <div className="font-mono font-normal text-[10px] opacity-70">{formatBR(date)}</div>
                           </th>
