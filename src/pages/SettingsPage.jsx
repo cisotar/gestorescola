@@ -72,6 +72,23 @@ function TurnoSelector({ seg, store }) {
   )
 }
 
+// ─── Helper compartilhado: segmentos de um professor ─────────────────────────
+// Fonte única de verdade usada em TabTeachers, TabSchedules e ScheduleGrid.
+
+function teacherSegmentIds(teacher, subjects, areas) {
+  return [...new Set(
+    (teacher.subjectIds ?? []).flatMap(sid => {
+      const subj = subjects.find(s => s.id === sid)
+      const area = subj ? areas.find(a => a.id === subj.areaId) : null
+      return area?.segmentIds ?? []
+    })
+  )]
+}
+
+function teacherBelongsToSegment(teacher, segId, subjects, areas) {
+  return teacherSegmentIds(teacher, subjects, areas).includes(segId)
+}
+
 // ─── Tab: Segmentos ────────────────────────────────────────────────────────────
 
 function TabSegments() {
@@ -390,13 +407,8 @@ function TabTeachers() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {store.segments.map(seg => {
           const list = store.teachers.filter(t =>
-            (t.subjectIds ?? []).some(sid => {
-              const subj = store.subjects.find(s => s.id === sid)
-              const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
-              return (area?.segmentIds ?? []).includes(seg.id)
-            })
+            teacherBelongsToSegment(t, seg.id, store.subjects, store.areas)
           ).sort((a, b) => a.name.localeCompare(b.name))
-
 
           return (
             <div key={seg.id} className="card">
@@ -432,11 +444,7 @@ function TabTeachers() {
         {/* Professores sem matéria associada a nenhum segmento */}
         {(() => {
           const unassigned = store.teachers.filter(t =>
-            !(t.subjectIds ?? []).some(sid => {
-              const subj = store.subjects.find(s => s.id === sid)
-              const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
-              return (area?.segmentIds ?? []).length > 0
-            })
+            teacherSegmentIds(t, store.subjects, store.areas).length === 0
           ).sort((a, b) => a.name.localeCompare(b.name))
           if (!unassigned.length) return null
           return (
@@ -654,21 +662,22 @@ function TabSchedules() {
   const [selTeacher, setSelTeacher] = useState(null)
   const teacher = selTeacher ? store.teachers.find(t => t.id === selTeacher) : null
 
+  // Professores sem segmento definido
+  const unassigned = store.teachers.filter(t =>
+    teacherSegmentIds(t, store.subjects, store.areas).length === 0
+  ).sort((a, b) => a.name.localeCompare(b.name))
+
   return (
     <div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         {store.segments.map(seg => {
+          // Usa o mesmo helper que TabTeachers — critério idêntico
           const list = store.teachers.filter(t =>
-            (t.subjectIds ?? []).some(sid => {
-              const subj = store.subjects.find(s => s.id === sid)
-              const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
-              return (area?.segmentIds ?? []).includes(seg.id)
-            })
+            teacherBelongsToSegment(t, seg.id, store.subjects, store.areas)
           ).sort((a, b) => a.name.localeCompare(b.name))
 
           return (
             <div key={seg.id} className="card">
-              {/* Turno editável aqui também — item 1 */}
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <div className="font-bold text-sm">{seg.name}</div>
                 <TurnoSelector seg={seg} store={store} />
@@ -698,6 +707,31 @@ function TabSchedules() {
             </div>
           )
         })}
+
+        {/* Professores sem segmento — visíveis para auditoria do ADM */}
+        {unassigned.length > 0 && (
+          <div className="card border-dashed border-amber-300 bg-amber-50/30 lg:col-span-2">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <div className="font-bold text-sm text-amber-700">
+                ⚠ Sem segmento definido
+                <span className="text-xs font-normal text-t3 ml-2">{unassigned.length} professor{unassigned.length !== 1 ? 'es' : ''} — clique para ver a grade</span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {unassigned.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setSelTeacher(t.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all
+                    bg-amber-50 border-amber-200 text-amber-800 hover:border-amber-400
+                    ${selTeacher === t.id ? 'border-amber-500 bg-amber-100' : ''}`}
+                >
+                  ⚠ {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {teacher && <ScheduleGrid teacher={teacher} store={store} />}
@@ -722,15 +756,8 @@ function ScheduleGrid({ teacher, store }) {
 
   const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
-  // Apenas segmentos onde o professor tem matéria associada
-  const teacherSegIds = [...new Set(
-    (teacher.subjectIds ?? []).flatMap(sid => {
-      const subj = store.subjects.find(s => s.id === sid)
-      const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
-      return area?.segmentIds ?? []
-    })
-  )]
-
+  // Segmentos do professor derivados das matérias — mesma lógica de TabTeachers e TabSchedules
+  const teacherSegIds = teacherSegmentIds(teacher, store.subjects, store.areas)
   const relevantSegments = store.segments.filter(s => teacherSegIds.includes(s.id))
 
   return (
