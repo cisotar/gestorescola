@@ -9,6 +9,7 @@ import PendingPage from './pages/PendingPage'
 import DashboardPage from './pages/DashboardPage'
 import HomePage from './pages/HomePage'
 import CalendarPage from './pages/CalendarPage'
+import CalendarDayPage from './pages/CalendarDayPage'
 import AbsencesPage from './pages/AbsencesPage'
 import SettingsPage from './pages/SettingsPage'
 import Toast from './components/ui/Toast'
@@ -67,7 +68,8 @@ export default function App() {
           <Route index element={<Navigate to={isAdmin ? '/dashboard' : '/home'} replace />} />
           <Route path="/home"      element={<HomePage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/calendar"  element={<CalendarPage />} />
+          <Route path="/calendar"      element={<CalendarPage />} />
+          <Route path="/calendar/day"  element={<CalendarDayPage />} />
           <Route path="/absences"  element={<AbsencesPage />} />
           <Route path="/settings"  element={<SettingsPage />} />
           <Route path="*"          element={<Navigate to={isAdmin ? '/dashboard' : '/home'} replace />} />

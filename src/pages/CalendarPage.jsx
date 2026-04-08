@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
@@ -379,35 +380,12 @@ export default function CalendarPage() {
   const store    = useAppStore()
   const { role } = useAuthStore()
   const isAdmin  = role === 'admin'
+  const navigate = useNavigate()
 
   const [selectedTeacher, setSelectedTeacher] = useState(null)
   const [selectedSeg,     setSelectedSeg]     = useState(null)
   const [weekOffset,      setWeekOffset]       = useState(0)
   const [modalDate,       setModalDate]        = useState(null)
-
-  // MOBILE-DAY-VIEW: índice do dia atual (0=Seg … 4=Sex), com fallback para 0 em fins de semana
-  const todayIdx = Math.min(Math.max((new Date().getDay() || 7) - 1, 0), 4)
-
-  // MOBILE-DAY-VIEW: dia ativo na visualização mobile
-  const [activeDayIdx, setActiveDayIdx] = useState(todayIdx)
-
-  // MOBILE-DAY-VIEW: toggle — lê localStorage (padrão: ativo). Admin pode ligar/desligar pela UI.
-  const [mobileDayView, setMobileDayView] = useState(
-    () => localStorage.getItem('ge_mobile_day_view') !== '0'
-  )
-  const toggleMobileDayView = () =>
-    setMobileDayView(v => { localStorage.setItem('ge_mobile_day_view', v ? '0' : '1'); return !v })
-
-  // MOBILE-DAY-VIEW: swipe lateral para navegar entre dias
-  const touchStartX = useRef(null)
-  const onTouchStart = e => { touchStartX.current = e.touches[0].clientX }
-  const onTouchEnd   = e => {
-    if (touchStartX.current === null) return
-    const dx = e.changedTouches[0].clientX - touchStartX.current
-    if (Math.abs(dx) < 40) return
-    setActiveDayIdx(i => dx < 0 ? Math.min(i + 1, 4) : Math.max(i - 1, 0))
-    touchStartX.current = null
-  }
 
   const dates     = getWeekDates(weekOffset)
   const weekLabel = `${formatBR(dates[0])} – ${formatBR(dates[4])}`
@@ -472,7 +450,15 @@ export default function CalendarPage() {
                     key={t.id} teacher={t}
                     selected={t.id === selectedTeacher}
                     store={store}
-                    onClick={() => { setSelectedTeacher(t.id); setSelectedSeg(seg.id); setWeekOffset(0); setActiveDayIdx(todayIdx) }}
+                    onClick={() => {
+                      setSelectedTeacher(t.id); setSelectedSeg(seg.id); setWeekOffset(0)
+                      // MOBILE-DAY-PAGE: redireciona para página dedicada no mobile
+                      if (window.innerWidth < 1024) {
+                        navigate('/calendar/day', {
+                          state: { teacherId: t.id, segId: seg.id, weekDates: dates, todayISO }
+                        })
+                      }
+                    }}
                   />
                 ))}
               </div>
@@ -495,91 +481,11 @@ export default function CalendarPage() {
                 {weekOffset !== 0 && (
                   <button className="btn btn-ghost btn-xs text-accent" onClick={() => setWeekOffset(0)}>hoje</button>
                 )}
-                {/* MOBILE-DAY-VIEW: toggle visível só para admin no mobile */}
-                {isAdmin && (
-                  <button
-                    className="btn btn-ghost btn-xs lg:hidden"
-                    onClick={toggleMobileDayView}
-                    title={mobileDayView ? 'Ver semana completa' : 'Ativar modo dia'}
-                  >
-                    {mobileDayView ? '📅 Semana' : '📱 Dia'}
-                  </button>
-                )}
               </div>
             </div>
 
-            {/* MOBILE-DAY-VIEW: pills + conteúdo de um dia — remova este bloco para voltar à tabela */}
-            {mobileDayView && (
-              <div
-                className="lg:hidden card p-0 overflow-hidden"
-                onTouchStart={onTouchStart}
-                onTouchEnd={onTouchEnd}
-              >
-                {/* Pills dos dias — sticky abaixo da navbar */}
-                <div className="flex gap-1.5 p-3 border-b border-bdr sticky top-14 bg-surf z-10 overflow-x-auto scroll-thin">
-                  {DAYS.map((d, i) => (
-                    <button
-                      key={d}
-                      onClick={() => setActiveDayIdx(i)}
-                      className={`flex flex-col items-center px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors shrink-0
-                        ${activeDayIdx === i
-                          ? 'bg-navy text-white shadow-sm'
-                          : dates[i] === todayISO
-                            ? 'bg-accent-l text-accent'
-                            : 'bg-surf2 text-t2 border border-bdr'}`}
-                    >
-                      <span>{d}</span>
-                      <span className="font-mono font-normal text-[9px] opacity-70">{formatBR(dates[i])}</span>
-                    </button>
-                  ))}
-                </div>
-
-                {/* Períodos do dia ativo */}
-                <div className="divide-y divide-bdr/50">
-                  {periodos.map(p => {
-                    const activeDay  = DAYS[activeDayIdx]
-                    const activeDate = dates[activeDayIdx]
-                    const sched = mine.find(s => s.day === activeDay && s.timeSlot === p.slot)
-                    const key   = `${activeDate}|${p.slot}`
-                    const abs   = sched ? absMap[key] : null
-                    const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
-                    const subj  = store.subjects.find(x => x.id === sched?.subjectId)
-                    return (
-                      <div key={p.aulaIdx} className="flex items-center gap-3 px-4 py-3">
-                        <div className="text-center min-w-[56px] shrink-0">
-                          <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
-                          <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
-                        </div>
-                        {sched ? (
-                          <button
-                            onClick={() => setModalDate(activeDate)}
-                            className={`flex-1 text-left px-3 py-2 rounded-lg border text-xs transition-all hover:shadow-sm
-                              ${abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' : 'bg-surf2 border-bdr hover:border-t3'}`}
-                          >
-                            <div className={`font-bold ${abs ? 'text-[#7F1A06]' : 'text-t1'}`}>{sched.turma}</div>
-                            <div className={`text-[10px] mt-0.5 ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
-                            {abs && (
-                              <div className={`text-[10px] font-bold mt-0.5 ${sub ? 'text-ok' : 'text-err'}`}>
-                                {sub ? `↳ ${sub.name}` : '⚠ sem sub.'}
-                              </div>
-                            )}
-                          </button>
-                        ) : (
-                          <div className="flex-1 text-[11px] text-t3 italic px-3 py-2">Hora de estudo</div>
-                        )}
-                      </div>
-                    )
-                  })}
-                  {periodos.length === 0 && (
-                    <p className="text-center text-t3 py-8 text-sm px-4">Nenhuma aula configurada para este professor.</p>
-                  )}
-                </div>
-              </div>
-            )}
-            {/* fim MOBILE-DAY-VIEW */}
-
-            {/* Grade semanal — desktop sempre visível; mobile só se mobileDayView=false */}
-            <div className={mobileDayView ? 'hidden lg:block' : 'block'}>
+            {/* Grade semanal — oculta no mobile (mobile usa /calendar/day) */}
+            <div className="hidden lg:block">
               <div className="card p-0 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
