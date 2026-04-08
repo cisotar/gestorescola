@@ -11,12 +11,14 @@ const useAuthStore = create((set, get) => ({
   pendingCt: 0,
 
   // ─── Init ──────────────────────────────────────────────────────────────────
-  init: (teachers) => {
-    return new Promise(resolve => {
-      getRedirectResult(auth).catch(e => {
-        console.warn('[auth redirect]', e.code, e.message)
-      })
+  init: async (teachers) => {
+    // Aguarda o Firebase processar o resultado do redirect ANTES de registrar
+    // o listener. Sem isso, onAuthStateChanged dispara null (estado anterior
+    // ao redirect) e a app pisca na LoginPage antes de mostrar PendingPage.
+    try { await getRedirectResult(auth) }
+    catch (e) { console.warn('[auth redirect]', e.code, e.message) }
 
+    return new Promise(resolve => {
       onAuthStateChanged(auth, async user => {
         set({ user, role: null, teacher: null })
         if (user) await get()._resolveRole(user, teachers)
