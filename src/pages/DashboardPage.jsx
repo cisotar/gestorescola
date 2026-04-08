@@ -119,7 +119,7 @@ export default function DashboardPage() {
         <ActionCard
           icon="👩‍🏫" label="Ver Professores"
           desc="Lista completa de professores e suas cargas horárias"
-          to="/settings"
+          to="/settings?tab=teachers"
         />
       </div>
 

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import { uid, colorOfTeacher, teacherSubjectNames } from '../lib/helpers'
@@ -13,6 +14,7 @@ import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmin
 export default function SettingsPage() {
   const { role, teacher: myTeacher } = useAuthStore()
   const isAdmin = role === 'admin'
+  const location = useLocation()
 
   const ADMIN_TABS = [
     { id: 'segments',    label: '🏫 Segmentos' },
@@ -20,10 +22,16 @@ export default function SettingsPage() {
     { id: 'teachers',    label: '👩‍🏫 Professores' },
     { id: 'periods',     label: '⏰ Períodos' },
     { id: 'schedules',   label: '🗓 Horários' },
-    { id: 'admin',       label: '🔐 Administração' },
+    { id: 'admin',       label: '✅ Aprovação' },
   ]
 
-  const [tab, setTab] = useState(isAdmin ? 'segments' : 'profile')
+  const initialTab = (() => {
+    if (!isAdmin) return 'profile'
+    const param = new URLSearchParams(location.search).get('tab')
+    return ADMIN_TABS.some(t => t.id === param) ? param : 'segments'
+  })()
+
+  const [tab, setTab] = useState(initialTab)
 
   const tabClass = (id) =>
     `px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors border whitespace-nowrap ` +
@@ -377,11 +385,51 @@ function SubjectSelector({ store, selectedIds, onChange }) {
 
 function TabTeachers() {
   const store = useAppStore()
-  const [modal,       setModal]       = useState(false)
-  const [schedModal,  setSchedModal]  = useState(false)
+  const [modal,        setModal]        = useState(false)
+  const [schedModal,   setSchedModal]   = useState(false)
   const [schedTeacher, setSchedTeacher] = useState(null)
-  const [editId, setEditId] = useState(null)
-  const [form,   setForm]   = useState({ name: '', email: '', celular: '', subjectIds: [] })
+  const [editId,       setEditId]       = useState(null)
+  const [form,         setForm]         = useState({ name: '', email: '', celular: '', subjectIds: [] })
+  const [view,         setView]         = useState('cards') // 'cards' | 'table'
+
+  // Carrega lista de admins para exibir/alterar status
+  const [admins, setAdmins] = useState([])
+  useEffect(() => {
+    listAdmins().then(list => setAdmins(list.map(a => a.email.toLowerCase())))
+  }, [])
+
+  const isTeacherAdmin = (t) => admins.includes((t.email ?? '').toLowerCase())
+
+  const handleStatusChange = async (t, newRole) => {
+    if (newRole === 'admin') {
+      await addAdmin(t.email, t.name)
+      setAdmins(a => [...a, t.email.toLowerCase()])
+      toast(`${t.name} agora é Admin`, 'ok')
+    } else {
+      await removeAdmin(t.email)
+      setAdmins(a => a.filter(x => x !== t.email.toLowerCase()))
+      toast(`${t.name} agora é Professor`, 'ok')
+    }
+  }
+
+  const StatusSelect = ({ t }) => (
+    <select
+      value={isTeacherAdmin(t) ? 'admin' : 'teacher'}
+      onChange={e => handleStatusChange(t, e.target.value)}
+      className="inp !py-0.5 !px-1.5 text-xs !w-auto"
+    >
+      <option value="teacher">Professor</option>
+      <option value="admin">Admin</option>
+    </select>
+  )
+
+  const teacherSegmentNames = (t) =>
+    store.segments
+      .filter(seg => teacherBelongsToSegment(t, seg.id, store.subjects, store.areas))
+      .map(seg => seg.name)
+      .join(', ') || '—'
+
+  const allTeachersSorted = [...store.teachers].sort((a, b) => a.name.localeCompare(b.name))
 
   const openAdd  = () => { setForm({ name: '', email: '', celular: '', subjectIds: [] }); setEditId(null); setModal(true) }
   const openEdit = (t) => { setForm({ name: t.name, email: t.email ?? '', celular: t.celular ?? '', subjectIds: t.subjectIds ?? [] }); setEditId(t.id); setModal(true) }
@@ -400,83 +448,137 @@ function TabTeachers() {
 
   return (
     <div>
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-2 mb-5 flex-wrap">
         <button className="btn btn-dark" onClick={openAdd}>+ Novo Professor</button>
+        <div className="flex rounded-lg border border-bdr overflow-hidden ml-auto">
+          <button onClick={() => setView('cards')} className={view === 'cards' ? 'btn btn-dark btn-sm rounded-none' : 'btn btn-ghost btn-sm rounded-none'}>⊞ Cards</button>
+          <button onClick={() => setView('table')} className={view === 'table' ? 'btn btn-dark btn-sm rounded-none' : 'btn btn-ghost btn-sm rounded-none'}>☰ Tabela</button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {store.segments.map(seg => {
-          const list = store.teachers.filter(t =>
-            teacherBelongsToSegment(t, seg.id, store.subjects, store.areas)
-          ).sort((a, b) => a.name.localeCompare(b.name))
+      {/* Visualização em tabela */}
+      {view === 'table' && (
+        <div className="card p-0 overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-surf2 border-b border-bdr">
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Nome</th>
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">E-mail</th>
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Telefone</th>
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Segmento</th>
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Matérias</th>
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Status</th>
+                <th className="px-3 py-2.5 w-[50px]"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {allTeachersSorted.map(t => (
+                <tr key={t.id} className="border-b border-bdr/50 hover:bg-surf2/50">
+                  <td className="px-3 py-2.5 font-semibold text-sm">{t.name}</td>
+                  <td className="px-3 py-2.5 text-xs text-t2">{t.email || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs text-t2">{t.celular || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs">{teacherSegmentNames(t)}</td>
+                  <td className="px-3 py-2.5 text-xs text-t2 max-w-[160px] truncate">{teacherSubjectNames(t, store.subjects) || '—'}</td>
+                  <td className="px-3 py-2.5"><StatusSelect t={t} /></td>
+                  <td className="px-3 py-2.5">
+                    <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
+                  </td>
+                </tr>
+              ))}
+              {allTeachersSorted.length === 0 && (
+                <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-t3">Nenhum professor cadastrado.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-          return (
-            <div key={seg.id} className="card">
-              <div className="font-bold text-sm mb-3 pb-2 border-b border-bdr">
-                {seg.name} <span className="text-xs font-normal text-t3 ml-1">{list.length} prof.</span>
-              </div>
-              <div className="space-y-2">
-                {list.map(t => {
-                  const cv = colorOfTeacher(t, store)
-                  const ct = store.schedules.filter(s => s.teacherId === t.id).length
-                  return (
-                    <div key={t.id} className="flex items-center gap-2 p-2 rounded-xl border border-bdr hover:border-t3 transition-colors">
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                        style={{ background: cv.tg, color: cv.tx }}>{t.name.charAt(0)}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm truncate">{t.name}</div>
-                        <div className="text-[11px] text-t3 truncate">{teacherSubjectNames(t, store.subjects) || '—'}</div>
-                      </div>
-                      <span className="text-xs text-t2 shrink-0">{ct} aulas</span>
-                      <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
-                      <button className="btn btn-ghost btn-xs text-err" onClick={() => {
-                        if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
-                      }}>✕</button>
-                    </div>
-                  )
-                })}
-                {list.length === 0 && <p className="text-xs text-t3 py-2">Nenhum professor neste nível.</p>}
-              </div>
-            </div>
-          )
-        })}
+      {/* Visualização em cards */}
+      {view === 'cards' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {store.segments.map(seg => {
+            const list = store.teachers.filter(t =>
+              teacherBelongsToSegment(t, seg.id, store.subjects, store.areas)
+            ).sort((a, b) => a.name.localeCompare(b.name))
 
-        {/* Professores sem matéria associada a nenhum segmento */}
-        {(() => {
-          const unassigned = store.teachers.filter(t =>
-            teacherSegmentIds(t, store.subjects, store.areas).length === 0
-          ).sort((a, b) => a.name.localeCompare(b.name))
-          if (!unassigned.length) return null
-          return (
-            <div className="card border-dashed border-warn/50 bg-amber-50/30">
-              <div className="font-bold text-sm mb-3 pb-2 border-b border-bdr text-amber-700">
-                ⚠ Sem segmento definido <span className="text-xs font-normal text-t3 ml-1">{unassigned.length} prof.</span>
-              </div>
-              <div className="space-y-2">
-                {unassigned.map(t => {
-                  const ct = store.schedules.filter(s => s.teacherId === t.id).length
-                  return (
-                    <div key={t.id} className="flex items-center gap-2 p-2 rounded-xl border border-bdr hover:border-t3 transition-colors bg-surf">
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-amber-100 text-amber-700">
-                        {t.name.charAt(0)}
+            return (
+              <div key={seg.id} className="card">
+                <div className="font-bold text-sm mb-3 pb-2 border-b border-bdr">
+                  {seg.name} <span className="text-xs font-normal text-t3 ml-1">{list.length} prof.</span>
+                </div>
+                <div className="space-y-2">
+                  {list.map(t => {
+                    const cv = colorOfTeacher(t, store)
+                    const ct = store.schedules.filter(s => s.teacherId === t.id).length
+                    return (
+                      <div key={t.id} className="flex items-start gap-2 p-2 rounded-xl border border-bdr hover:border-t3 transition-colors">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                          style={{ background: cv.tg, color: cv.tx }}>{t.name.charAt(0)}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm truncate">{t.name}</div>
+                          <div className="text-[11px] text-t3 truncate">{teacherSubjectNames(t, store.subjects) || '—'}</div>
+                          {t.email   && <div className="text-[11px] text-t3 truncate">✉ {t.email}</div>}
+                          {t.celular && <div className="text-[11px] text-t3 truncate">📱 {t.celular}</div>}
+                          <div className="mt-1.5"><StatusSelect t={t} /></div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="text-xs text-t2">{ct} aulas</span>
+                          <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
+                          <button className="btn btn-ghost btn-xs text-err" onClick={() => {
+                            if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
+                          }}>✕</button>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm truncate">{t.name}</div>
-                        <div className="text-[11px] text-amber-600 truncate">Sem matéria associada — clique em ✏️ para configurar</div>
-                      </div>
-                      <span className="text-xs text-t2 shrink-0">{ct} aulas</span>
-                      <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
-                      <button className="btn btn-ghost btn-xs text-err" onClick={() => {
-                        if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
-                      }}>✕</button>
-                    </div>
-                  )
-                })}
+                    )
+                  })}
+                  {list.length === 0 && <p className="text-xs text-t3 py-2">Nenhum professor neste nível.</p>}
+                </div>
               </div>
-            </div>
-          )
-        })()}
-      </div>
+            )
+          })}
+
+          {/* Professores sem segmento */}
+          {(() => {
+            const unassigned = store.teachers.filter(t =>
+              teacherSegmentIds(t, store.subjects, store.areas).length === 0
+            ).sort((a, b) => a.name.localeCompare(b.name))
+            if (!unassigned.length) return null
+            return (
+              <div className="card border-dashed border-warn/50 bg-amber-50/30">
+                <div className="font-bold text-sm mb-3 pb-2 border-b border-bdr text-amber-700">
+                  ⚠ Sem segmento definido <span className="text-xs font-normal text-t3 ml-1">{unassigned.length} prof.</span>
+                </div>
+                <div className="space-y-2">
+                  {unassigned.map(t => {
+                    const ct = store.schedules.filter(s => s.teacherId === t.id).length
+                    return (
+                      <div key={t.id} className="flex items-start gap-2 p-2 rounded-xl border border-bdr hover:border-t3 transition-colors bg-surf">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 bg-amber-100 text-amber-700">
+                          {t.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm truncate">{t.name}</div>
+                          <div className="text-[11px] text-amber-600 truncate">Sem matéria associada — clique em ✏️ para configurar</div>
+                          {t.email   && <div className="text-[11px] text-t3 truncate">✉ {t.email}</div>}
+                          {t.celular && <div className="text-[11px] text-t3 truncate">📱 {t.celular}</div>}
+                          <div className="mt-1.5"><StatusSelect t={t} /></div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="text-xs text-t2">{ct} aulas</span>
+                          <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
+                          <button className="btn btn-ghost btn-xs text-err" onClick={() => {
+                            if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
+                          }}>✕</button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+      )}
 
       <Modal open={modal} onClose={() => setModal(false)} title={editId ? 'Editar Professor' : 'Novo Professor'}>
         <div className="space-y-4">
