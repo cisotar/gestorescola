@@ -1,6 +1,6 @@
 import { db } from './firebase'
 import {
-  doc, getDoc, getDocs, setDoc, deleteDoc,
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   collection, writeBatch, serverTimestamp, query, where,
 } from 'firebase/firestore'
 
@@ -148,6 +148,10 @@ export async function requestTeacherAccess(user) {
     name: user.displayName ?? '', photoURL: user.photoURL ?? '',
     requestedAt: serverTimestamp(), status: 'pending',
   })
+}
+
+export async function updatePendingPhone(uid, celular) {
+  await updateDoc(doc(db, 'pending_teachers', uid), { celular })
 }
 
 export async function listPendingTeachers() {

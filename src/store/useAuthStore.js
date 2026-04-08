@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { auth, provider } from '../lib/firebase'
-import { signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth'
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { isAdmin, getTeacherByEmail, requestTeacherAccess, listPendingTeachers } from '../lib/db'
 
 const useAuthStore = create((set, get) => ({
@@ -11,13 +11,7 @@ const useAuthStore = create((set, get) => ({
   pendingCt: 0,
 
   // ─── Init ──────────────────────────────────────────────────────────────────
-  init: async (teachers) => {
-    // Aguarda o Firebase processar o resultado do redirect ANTES de registrar
-    // o listener. Sem isso, onAuthStateChanged dispara null (estado anterior
-    // ao redirect) e a app pisca na LoginPage antes de mostrar PendingPage.
-    try { await getRedirectResult(auth) }
-    catch (e) { console.warn('[auth redirect]', e.code, e.message) }
-
+  init: (teachers) => {
     return new Promise(resolve => {
       onAuthStateChanged(auth, async user => {
         set({ user, role: null, teacher: null })
@@ -47,8 +41,8 @@ const useAuthStore = create((set, get) => ({
   },
 
   login: async () => {
-    try { await signInWithRedirect(auth, provider) }
-    catch (e) { alert('Erro ao fazer login: ' + e.message) }
+    try { await signInWithPopup(auth, provider) }
+    catch (e) { if (e.code !== 'auth/popup-closed-by-user') alert('Erro ao fazer login: ' + e.message) }
   },
 
   logout: () => signOut(auth),
