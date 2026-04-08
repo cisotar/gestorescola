@@ -6,7 +6,7 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
-import { formatBR, dateToDayLabel } from '../lib/helpers'
+import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel } from '../lib/helpers'
 import { getPeriodos } from '../lib/periods'
 import { rankCandidates } from '../lib/absences'
 import { generateDayHTML, openPDF } from '../lib/reports'
@@ -144,7 +144,9 @@ export default function CalendarDayPage() {
     .filter(p => !p.isIntervalo)
     .map(p => ({ ...p, slot: `${seg.id}|${seg.turno ?? 'manha'}|${p.aulaIdx}` }))
 
-  const mine = store.schedules.filter(s => s.teacherId === teacher.id)
+  const mine   = store.schedules.filter(s => s.teacherId === teacher.id)
+  const cv     = colorOfTeacher(teacher, store)
+  const hasAbs = (store.absences ?? []).some(ab => ab.teacherId === teacher.id)
 
   const absMap = useMemo(() => {
     const map = {}
@@ -222,14 +224,26 @@ export default function CalendarDayPage() {
   return (
     <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
 
-      {/* Cabeçalho */}
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={() => navigate(-1)} className="btn btn-ghost btn-sm shrink-0">← Voltar</button>
-        <div className="min-w-0">
-          <div className="font-extrabold text-base truncate">{teacher.name}</div>
-          <div className="text-xs text-t2">{DAYS[activeDayIdx]} · {formatBR(activeDate)}</div>
+      {/* MOBILE-DAY-PAGE: cabeçalho com card de professor */}
+      <div className="mb-4">
+        <button onClick={() => navigate(-1)} className="btn btn-ghost btn-sm mb-3">← Voltar</button>
+        <div className="card flex items-center gap-3">
+          <div
+            className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shrink-0"
+            style={{ background: cv.tg, color: cv.tx }}
+          >
+            {teacher.name.charAt(0)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-extrabold text-base truncate">{teacher.name}</div>
+            <div className="text-xs text-t2 truncate">
+              {teacherSubjectNames(teacher, store.subjects) || '—'} · {mine.length} aula{mine.length !== 1 ? 's' : ''} cadastrada{mine.length !== 1 ? 's' : ''}
+            </div>
+            {hasAbs && <div className="text-[10px] text-err font-bold mt-0.5">● possui faltas registradas</div>}
+          </div>
         </div>
       </div>
+      {/* fim MOBILE-DAY-PAGE cabeçalho */}
 
       {/* Pills dos dias — sticky abaixo da navbar */}
       <div className="flex gap-1.5 overflow-x-auto scroll-thin pb-1 sticky top-14 bg-bg z-10 py-2 -mx-4 px-4">
