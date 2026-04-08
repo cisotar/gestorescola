@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
@@ -385,6 +385,30 @@ export default function CalendarPage() {
   const [weekOffset,      setWeekOffset]       = useState(0)
   const [modalDate,       setModalDate]        = useState(null)
 
+  // MOBILE-DAY-VIEW: índice do dia atual (0=Seg … 4=Sex), com fallback para 0 em fins de semana
+  const todayIdx = Math.min(Math.max((new Date().getDay() || 7) - 1, 0), 4)
+
+  // MOBILE-DAY-VIEW: dia ativo na visualização mobile
+  const [activeDayIdx, setActiveDayIdx] = useState(todayIdx)
+
+  // MOBILE-DAY-VIEW: toggle — lê localStorage (padrão: ativo). Admin pode ligar/desligar pela UI.
+  const [mobileDayView, setMobileDayView] = useState(
+    () => localStorage.getItem('ge_mobile_day_view') !== '0'
+  )
+  const toggleMobileDayView = () =>
+    setMobileDayView(v => { localStorage.setItem('ge_mobile_day_view', v ? '0' : '1'); return !v })
+
+  // MOBILE-DAY-VIEW: swipe lateral para navegar entre dias
+  const touchStartX = useRef(null)
+  const onTouchStart = e => { touchStartX.current = e.touches[0].clientX }
+  const onTouchEnd   = e => {
+    if (touchStartX.current === null) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    if (Math.abs(dx) < 40) return
+    setActiveDayIdx(i => dx < 0 ? Math.min(i + 1, 4) : Math.max(i - 1, 0))
+    touchStartX.current = null
+  }
+
   const dates     = getWeekDates(weekOffset)
   const weekLabel = `${formatBR(dates[0])} – ${formatBR(dates[4])}`
   const todayISO  = new Date().toISOString().split('T')[0]
@@ -448,7 +472,7 @@ export default function CalendarPage() {
                     key={t.id} teacher={t}
                     selected={t.id === selectedTeacher}
                     store={store}
-                    onClick={() => { setSelectedTeacher(t.id); setSelectedSeg(seg.id); setWeekOffset(0) }}
+                    onClick={() => { setSelectedTeacher(t.id); setSelectedSeg(seg.id); setWeekOffset(0); setActiveDayIdx(todayIdx) }}
                   />
                 ))}
               </div>
@@ -464,81 +488,162 @@ export default function CalendarPage() {
                 <div className="font-extrabold text-base">{teacher.name}</div>
                 <div className="text-xs text-t2">{teacherSubjectNames(teacher, store.subjects) || '—'} · {mine.length} aulas cadastradas</div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button className="btn btn-ghost btn-sm" onClick={() => setWeekOffset(w => w - 1)}>←</button>
                 <span className="text-xs font-mono font-semibold text-t2 whitespace-nowrap">{weekLabel}</span>
                 <button className="btn btn-ghost btn-sm" onClick={() => setWeekOffset(w => w + 1)}>→</button>
                 {weekOffset !== 0 && (
                   <button className="btn btn-ghost btn-xs text-accent" onClick={() => setWeekOffset(0)}>hoje</button>
                 )}
+                {/* MOBILE-DAY-VIEW: toggle visível só para admin no mobile */}
+                {isAdmin && (
+                  <button
+                    className="btn btn-ghost btn-xs lg:hidden"
+                    onClick={toggleMobileDayView}
+                    title={mobileDayView ? 'Ver semana completa' : 'Ativar modo dia'}
+                  >
+                    {mobileDayView ? '📅 Semana' : '📱 Dia'}
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Grade */}
-            <div className="card p-0 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-surf2 border-b border-bdr">
-                      <th className="px-3 py-2.5 text-left text-xs font-bold text-t2 w-[100px]">Aula</th>
-                      {dates.map((date, i) => {
-                        const isToday = date === todayISO
-                        return (
-                          <th key={date}
-                            onClick={() => setModalDate(date)}
-                            title={`Abrir ${DAYS[i]} ${formatBR(date)}`}
-                            className={`px-2 py-2.5 text-center text-xs font-bold min-w-[110px] cursor-pointer transition-colors
-                              ${isToday ? 'bg-accent-l text-accent hover:bg-accent-l/70' : 'text-t2 hover:bg-bdr/60'}`}
-                          >
-                            <div>{DAYS[i]}</div>
-                            <div className="font-mono font-normal text-[10px] opacity-70">{formatBR(date)}</div>
-                          </th>
-                        )
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {periodos.map(p => (
-                      <tr key={p.aulaIdx} className="border-b border-bdr/50">
-                        <td className="px-3 py-2">
+            {/* MOBILE-DAY-VIEW: pills + conteúdo de um dia — remova este bloco para voltar à tabela */}
+            {mobileDayView && (
+              <div
+                className="lg:hidden card p-0 overflow-hidden"
+                onTouchStart={onTouchStart}
+                onTouchEnd={onTouchEnd}
+              >
+                {/* Pills dos dias — sticky abaixo da navbar */}
+                <div className="flex gap-1.5 p-3 border-b border-bdr sticky top-14 bg-surf z-10 overflow-x-auto scroll-thin">
+                  {DAYS.map((d, i) => (
+                    <button
+                      key={d}
+                      onClick={() => setActiveDayIdx(i)}
+                      className={`flex flex-col items-center px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors shrink-0
+                        ${activeDayIdx === i
+                          ? 'bg-navy text-white shadow-sm'
+                          : dates[i] === todayISO
+                            ? 'bg-accent-l text-accent'
+                            : 'bg-surf2 text-t2 border border-bdr'}`}
+                    >
+                      <span>{d}</span>
+                      <span className="font-mono font-normal text-[9px] opacity-70">{formatBR(dates[i])}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Períodos do dia ativo */}
+                <div className="divide-y divide-bdr/50">
+                  {periodos.map(p => {
+                    const activeDay  = DAYS[activeDayIdx]
+                    const activeDate = dates[activeDayIdx]
+                    const sched = mine.find(s => s.day === activeDay && s.timeSlot === p.slot)
+                    const key   = `${activeDate}|${p.slot}`
+                    const abs   = sched ? absMap[key] : null
+                    const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
+                    const subj  = store.subjects.find(x => x.id === sched?.subjectId)
+                    return (
+                      <div key={p.aulaIdx} className="flex items-center gap-3 px-4 py-3">
+                        <div className="text-center min-w-[56px] shrink-0">
                           <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
                           <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
-                        </td>
-                        {dates.map((date, i) => {
-                          const day   = DAYS[i]
-                          const sched = mine.find(s => s.day === day && s.timeSlot === p.slot)
-                          const key   = `${date}|${p.slot}`
-                          const abs   = sched ? absMap[key] : null
-                          const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
-                          const subj  = store.subjects.find(x => x.id === sched?.subjectId)
-                          const isToday = date === todayISO
+                        </div>
+                        {sched ? (
+                          <button
+                            onClick={() => setModalDate(activeDate)}
+                            className={`flex-1 text-left px-3 py-2 rounded-lg border text-xs transition-all hover:shadow-sm
+                              ${abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' : 'bg-surf2 border-bdr hover:border-t3'}`}
+                          >
+                            <div className={`font-bold ${abs ? 'text-[#7F1A06]' : 'text-t1'}`}>{sched.turma}</div>
+                            <div className={`text-[10px] mt-0.5 ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
+                            {abs && (
+                              <div className={`text-[10px] font-bold mt-0.5 ${sub ? 'text-ok' : 'text-err'}`}>
+                                {sub ? `↳ ${sub.name}` : '⚠ sem sub.'}
+                              </div>
+                            )}
+                          </button>
+                        ) : (
+                          <div className="flex-1 text-[11px] text-t3 italic px-3 py-2">Hora de estudo</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  {periodos.length === 0 && (
+                    <p className="text-center text-t3 py-8 text-sm px-4">Nenhuma aula configurada para este professor.</p>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* fim MOBILE-DAY-VIEW */}
 
+            {/* Grade semanal — desktop sempre visível; mobile só se mobileDayView=false */}
+            <div className={mobileDayView ? 'hidden lg:block' : 'block'}>
+              <div className="card p-0 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-surf2 border-b border-bdr">
+                        <th className="px-3 py-2.5 text-left text-xs font-bold text-t2 w-[100px]">Aula</th>
+                        {dates.map((date, i) => {
+                          const isToday = date === todayISO
                           return (
-                            <td key={date} className={`px-2 py-1.5 ${isToday ? 'bg-accent-l/30' : ''}`}>
-                              {sched ? (
-                                <button
-                                  onClick={() => setModalDate(date)}
-                                  className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs transition-all hover:shadow-sm
-                                    ${abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' : 'bg-surf2 border-bdr hover:border-t3'}`}
-                                >
-                                  <div className={`font-bold truncate ${abs ? 'text-[#7F1A06]' : 'text-t1'}`}>{sched.turma}</div>
-                                  <div className={`text-[10px] truncate mt-0.5 ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
-                                  {abs && (
-                                    <div className={`text-[10px] font-bold mt-0.5 ${sub ? 'text-ok' : 'text-err'}`}>
-                                      {sub ? `↳ ${sub.name}` : '⚠ sem sub.'}
-                                    </div>
-                                  )}
-                                </button>
-                              ) : (
-                                <div className="text-[10px] text-t3 italic text-center py-2">—</div>
-                              )}
-                            </td>
+                            <th key={date}
+                              onClick={() => setModalDate(date)}
+                              title={`Abrir ${DAYS[i]} ${formatBR(date)}`}
+                              className={`px-2 py-2.5 text-center text-xs font-bold min-w-[110px] cursor-pointer transition-colors
+                                ${isToday ? 'bg-accent-l text-accent hover:bg-accent-l/70' : 'text-t2 hover:bg-bdr/60'}`}
+                            >
+                              <div>{DAYS[i]}</div>
+                              <div className="font-mono font-normal text-[10px] opacity-70">{formatBR(date)}</div>
+                            </th>
                           )
                         })}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {periodos.map(p => (
+                        <tr key={p.aulaIdx} className="border-b border-bdr/50">
+                          <td className="px-3 py-2">
+                            <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
+                            <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
+                          </td>
+                          {dates.map((date, i) => {
+                            const day   = DAYS[i]
+                            const sched = mine.find(s => s.day === day && s.timeSlot === p.slot)
+                            const key   = `${date}|${p.slot}`
+                            const abs   = sched ? absMap[key] : null
+                            const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
+                            const subj  = store.subjects.find(x => x.id === sched?.subjectId)
+                            const isToday = date === todayISO
+                            return (
+                              <td key={date} className={`px-2 py-1.5 ${isToday ? 'bg-accent-l/30' : ''}`}>
+                                {sched ? (
+                                  <button
+                                    onClick={() => setModalDate(date)}
+                                    className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs transition-all hover:shadow-sm
+                                      ${abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' : 'bg-surf2 border-bdr hover:border-t3'}`}
+                                  >
+                                    <div className={`font-bold truncate ${abs ? 'text-[#7F1A06]' : 'text-t1'}`}>{sched.turma}</div>
+                                    <div className={`text-[10px] truncate mt-0.5 ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
+                                    {abs && (
+                                      <div className={`text-[10px] font-bold mt-0.5 ${sub ? 'text-ok' : 'text-err'}`}>
+                                        {sub ? `↳ ${sub.name}` : '⚠ sem sub.'}
+                                      </div>
+                                    )}
+                                  </button>
+                                ) : (
+                                  <div className="text-[10px] text-t3 italic text-center py-2">—</div>
+                                )}
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
