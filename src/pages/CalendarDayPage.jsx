@@ -152,7 +152,15 @@ export default function CalendarDayPage() {
     const map = {}
     ;(store.absences ?? []).forEach(ab => {
       if (ab.teacherId !== teacher.id) return
-      ab.slots.forEach(s => { map[`${s.date}|${s.timeSlot}`] = { ...s, absenceId: ab.id } })
+      ab.slots.forEach(s => {
+        map[`${s.date}|${s.timeSlot}`] = {
+          absenceId:    ab.id,
+          slotId:       s.id,
+          substituteId: s.substituteId,
+          timeSlot:     s.timeSlot,
+          date:         s.date,
+        }
+      })
     })
     return map
   }, [teacher.id, store.absences])
@@ -285,9 +293,8 @@ export default function CalendarDayPage() {
         </div>
       )}
 
-      {/* Lista de períodos */}
-      <div className="card p-0 overflow-hidden">
-        <div className="divide-y divide-bdr/60">
+      {/* Lista de períodos — card individual por aula */}
+      <div className="space-y-2 mt-2">
         {periodos.map(p => {
           const sched = dayMine.find(s => s.timeSlot === p.slot)
           const abs   = sched ? dayAbsMap[p.slot] : null
@@ -295,15 +302,18 @@ export default function CalendarDayPage() {
           const subj  = store.subjects.find(x => x.id === sched?.subjectId)
 
           return (
-            <div key={p.aulaIdx} className={`p-3 ${
-              abs ? 'bg-[#FFF1EE]' :
-              sched ? 'bg-surf' :
-              'bg-surf2/50 opacity-50'}`}>
+            <div key={p.aulaIdx} className={`card p-3 ${
+              abs ? 'border-[#FDB8A8] bg-[#FFF1EE]' :
+              !sched ? 'opacity-50' : ''}`}
+            >
               <div className="flex items-start gap-3">
-                <div className="text-center min-w-[60px] shrink-0">
+                {/* Horário ancorado */}
+                <div className="text-center min-w-[56px] shrink-0 bg-surf2 rounded-lg py-1.5 px-1">
                   <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
                   <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
                 </div>
+
+                {/* Conteúdo */}
                 <div className="flex-1 min-w-0">
                   {sched ? (
                     <>
@@ -312,6 +322,7 @@ export default function CalendarDayPage() {
                       {abs && (
                         <div className="mt-1.5">
                           {sub ? (
+                            /* Colapsado: substituto alocado */
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
                               {isAdmin && (
@@ -323,6 +334,7 @@ export default function CalendarDayPage() {
                               )}
                             </div>
                           ) : (
+                            /* Expandido: sem substituto — mostra sugestões */
                             isAdmin && (
                               <SubPicker
                                 absenceId={abs.absenceId} slotId={abs.slotId}
@@ -339,11 +351,13 @@ export default function CalendarDayPage() {
                     <span className="text-xs text-t3 italic">Hora de estudo</span>
                   )}
                 </div>
+
+                {/* Ações */}
                 {isAdmin && sched && (
                   <div className="shrink-0">
                     {abs ? (
                       <button
-                        className="text-[11px] text-err hover:underline"
+                        className="px-2.5 py-1 rounded-full text-[11px] font-semibold border border-[#FDB8A8] text-err bg-white hover:bg-[#FDB8A8]/30 transition-colors"
                         onClick={() => { deleteAbsenceSlot(abs.absenceId, abs.slotId); toast('Falta removida', 'ok') }}
                       >
                         Desfazer
@@ -362,7 +376,6 @@ export default function CalendarDayPage() {
         {periodos.length === 0 && (
           <p className="text-center text-t3 py-10 text-sm">Nenhuma aula configurada para este professor.</p>
         )}
-        </div>
       </div>
     </div>
   )
