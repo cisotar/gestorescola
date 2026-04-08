@@ -906,7 +906,7 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
   )
 
   const save = () => {
-    if (!turma) { alert('Selecione a turma.'); return }
+    if (!grade || !turma) return
     if (store.schedules.find(s => s.teacherId === teacher.id && s.day === day && s.timeSlot === slot))
       { alert('Conflito: professor já tem aula neste horário.'); return }
     if (occupiedTurmas.has(turma))
@@ -914,41 +914,97 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
     onSave({ teacherId: teacher.id, subjectId: subjId || null, turma, day, timeSlot: slot })
   }
 
+  const pillBase = 'px-3 py-1 rounded-full text-sm border transition-colors cursor-pointer'
+  const pillOff  = `${pillBase} bg-surf2 border-bdr text-t2 hover:border-t3`
+  const pillOn   = `${pillBase} bg-navy border-transparent text-white font-semibold shadow-sm`
+  const pillLock = `${pillBase} bg-surf2 border-bdr text-t3 opacity-50 cursor-not-allowed`
+
   return (
     <Modal open={open} onClose={onClose} title="Adicionar Aula">
-      <div className="space-y-4">
-        <div>
-          <label className="lbl">Matéria</label>
-          <select className="inp" value={subjId} onChange={e => setSubjId(e.target.value)}>
-            <option value="">— sem matéria —</option>
-            {mySubjs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </div>
+      <div className="space-y-5">
+
+        {/* Ano / Série */}
         <div>
           <label className="lbl">Ano / Série</label>
-          <select className="inp" value={grade} onChange={e => { setGrade(e.target.value); setTurma('') }}>
-            <option value="">Selecione…</option>
-            {grades.map(g => <option key={g.name} value={g.name}>{g.name}</option>)}
-          </select>
+          {grades.length === 0
+            ? <p className="text-xs text-t3">Nenhuma série cadastrada neste segmento.</p>
+            : <div className="flex flex-wrap gap-2 mt-1">
+                {grades.map(g => (
+                  <button
+                    key={g.name}
+                    type="button"
+                    className={grade === g.name ? pillOn : pillOff}
+                    onClick={() => { setGrade(g.name); setTurma('') }}
+                  >
+                    {g.name}
+                  </button>
+                ))}
+              </div>
+          }
         </div>
+
+        {/* Turma */}
         <div>
           <label className="lbl">Turma</label>
-          <select className="inp" value={turma} onChange={e => setTurma(e.target.value)}>
-            <option value="">Selecione…</option>
-            {allTurmasForGrade.map(t => (
-              <option key={t} value={t} disabled={occupiedTurmas.has(t)}>
-                {t}{occupiedTurmas.has(t) ? ' — 🔒 ocupada' : ''}
-              </option>
-            ))}
-          </select>
-          {occupiedTurmas.size > 0 && grade && (
-            <p className="text-[11px] text-amber-600 mt-1">
-              🔒 Turmas com professor já alocado neste horário aparecem bloqueadas.
-            </p>
-          )}
+          {!grade
+            ? <p className="text-xs text-t3 mt-1">Selecione o Ano/Série primeiro.</p>
+            : allTurmasForGrade.length === 0
+              ? <p className="text-xs text-t3 mt-1">Nenhuma turma cadastrada para {grade}.</p>
+              : <div className="flex flex-wrap gap-2 mt-1">
+                  {allTurmasForGrade.map(t => {
+                    const locked = occupiedTurmas.has(t)
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        className={locked ? pillLock : turma === t ? pillOn : pillOff}
+                        disabled={locked}
+                        onClick={() => !locked && setTurma(t)}
+                        title={locked ? 'Esta turma já tem professor neste horário' : undefined}
+                      >
+                        {locked ? `🔒 ${t}` : t}
+                      </button>
+                    )
+                  })}
+                </div>
+          }
         </div>
-        <div className="flex gap-2 pt-2">
-          <button className="btn btn-dark flex-1" onClick={save}>Adicionar</button>
+
+        {/* Matéria */}
+        <div>
+          <label className="lbl">Matéria <span className="font-normal text-t3">(opcional)</span></label>
+          {mySubjs.length === 0
+            ? <p className="text-xs text-t3 mt-1">Nenhuma matéria vinculada a este segmento.</p>
+            : <div className="flex flex-wrap gap-2 mt-1">
+                <button
+                  type="button"
+                  className={subjId === '' ? pillOn : pillOff}
+                  onClick={() => setSubjId('')}
+                >
+                  — sem matéria —
+                </button>
+                {mySubjs.map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={subjId === s.id ? pillOn : pillOff}
+                    onClick={() => setSubjId(s.id)}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+          }
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            className="btn btn-dark flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={save}
+            disabled={!grade || !turma}
+          >
+            Adicionar
+          </button>
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
         </div>
       </div>

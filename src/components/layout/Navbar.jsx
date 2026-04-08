@@ -19,7 +19,7 @@ export default function Navbar() {
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 h-14 flex items-center gap-4">
         {/* Logo */}
         <NavLink
-          to="/dashboard"
+          to={isAdmin ? '/dashboard' : '/home'}
           className="font-extrabold text-lg tracking-tight text-white shrink-0 mr-1"
         >
           <span className="text-accent">Gestão</span>Escolar
@@ -27,7 +27,7 @@ export default function Navbar() {
 
         {/* Tabs */}
         <div className="flex items-center gap-1 flex-1">
-          <NavLink to="/dashboard" className={linkClass}>🏠 Início</NavLink>
+          <NavLink to={isAdmin ? '/dashboard' : '/home'} className={linkClass}>🏠 Início</NavLink>
           <NavLink to="/absences"  className={linkClass}>📋 Relatório de Ausências</NavLink>
         </div>
 
