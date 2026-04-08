@@ -246,7 +246,7 @@ export default function CalendarDayPage() {
       {/* fim MOBILE-DAY-PAGE cabeçalho */}
 
       {/* Pills dos dias — sticky abaixo da navbar */}
-      <div className="flex gap-1.5 overflow-x-auto scroll-thin pb-1 sticky top-14 bg-bg z-10 py-2 -mx-4 px-4">
+      <div className="flex gap-1.5 overflow-x-auto scroll-thin sticky top-14 bg-bg z-10 py-3 pb-3 mb-4 -mx-4 px-4 border-b border-bdr">
         {DAYS.map((d, i) => (
           <button
             key={d}
@@ -286,7 +286,8 @@ export default function CalendarDayPage() {
       )}
 
       {/* Lista de períodos */}
-      <div className="space-y-2 mt-4">
+      <div className="card p-0 overflow-hidden">
+        <div className="divide-y divide-bdr/60">
         {periodos.map(p => {
           const sched = dayMine.find(s => s.timeSlot === p.slot)
           const abs   = sched ? dayAbsMap[p.slot] : null
@@ -294,10 +295,10 @@ export default function CalendarDayPage() {
           const subj  = store.subjects.find(x => x.id === sched?.subjectId)
 
           return (
-            <div key={p.aulaIdx} className={`p-3 rounded-xl border ${
-              abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' :
-              sched ? 'bg-surf border-bdr' :
-              'bg-surf2/50 border-bdr/50 opacity-50'}`}>
+            <div key={p.aulaIdx} className={`p-3 ${
+              abs ? 'bg-[#FFF1EE]' :
+              sched ? 'bg-surf' :
+              'bg-surf2/50 opacity-50'}`}>
               <div className="flex items-start gap-3">
                 <div className="text-center min-w-[60px] shrink-0">
                   <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
@@ -361,6 +362,7 @@ export default function CalendarDayPage() {
         {periodos.length === 0 && (
           <p className="text-center text-t3 py-10 text-sm">Nenhuma aula configurada para este professor.</p>
         )}
+        </div>
       </div>
     </div>
   )
