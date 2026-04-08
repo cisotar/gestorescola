@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { auth, provider } from '../lib/firebase'
-import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
+import { signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth'
 import { isAdmin, getTeacherByEmail, requestTeacherAccess, listPendingTeachers } from '../lib/db'
 
 const useAuthStore = create((set, get) => ({
@@ -13,6 +13,10 @@ const useAuthStore = create((set, get) => ({
   // ─── Init ──────────────────────────────────────────────────────────────────
   init: (teachers) => {
     return new Promise(resolve => {
+      getRedirectResult(auth).catch(e => {
+        console.warn('[auth redirect]', e.code, e.message)
+      })
+
       onAuthStateChanged(auth, async user => {
         set({ user, role: null, teacher: null })
         if (user) await get()._resolveRole(user, teachers)
@@ -41,8 +45,8 @@ const useAuthStore = create((set, get) => ({
   },
 
   login: async () => {
-    try { await signInWithPopup(auth, provider) }
-    catch (e) { if (e.code !== 'auth/popup-closed-by-user') alert('Erro ao fazer login: ' + e.message) }
+    try { await signInWithRedirect(auth, provider) }
+    catch (e) { alert('Erro ao fazer login: ' + e.message) }
   },
 
   logout: () => signOut(auth),
