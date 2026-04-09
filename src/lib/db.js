@@ -150,10 +150,6 @@ export async function requestTeacherAccess(user) {
   })
 }
 
-export async function updatePendingPhone(uid, celular) {
-  await updateDoc(doc(db, 'pending_teachers', uid), { celular })
-}
-
 export async function updatePendingData(uid, { celular, subjectIds }) {
   await updateDoc(doc(db, 'pending_teachers', uid), { celular, subjectIds })
 }
