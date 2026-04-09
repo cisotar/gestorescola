@@ -1076,14 +1076,34 @@ function ScheduleGrid({ teacher, store }) {
 
                               {/* Bloquear + se professor já tem aula neste horário */}
                               {teacherConflict ? (
-                                <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
-                                  title="Professor já tem aula neste horário">
-                                  🔒
-                                </div>
+                                <>
+                                  <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
+                                    title="Professor já tem aula neste horário">
+                                    🔒
+                                  </div>
+                                  {occupiedTurmas.map(turma => {
+                                    const sched = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.turma === turma)
+                                    const prof  = store.teachers.find(t => t.id === sched?.teacherId)
+                                    return (
+                                      <div key={turma} className="bg-surf2 border border-bdr rounded-lg p-1.5 text-[10px]">
+                                        <div className="font-bold truncate text-t2">{turma}</div>
+                                        <div className="text-t3 truncate">{prof?.name ?? '?'}</div>
+                                      </div>
+                                    )
+                                  })}
+                                </>
                               ) : freeTurmas.length === 0 ? (
-                                <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg bg-surf2 border border-dashed border-bdr"
-                                  title="Todas as turmas já têm professor neste horário">
-                                  —
+                                <div className="space-y-1">
+                                  {occupiedTurmas.map(turma => {
+                                    const sched = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.turma === turma)
+                                    const prof  = store.teachers.find(t => t.id === sched?.teacherId)
+                                    return (
+                                      <div key={turma} className="bg-surf2 border border-bdr rounded-lg p-1.5 text-[10px]">
+                                        <div className="font-bold truncate text-t2">{turma}</div>
+                                        <div className="text-t3 truncate">{prof?.name ?? '?'}</div>
+                                      </div>
+                                    )
+                                  })}
                                 </div>
                               ) : (
                                 <button
@@ -1149,6 +1169,14 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
       .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
       .map(s => s.turma)
   )
+  // Mapa turma → primeiro nome do professor que a ocupa
+  const occupiedByTeacher = {}
+  store.schedules
+    .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+    .forEach(s => {
+      const prof = store.teachers.find(t => t.id === s.teacherId)
+      occupiedByTeacher[s.turma] = prof?.name.split(' ')[0] ?? '?'
+    })
 
   const save = () => {
     if (!grade || !turma) return
@@ -1205,9 +1233,9 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
                         className={locked ? pillLock : turma === t ? pillOn : pillOff}
                         disabled={locked}
                         onClick={() => !locked && setTurma(t)}
-                        title={locked ? 'Esta turma já tem professor neste horário' : undefined}
+                        title={locked ? `Ocupado por ${occupiedByTeacher[t] ?? '?'}` : undefined}
                       >
-                        {locked ? `🔒 ${t}` : t}
+                        {locked ? `🔒 ${t} · ${occupiedByTeacher[t] ?? '?'}` : t}
                       </button>
                     )
                   })}
