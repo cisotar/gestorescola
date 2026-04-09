@@ -38,7 +38,8 @@ src/
 │   ├── CalendarPage.jsx
 │   ├── CalendarDayPage.jsx
 │   ├── AbsencesPage.jsx
-│   └── SettingsPage.jsx
+│   ├── SettingsPage.jsx
+│   └── WorkloadPage.jsx
 ├── components/
 │   ├── layout/
 │   │   ├── Layout.jsx   # Wrapper Navbar + Outlet
@@ -207,6 +208,7 @@ const HARDCODED_ADMINS = [
 /calendar/day   → CalendarDayPage     (mobile — requer location.state)
 /absences       → AbsencesPage        (admin + teacher)
 /settings       → SettingsPage        (tabs diferenciadas por role)
+/workload       → WorkloadPage        (admin)
 ```
 
 **Guards:** implícitos — `App.jsx` controla o que renderiza antes das rotas.
@@ -238,6 +240,7 @@ const tab = new URLSearchParams(useLocation().search).get('tab')
 | `CalendarDayPage` | admin | Visão mobile: pills de dias, swipe, cards de período colapsáveis |
 | `AbsencesPage` | ambos | Relatórios em 4 abas (por prof / dia / semana / mês) + export PDF |
 | `SettingsPage` | ambos | Admin: 6 tabs de config / Teacher: perfil + grade horária |
+| `WorkloadPage` | admin | Tabela completa de carga horária: aulas/sem, faltas e substituições por professor |
 
 **Componentes internos:** definidos no mesmo arquivo da página (acima do `export default`).
 Não são exportados — só usados localmente.
