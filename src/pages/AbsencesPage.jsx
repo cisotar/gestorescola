@@ -10,7 +10,9 @@ import {
   generateByDayHTML,
   generateByWeekHTML,
   generateByMonthHTML,
+  buildWhatsAppMessage,
 } from '../lib/reports'
+import Modal from '../components/ui/Modal'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -61,6 +63,43 @@ function UndoBar({ count, onUndo }) {
       <span className="text-sm font-semibold flex-1">{count} ausência{count !== 1 ? 's' : ''} removida{count !== 1 ? 's' : ''}</span>
       <button className="btn btn-sm bg-white text-amber-800 border-white hover:bg-amber-50" onClick={onUndo}>Desfazer</button>
     </div>
+  )
+}
+
+// ─── WhatsAppButton ───────────────────────────────────────────────────────────
+
+function WhatsAppButton({ mode, context, store }) {
+  const [open, setOpen] = useState(false)
+  const [phone, setPhone] = useState(() => localStorage.getItem('gestao_whatsapp_phone') ?? '')
+
+  const handleSend = () => {
+    const digits = phone.replace(/\D/g, '')
+    localStorage.setItem('gestao_whatsapp_phone', digits)
+    const msg = buildWhatsAppMessage(mode, context, store)
+    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`, '_blank')
+    setOpen(false)
+  }
+
+  return (
+    <>
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>📱 WhatsApp</button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Enviar por WhatsApp">
+        <div className="space-y-4">
+          <div>
+            <label className="lbl">Número WhatsApp</label>
+            <input className="inp" type="tel" placeholder="55 11 99999-9999" value={phone}
+              onChange={e => setPhone(e.target.value)} />
+            <p className="text-xs text-t3 mt-1">Incluir código do país. Ex: 5511999999999</p>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
+            <button className="btn btn-dark" onClick={handleSend} disabled={!phone.replace(/\D/g, '')}>
+              Abrir WhatsApp
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
   )
 }
 
@@ -320,6 +359,17 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, se
                   <div className="text-xs opacity-70" style={{ color: cv.tx }}>{teacherSubjectNames(teacher, store.subjects) || '—'}</div>
                 </div>
                 <button onClick={handlePDF} className="btn btn-ghost btn-xs shrink-0">📄 PDF</button>
+                {(() => {
+                  const waLabel = filter === 'day' ? formatBR(filterDate)
+                    : filter === 'week' ? (() => { const ws = weekStart(filterDate); const d = parseDate(ws); d.setDate(d.getDate() + 4); return `${formatBR(ws)} – ${formatBR(formatISO(d))}` })()
+                    : filter === 'month' ? `${MONTH_NAMES[filterMonth]} ${filterYear}`
+                    : 'Todos os registros'
+                  return (
+                    <WhatsAppButton mode="teacher"
+                      context={{ slots: detailSlots, label: waLabel, teacherName: teacher.name }}
+                      store={store} />
+                  )
+                })()}
               </div>
 
               {/* Filtros de período */}
@@ -435,7 +485,12 @@ function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate, selProps }) 
           </div>
         )}
         {slotsOnDate.length > 0 && (
-          <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+          <>
+            <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+            <WhatsAppButton mode="day"
+              context={{ slots: slotsOnDate, label: formatBR(date) }}
+              store={store} />
+          </>
         )}
       </div>
       <SelectionToolbar
@@ -505,7 +560,12 @@ function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef, selProps })
         )}
 
         {weekSlots.length > 0 && (
-          <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+          <>
+            <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+            <WhatsAppButton mode="week"
+              context={{ slots: weekSlots, label: weekLabel }}
+              store={store} />
+          </>
         )}
       </div>
 
@@ -597,7 +657,12 @@ function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef, selProps
         )}
 
         {monthSlots.length > 0 && (
-          <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+          <>
+            <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+            <WhatsAppButton mode="month"
+              context={{ slots: monthSlots, label: `${MONTH_NAMES[month]} ${year}` }}
+              store={store} />
+          </>
         )}
       </div>
 
