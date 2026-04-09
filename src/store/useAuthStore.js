@@ -1,14 +1,17 @@
 import { create } from 'zustand'
-import { auth, provider } from '../lib/firebase'
+import { auth, provider, db } from '../lib/firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
-import { isAdmin, getTeacherByEmail, requestTeacherAccess, listPendingTeachers } from '../lib/db'
+import { onSnapshot, collection, query, where } from 'firebase/firestore'
+import { isAdmin, getTeacherByEmail, requestTeacherAccess } from '../lib/db'
 
 const useAuthStore = create((set, get) => ({
-  user:      null,
-  role:      null,   // 'admin' | 'teacher' | 'pending' | null
-  teacher:   null,
-  loading:   true,
-  pendingCt: 0,
+  user:          null,
+  role:          null,   // 'admin' | 'teacher' | 'pending' | null
+  teacher:       null,
+  loading:       true,
+  pendingCt:     0,
+  _unsubPending: null,
+  _unsubApproval:null,
 
   // ─── Init ──────────────────────────────────────────────────────────────────
   init: (teachers) => {
@@ -24,9 +27,13 @@ const useAuthStore = create((set, get) => ({
 
   _resolveRole: async (user, teachers) => {
     if (await isAdmin(user.email)) {
-      let pendingCt = 0
-      try { pendingCt = (await listPendingTeachers()).length } catch {}
-      set({ role: 'admin', pendingCt })
+      const q = query(collection(db, 'pending_teachers'), where('status', '==', 'pending'))
+      const unsub = onSnapshot(
+        q,
+        snap => set({ pendingCt: snap.size }),
+        err  => console.warn('[pendingCt]', err)
+      )
+      set({ role: 'admin', pendingCt: 0, _unsubPending: unsub })
       return
     }
     try {
@@ -45,7 +52,12 @@ const useAuthStore = create((set, get) => ({
     catch (e) { if (e.code !== 'auth/popup-closed-by-user') alert('Erro ao fazer login: ' + e.message) }
   },
 
-  logout: () => signOut(auth),
+  logout: () => {
+    get()._unsubPending?.()
+    get()._unsubApproval?.()
+    set({ _unsubPending: null, _unsubApproval: null })
+    return signOut(auth)
+  },
 
   isAdmin:   () => get().role === 'admin',
   isTeacher: () => get().role === 'teacher',

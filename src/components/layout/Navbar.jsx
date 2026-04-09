@@ -18,7 +18,7 @@ function MobileMenuLink({ to, onClick, children }) {
 }
 
 export default function Navbar() {
-  const { user, role, logout } = useAuthStore()
+  const { user, role, logout, pendingCt } = useAuthStore()
   const navigate = useNavigate()
   const isAdmin   = role === 'admin'
   const firstName = user?.displayName?.split(' ')[0] ?? 'Usuário'
@@ -71,10 +71,15 @@ export default function Navbar() {
           </div>
           <NavLink
             to="/settings"
-            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors text-base"
+            className="relative w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors text-base"
             title={isAdmin ? 'Configurações' : 'Meu Perfil'}
           >
             ⚙️
+            {isAdmin && pendingCt > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                {pendingCt > 9 ? '9+' : pendingCt}
+              </span>
+            )}
           </NavLink>
           <button
             onClick={logout}
@@ -138,7 +143,14 @@ export default function Navbar() {
             <div className="py-1">
               <MobileMenuLink to={isAdmin ? '/dashboard' : '/home'} onClick={closeMenu}>🏠 Início</MobileMenuLink>
               <MobileMenuLink to="/absences" onClick={closeMenu}>📋 Relatório de Ausências</MobileMenuLink>
-              <MobileMenuLink to="/settings" onClick={closeMenu}>⚙️ {isAdmin ? 'Configurações' : 'Meu Perfil'}</MobileMenuLink>
+              <MobileMenuLink to="/settings" onClick={closeMenu}>
+                ⚙️ {isAdmin ? 'Configurações' : 'Meu Perfil'}
+                {isAdmin && pendingCt > 0 && (
+                  <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center">
+                    {pendingCt > 9 ? '9+' : pendingCt}
+                  </span>
+                )}
+              </MobileMenuLink>
             </div>
 
             {/* Sair */}
