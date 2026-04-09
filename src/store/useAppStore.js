@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { uid } from '../lib/helpers'
-import { saveToFirestore, saveDoc, deleteDocById, _saveToLS } from '../lib/db'
+import { saveToFirestore, saveDoc, deleteDocById, _saveToLS, patchTeacherSelf } from '../lib/db'
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import {
@@ -217,6 +217,10 @@ const useAppStore = create((set, get) => ({
   updateTeacher: (id, changes) => {
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
     get().save()
+  },
+  updateTeacherProfile: async (id, changes) => {
+    set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
+    await patchTeacherSelf(id, changes)
   },
   removeTeacher: (id) => {
     set(s => ({

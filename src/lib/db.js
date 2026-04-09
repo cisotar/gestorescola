@@ -159,6 +159,10 @@ export async function listPendingTeachers() {
   return snap.docs.map(d => d.data()).filter(d => d.status === 'pending')
 }
 
+export async function patchTeacherSelf(id, changes) {
+  await updateDoc(doc(db, 'teachers', id), changes)
+}
+
 export async function approveTeacher(pendingId, state, setState) {
   const ref  = doc(db, 'pending_teachers', pendingId)
   const snap = await getDoc(ref)

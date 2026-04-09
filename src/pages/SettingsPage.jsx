@@ -1394,13 +1394,13 @@ function TabProfile({ teacher }) {
         affectedCount:   affectedSchedules.length,
         onMigrate: isSwap ? () => {
           store.migrateScheduleSubject(t.id, removedIds[0], addedIds[0])
-          store.updateTeacher(t.id, { celular, subjectIds: selSubjs })
+          store.updateTeacherProfile(t.id, { celular, subjectIds: selSubjs })
           toast('Perfil salvo e horários migrados', 'ok')
           setSubjectChangeCtx(null)
         } : null,
         onRemove: () => {
           removedIds.forEach(sid => store.removeSchedulesBySubject(t.id, sid))
-          store.updateTeacher(t.id, { celular, subjectIds: selSubjs })
+          store.updateTeacherProfile(t.id, { celular, subjectIds: selSubjs })
           toast('Perfil salvo e horários removidos', 'ok')
           setSubjectChangeCtx(null)
         },
@@ -1409,7 +1409,7 @@ function TabProfile({ teacher }) {
       return
     }
 
-    store.updateTeacher(t.id, { celular, subjectIds: selSubjs })
+    store.updateTeacherProfile(t.id, { celular, subjectIds: selSubjs })
     toast('Perfil salvo', 'ok')
   }
 
