@@ -154,6 +154,10 @@ export async function updatePendingPhone(uid, celular) {
   await updateDoc(doc(db, 'pending_teachers', uid), { celular })
 }
 
+export async function updatePendingData(uid, { celular, subjectIds }) {
+  await updateDoc(doc(db, 'pending_teachers', uid), { celular, subjectIds })
+}
+
 export async function listPendingTeachers() {
   const snap = await getDocs(collection(db, 'pending_teachers'))
   return snap.docs.map(d => d.data()).filter(d => d.status === 'pending')
