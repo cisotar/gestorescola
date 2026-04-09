@@ -242,6 +242,24 @@ const useAppStore = create((set, get) => ({
     set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...changes } : x) }))
     get().save()
   },
+  migrateScheduleSubject: (teacherId, fromSubjectId, toSubjectId) => {
+    set(s => ({
+      schedules: s.schedules.map(x =>
+        x.teacherId === teacherId && x.subjectId === fromSubjectId
+          ? { ...x, subjectId: toSubjectId }
+          : x
+      ),
+    }))
+    get().save()
+  },
+  removeSchedulesBySubject: (teacherId, subjectId) => {
+    set(s => ({
+      schedules: s.schedules.filter(
+        x => !(x.teacherId === teacherId && x.subjectId === subjectId)
+      ),
+    }))
+    get().save()
+  },
 
   // ─── Ausências ───────────────────────────────────────────────────────────────
   createAbsence: (teacherId, rawSlots) => {

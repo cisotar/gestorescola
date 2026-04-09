@@ -80,6 +80,60 @@ function TurnoSelector({ seg, store }) {
   )
 }
 
+// ─── Helper: detectar mudança de matérias e horários afetados ────────────────
+
+function calcSubjectChange(teacher, newSubjectIds, schedules) {
+  const oldIds = teacher.subjectIds ?? []
+  const removedIds = oldIds.filter(id => !newSubjectIds.includes(id))
+  const addedIds   = newSubjectIds.filter(id => !oldIds.includes(id))
+  const affectedSchedules = schedules.filter(
+    s => s.teacherId === teacher.id && removedIds.includes(s.subjectId)
+  )
+  return { removedIds, addedIds, affectedSchedules }
+}
+
+// ─── Modal: troca/remoção de matérias com horários afetados ──────────────────
+
+function SubjectChangeModal({ ctx }) {
+  if (!ctx) return null
+  const isSwap   = ctx.removedSubjects.length === 1 && ctx.addedSubjects.length === 1
+  const fromName = ctx.removedSubjects.map(s => s.name).join(', ')
+  const toName   = ctx.addedSubjects.map(s => s.name).join(', ')
+  const n        = ctx.affectedCount
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-surf rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="text-3xl text-center">📅</div>
+        <h3 className="text-base font-bold text-center">
+          {isSwap ? 'O que fazer com os horários?' : 'Horários serão removidos'}
+        </h3>
+        <p className="text-sm text-t2 leading-relaxed text-center">
+          {isSwap ? (
+            <><strong>{ctx.teacher.name}</strong> tinha <strong>{n} horário{n !== 1 ? 's' : ''}</strong> de <strong>{fromName}</strong>. Esses horários podem ser migrados para <strong>{toName}</strong> ou removidos.</>
+          ) : (
+            <><strong>{ctx.teacher.name}</strong> tinha <strong>{n} horário{n !== 1 ? 's' : ''}</strong> de <strong>{fromName}</strong>. Eles serão removidos ao confirmar.</>
+          )}
+        </p>
+        <div className="flex flex-col gap-2 pt-1">
+          {isSwap && (
+            <button className="btn btn-dark w-full" onClick={ctx.onMigrate}>
+              Migrar para {toName}
+            </button>
+          )}
+          <button
+            className={`btn w-full ${isSwap ? 'btn-ghost text-err' : 'btn-dark'}`}
+            onClick={ctx.onRemove}
+          >
+            {isSwap ? 'Remover horários' : 'Confirmar remoção'}
+          </button>
+          <button className="btn btn-ghost w-full" onClick={ctx.onCancel}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Helper compartilhado: segmentos de um professor ─────────────────────────
 // Fonte única de verdade usada em TabTeachers, TabSchedules e ScheduleGrid.
 
@@ -391,6 +445,7 @@ function TabTeachers() {
   const [editId,       setEditId]       = useState(null)
   const [form,         setForm]         = useState({ name: '', email: '', celular: '', subjectIds: [] })
   const [view,         setView]         = useState('cards') // 'cards' | 'table'
+  const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
 
   // Carrega lista de admins para exibir/alterar status
   const [admins, setAdmins] = useState([])
@@ -437,6 +492,36 @@ function TabTeachers() {
   const save = () => {
     if (!form.name.trim()) return
     if (editId) {
+      const original = store.teachers.find(t => t.id === editId)
+      const { removedIds, addedIds, affectedSchedules } =
+        calcSubjectChange(original, form.subjectIds ?? [], store.schedules)
+
+      if (affectedSchedules.length > 0) {
+        setModal(false)
+        const isSwap = removedIds.length === 1 && addedIds.length === 1
+        const subjectsById = Object.fromEntries(store.subjects.map(s => [s.id, s]))
+        setSubjectChangeCtx({
+          teacher: original,
+          removedSubjects: removedIds.map(id => subjectsById[id] ?? { id, name: id }),
+          addedSubjects:   addedIds.map(id => subjectsById[id] ?? { id, name: id }),
+          affectedCount:   affectedSchedules.length,
+          onMigrate: isSwap ? () => {
+            store.migrateScheduleSubject(original.id, removedIds[0], addedIds[0])
+            store.updateTeacher(editId, form)
+            toast('Professor atualizado e horários migrados', 'ok')
+            setSubjectChangeCtx(null)
+          } : null,
+          onRemove: () => {
+            removedIds.forEach(sid => store.removeSchedulesBySubject(original.id, sid))
+            store.updateTeacher(editId, form)
+            toast('Professor atualizado e horários removidos', 'ok')
+            setSubjectChangeCtx(null)
+          },
+          onCancel: () => setSubjectChangeCtx(null),
+        })
+        return
+      }
+
       store.updateTeacher(editId, form)
       toast('Professor atualizado', 'ok')
     } else {
@@ -631,6 +716,7 @@ function TabTeachers() {
         teacher={schedTeacher}
         store={store}
       />
+      <SubjectChangeModal ctx={subjectChangeCtx} />
     </div>
   )
 }
@@ -1230,13 +1316,42 @@ function TabProfile({ teacher }) {
   const store = useAppStore()
   const { teacher: authTeacher } = useAuthStore()
   const t = teacher ?? authTeacher
-  const [celular,     setCelular]     = useState(t?.celular ?? '')
-  const [selSubjs,    setSelSubjs]    = useState(t?.subjectIds ?? [])
-  const [schedModal,  setSchedModal]  = useState(false)
+  const [celular,          setCelular]          = useState(t?.celular ?? '')
+  const [selSubjs,         setSelSubjs]         = useState(t?.subjectIds ?? [])
+  const [schedModal,       setSchedModal]       = useState(false)
+  const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
 
   if (!t) return <p className="text-t3 text-sm">Perfil não disponível.</p>
 
   const save = () => {
+    const { removedIds, addedIds, affectedSchedules } =
+      calcSubjectChange(t, selSubjs, store.schedules)
+
+    if (affectedSchedules.length > 0) {
+      const isSwap = removedIds.length === 1 && addedIds.length === 1
+      const subjectsById = Object.fromEntries(store.subjects.map(s => [s.id, s]))
+      setSubjectChangeCtx({
+        teacher: t,
+        removedSubjects: removedIds.map(id => subjectsById[id] ?? { id, name: id }),
+        addedSubjects:   addedIds.map(id => subjectsById[id] ?? { id, name: id }),
+        affectedCount:   affectedSchedules.length,
+        onMigrate: isSwap ? () => {
+          store.migrateScheduleSubject(t.id, removedIds[0], addedIds[0])
+          store.updateTeacher(t.id, { celular, subjectIds: selSubjs })
+          toast('Perfil salvo e horários migrados', 'ok')
+          setSubjectChangeCtx(null)
+        } : null,
+        onRemove: () => {
+          removedIds.forEach(sid => store.removeSchedulesBySubject(t.id, sid))
+          store.updateTeacher(t.id, { celular, subjectIds: selSubjs })
+          toast('Perfil salvo e horários removidos', 'ok')
+          setSubjectChangeCtx(null)
+        },
+        onCancel: () => setSubjectChangeCtx(null),
+      })
+      return
+    }
+
     store.updateTeacher(t.id, { celular, subjectIds: selSubjs })
     toast('Perfil salvo', 'ok')
   }
@@ -1289,6 +1404,7 @@ function TabProfile({ teacher }) {
         teacher={store.teachers.find(x => x.id === t.id) ?? t}
         store={store}
       />
+      <SubjectChangeModal ctx={subjectChangeCtx} />
     </div>
   )
 }
