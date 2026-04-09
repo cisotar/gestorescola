@@ -298,6 +298,12 @@ function TabDisciplines() {
   )
 }
 
+function isSharedSchedule(schedule, store) {
+  const subj = store.subjects.find(s => s.id === schedule.subjectId)
+  const area = store.areas.find(a => a.id === subj?.areaId)
+  return area?.shared === true
+}
+
 function AreaBlock({ area, store }) {
   const cv   = COLOR_PALETTE[area.colorIdx % COLOR_PALETTE.length]
   const subs = store.subjects.filter(s => s.areaId === area.id)
@@ -772,6 +778,7 @@ function TabTeachers() {
         onClose={() => setSchedModal(false)}
         teacher={schedTeacher}
         store={store}
+        isAdmin={true}
       />
       <SubjectChangeModal ctx={subjectChangeCtx} />
     </div>
@@ -979,23 +986,23 @@ function TabSchedules() {
         )}
       </div>
 
-      {teacher && <ScheduleGrid teacher={teacher} store={store} />}
+      {teacher && <ScheduleGrid teacher={teacher} store={store} isAdmin={true} />}
     </div>
   )
 }
 
 // ─── ScheduleGridModal — abre grade em modal (reutilizável) ──────────────────
 
-export function ScheduleGridModal({ open, onClose, teacher, store }) {
+export function ScheduleGridModal({ open, onClose, teacher, store, isAdmin = false }) {
   if (!teacher) return null
   return (
     <Modal open={open} onClose={onClose} title={`Grade de Horários — ${teacher.name}`} size="xl">
-      <ScheduleGrid teacher={teacher} store={store} />
+      <ScheduleGrid teacher={teacher} store={store} isAdmin={isAdmin} />
     </Modal>
   )
 }
 
-function ScheduleGrid({ teacher, store }) {
+function ScheduleGrid({ teacher, store, isAdmin = false }) {
   const { addSchedule, removeSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
 
@@ -1081,7 +1088,7 @@ function ScheduleGrid({ teacher, store }) {
                                     title="Professor já tem aula neste horário">
                                     🔒
                                   </div>
-                                  {occupiedTurmas.map(turma => {
+                                  {isAdmin && occupiedTurmas.map(turma => {
                                     const sched = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.turma === turma)
                                     const prof  = store.teachers.find(t => t.id === sched?.teacherId)
                                     return (
@@ -1093,18 +1100,25 @@ function ScheduleGrid({ teacher, store }) {
                                   })}
                                 </>
                               ) : freeTurmas.length === 0 ? (
-                                <div className="space-y-1">
-                                  {occupiedTurmas.map(turma => {
-                                    const sched = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.turma === turma)
-                                    const prof  = store.teachers.find(t => t.id === sched?.teacherId)
-                                    return (
-                                      <div key={turma} className="bg-surf2 border border-bdr rounded-lg p-1.5 text-[10px]">
-                                        <div className="font-bold truncate text-t2">{turma}</div>
-                                        <div className="text-t3 truncate">{prof?.name ?? '?'}</div>
-                                      </div>
-                                    )
-                                  })}
-                                </div>
+                                isAdmin ? (
+                                  <div className="space-y-1">
+                                    {occupiedTurmas.map(turma => {
+                                      const sched = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.turma === turma)
+                                      const prof  = store.teachers.find(t => t.id === sched?.teacherId)
+                                      return (
+                                        <div key={turma} className="bg-surf2 border border-bdr rounded-lg p-1.5 text-[10px]">
+                                          <div className="font-bold truncate text-t2">{turma}</div>
+                                          <div className="text-t3 truncate">{prof?.name ?? '?'}</div>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg bg-surf2 border border-dashed border-bdr"
+                                    title="Todas as turmas já têm professor neste horário">
+                                    —
+                                  </div>
+                                )
                               ) : (
                                 <button
                                   onClick={() => setModal({ segId: seg.id, turno, aulaIdx: p.aulaIdx, day })}
@@ -1399,7 +1413,8 @@ function AdminsModal({ open, onClose }) {
 
 function TabProfile({ teacher }) {
   const store = useAppStore()
-  const { teacher: authTeacher } = useAuthStore()
+  const { teacher: authTeacher, role } = useAuthStore()
+  const isAdmin = role === 'admin'
   const t = teacher ?? authTeacher
   const [celular,          setCelular]          = useState(t?.celular ?? '')
   const [selSubjs,         setSelSubjs]         = useState(t?.subjectIds ?? [])
@@ -1488,6 +1503,7 @@ function TabProfile({ teacher }) {
         onClose={() => setSchedModal(false)}
         teacher={store.teachers.find(x => x.id === t.id) ?? t}
         store={store}
+        isAdmin={isAdmin}
       />
       <SubjectChangeModal ctx={subjectChangeCtx} />
     </div>
