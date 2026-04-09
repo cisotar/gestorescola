@@ -7,11 +7,15 @@ import { formatBR } from '../lib/helpers'
 
 // ─── Helpers locais ───────────────────────────────────────────────────────────
 
-function getTeacherStats(teacherId, schedules, history) {
-  const sched    = schedules.filter(s => s.teacherId === teacherId).length
-  const absences = history.filter(h => h.teacherId === teacherId).length
-  const subsGiven= history.filter(h => h.subId === teacherId).length
-  return { schedules: sched, absences, subsGiven }
+function getTeacherStats(teacherId, schedules, absences) {
+  const sc      = schedules.filter(s => s.teacherId === teacherId).length
+  const faltas  = absences
+    .filter(ab => ab.teacherId === teacherId)
+    .reduce((acc, ab) => acc + ab.slots.length, 0)
+  const subs    = absences
+    .flatMap(ab => ab.slots)
+    .filter(sl => sl.substituteId === teacherId).length
+  return { schedules: sc, absences: faltas, subsGiven: subs }
 }
 
 // ─── Componentes ─────────────────────────────────────────────────────────────
@@ -137,7 +141,7 @@ export default function DashboardPage() {
       {/* Tabelas (admin) */}
       {isAdmin && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <WorkloadTable teachers={teachers} schedules={schedules} history={history} maxLoad={danger} />
+          <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} maxLoad={danger} />
           <HistoryPanel history={history} />
         </div>
       )}
@@ -152,21 +156,28 @@ export default function DashboardPage() {
 
 // ─── Workload table ───────────────────────────────────────────────────────────
 
-function WorkloadTable({ teachers, schedules, history, maxLoad }) {
+function WorkloadTable({ teachers, schedules, absences, maxLoad }) {
+  const navigate = useNavigate()
   if (!teachers.length) return (
     <div className="card text-center text-t3 py-10">Nenhum professor cadastrado.</div>
   )
 
   const rows = teachers
-    .map(t => ({ t, ...getTeacherStats(t.id, schedules, history) }))
+    .map(t => ({ t, ...getTeacherStats(t.id, schedules, absences) }))
     .sort((a, b) => b.schedules - a.schedules)
 
   return (
     <div className="card p-0 overflow-hidden">
-      <div className="px-4 py-3 border-b border-bdr">
-        <div className="font-bold text-sm">Carga Horária</div>
-        <div className="text-xs text-t3">Aulas / semana · limite: {maxLoad}</div>
-      </div>
+      <button
+        onClick={() => navigate('/workload')}
+        className="w-full px-4 py-3 border-b border-bdr text-left hover:bg-surf2 transition-colors flex items-center justify-between"
+      >
+        <div>
+          <div className="font-bold text-sm">Carga Horária</div>
+          <div className="text-xs text-t3">Aulas / semana · limite: {maxLoad}</div>
+        </div>
+        <span className="text-t3 text-lg">›</span>
+      </button>
       <div className="overflow-y-auto max-h-[360px] scroll-thin">
         <table className="w-full text-sm border-collapse">
           <thead>
