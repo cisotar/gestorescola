@@ -446,14 +446,30 @@ function TabTeachers() {
   const [form,         setForm]         = useState({ name: '', email: '', celular: '', subjectIds: [] })
   const [view,         setView]         = useState('cards') // 'cards' | 'table'
   const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
+  const [pending,          setPending]          = useState([])
+  const [pendLoaded,       setPendLoaded]       = useState(false)
 
-  // Carrega lista de admins para exibir/alterar status
+  // Carrega lista de admins e professores pendentes ao montar
   const [admins, setAdmins] = useState([])
   useEffect(() => {
     listAdmins().then(list => setAdmins(list.map(a => a.email.toLowerCase())))
+    listPendingTeachers().then(list => { setPending(list); setPendLoaded(true) })
   }, [])
 
   const isTeacherAdmin = (t) => admins.includes((t.email ?? '').toLowerCase())
+
+  const handleApprove = async (p) => {
+    await approveTeacher(p.id, store, store.hydrate)
+    setPending(prev => prev.filter(x => x.id !== p.id))
+    toast(`${p.name} aprovado`, 'ok')
+  }
+
+  const handleReject = async (p) => {
+    if (!confirm(`Recusar acesso de ${p.name}?`)) return
+    await rejectTeacher(p.id)
+    setPending(prev => prev.filter(x => x.id !== p.id))
+    toast(`${p.name} recusado`, 'warn')
+  }
 
   const handleStatusChange = async (t, newRole) => {
     if (newRole === 'admin') {
@@ -484,7 +500,10 @@ function TabTeachers() {
       .map(seg => seg.name)
       .join(', ') || '—'
 
-  const allTeachersSorted = [...store.teachers].sort((a, b) => a.name.localeCompare(b.name))
+  const approvedRows = [...store.teachers].sort((a, b) => a.name.localeCompare(b.name))
+  const pendingRows  = [...pending].sort((a, b) => a.name.localeCompare(b.name))
+    .map(p => ({ ...p, _isPending: true }))
+  const allRows = [...approvedRows, ...pendingRows]
 
   const openAdd  = () => { setForm({ name: '', email: '', celular: '', subjectIds: [] }); setEditId(null); setModal(true) }
   const openEdit = (t) => { setForm({ name: t.name, email: t.email ?? '', celular: t.celular ?? '', subjectIds: t.subjectIds ?? [] }); setEditId(t.id); setModal(true) }
@@ -557,20 +576,36 @@ function TabTeachers() {
               </tr>
             </thead>
             <tbody>
-              {allTeachersSorted.map(t => (
-                <tr key={t.id} className="border-b border-bdr/50 hover:bg-surf2/50">
+              {allRows.map(t => (
+                <tr key={t.id} className={`border-b border-bdr/50 hover:bg-surf2/50 ${t._isPending ? 'bg-amber-50/40' : ''}`}>
                   <td className="px-3 py-2.5 font-semibold text-sm">{t.name}</td>
-                  <td className="px-3 py-2.5 text-xs text-t2">{t.email || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs text-t2">{t.celular || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs">{teacherSegmentNames(t)}</td>
-                  <td className="px-3 py-2.5 text-xs text-t2 max-w-[160px] truncate">{teacherSubjectNames(t, store.subjects) || '—'}</td>
-                  <td className="px-3 py-2.5"><StatusSelect t={t} /></td>
+                  <td className="px-3 py-2.5 text-xs text-t1">{t.email || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs text-t1">{t.celular || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs text-t1">
+                    {t._isPending ? <span className="text-warn">—</span> : (teacherSegmentNames(t) || '—')}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs text-t1 max-w-[160px] truncate">
+                    {t._isPending ? <span className="text-warn">—</span> : (teacherSubjectNames(t, store.subjects) || '—')}
+                  </td>
                   <td className="px-3 py-2.5">
-                    <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
+                    {t._isPending
+                      ? <span className="badge bg-warn/10 text-warn border border-warn/30">Pendente</span>
+                      : <StatusSelect t={t} />
+                    }
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {t._isPending ? (
+                      <div className="flex gap-1">
+                        <button className="btn btn-dark btn-xs" onClick={() => handleApprove(t)}>Aprovar</button>
+                        <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(t)}>✕</button>
+                      </div>
+                    ) : (
+                      <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
+                    )}
                   </td>
                 </tr>
               ))}
-              {allTeachersSorted.length === 0 && (
+              {allRows.length === 0 && (
                 <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-t3">Nenhum professor cadastrado.</td></tr>
               )}
             </tbody>
@@ -601,9 +636,9 @@ function TabTeachers() {
                           style={{ background: cv.tg, color: cv.tx }}>{t.name.charAt(0)}</div>
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-sm truncate">{t.name}</div>
-                          <div className="text-[11px] text-t3 truncate">{teacherSubjectNames(t, store.subjects) || '—'}</div>
-                          {t.email   && <div className="text-[11px] text-t3 truncate">✉ {t.email}</div>}
-                          {t.celular && <div className="text-[11px] text-t3 truncate">📱 {t.celular}</div>}
+                          <div className="text-xs text-t1 truncate">{teacherSubjectNames(t, store.subjects) || '—'}</div>
+                          {t.email   && <div className="text-xs text-t1 truncate">✉ {t.email}</div>}
+                          {t.celular && <div className="text-xs text-t1 truncate">📱 {t.celular}</div>}
                           <div className="mt-1.5"><StatusSelect t={t} /></div>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
@@ -622,18 +657,40 @@ function TabTeachers() {
             )
           })}
 
-          {/* Professores sem segmento */}
+          {/* Professores sem segmento + pendentes */}
           {(() => {
             const unassigned = store.teachers.filter(t =>
               teacherSegmentIds(t, store.subjects, store.areas).length === 0
             ).sort((a, b) => a.name.localeCompare(b.name))
-            if (!unassigned.length) return null
+            const hasPending    = pending.length > 0
+            const hasUnassigned = unassigned.length > 0
+            if (!hasPending && !hasUnassigned) return null
+            const total = pending.length + unassigned.length
             return (
               <div className="card border-dashed border-warn/50 bg-amber-50/30">
                 <div className="font-bold text-sm mb-3 pb-2 border-b border-bdr text-amber-700">
-                  ⚠ Sem segmento definido <span className="text-xs font-normal text-t3 ml-1">{unassigned.length} prof.</span>
+                  ⚠ Sem segmento definido <span className="text-xs font-normal text-t3 ml-1">{total} prof.</span>
                 </div>
                 <div className="space-y-2">
+                  {/* Pendentes */}
+                  {pending.map(p => (
+                    <div key={p.id} className="flex items-start gap-2 p-2 rounded-xl border border-warn/30 bg-amber-50/60">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 bg-amber-100 text-amber-700">
+                        {p.name.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">{p.name}</div>
+                        <span className="badge bg-warn/10 text-warn border border-warn/30 text-[10px] mb-1">Pendente</span>
+                        <div className="text-xs text-t1 truncate">✉ {p.email}</div>
+                        {p.celular && <div className="text-xs text-t1 truncate">📱 {p.celular}</div>}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <button className="btn btn-dark btn-xs" onClick={() => handleApprove(p)}>Aprovar</button>
+                        <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(p)}>Recusar</button>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Aprovados sem segmento */}
                   {unassigned.map(t => {
                     const ct = store.schedules.filter(s => s.teacherId === t.id).length
                     return (
@@ -644,8 +701,8 @@ function TabTeachers() {
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-sm truncate">{t.name}</div>
                           <div className="text-[11px] text-amber-600 truncate">Sem matéria associada — clique em ✏️ para configurar</div>
-                          {t.email   && <div className="text-[11px] text-t3 truncate">✉ {t.email}</div>}
-                          {t.celular && <div className="text-[11px] text-t3 truncate">📱 {t.celular}</div>}
+                          {t.email   && <div className="text-xs text-t1 truncate">✉ {t.email}</div>}
+                          {t.celular && <div className="text-xs text-t1 truncate">📱 {t.celular}</div>}
                           <div className="mt-1.5"><StatusSelect t={t} /></div>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
