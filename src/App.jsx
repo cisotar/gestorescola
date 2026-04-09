@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuthStore from './store/useAuthStore'
 import useAppStore from './store/useAppStore'
 import { loadFromFirestore } from './lib/db'
+import { onSnapshot, collection } from 'firebase/firestore'
+import { db } from './lib/firebase'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
 import PendingPage from './pages/PendingPage'
@@ -18,11 +20,20 @@ import Spinner from './components/ui/Spinner'
 export default function App() {
   const { loading, role, init } = useAuthStore()
   const isAdmin = role === 'admin'
-  const { hydrate, teachers, loaded } = useAppStore()
+  const { hydrate, setTeachers, teachers, loaded } = useAppStore()
 
-  // 1. Carrega Firestore
+  // 1. Carrega Firestore e inicia listener em tempo real de professores
   useEffect(() => {
-    loadFromFirestore().then(data => hydrate(data))
+    let unsub
+    loadFromFirestore().then(data => {
+      hydrate(data)
+      unsub = onSnapshot(
+        collection(db, 'teachers'),
+        snap => setTeachers(snap.docs.map(d => d.data())),
+        err  => console.warn('[teachersListener]', err)
+      )
+    })
+    return () => unsub?.()
   }, [])
 
   // 2. Inicia auth depois que teachers carregou

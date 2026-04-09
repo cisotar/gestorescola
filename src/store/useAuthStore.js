@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { auth, provider, db } from '../lib/firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
-import { onSnapshot, collection, query, where } from 'firebase/firestore'
+import { onSnapshot, collection, query, where, doc } from 'firebase/firestore'
 import { isAdmin, getTeacherByEmail, requestTeacherAccess } from '../lib/db'
+import useAppStore from './useAppStore'
 
 const useAuthStore = create((set, get) => ({
   user:          null,
@@ -45,6 +46,22 @@ const useAuthStore = create((set, get) => ({
     } catch (e) { console.warn('[auth]', e) }
     set({ role: 'pending' })
     try { await requestTeacherAccess(user) } catch {}
+    const unsub = onSnapshot(
+      doc(db, 'pending_teachers', user.uid),
+      async snap => {
+        if (!snap.exists()) {
+          unsub()
+          set({ _unsubApproval: null })
+          const teachers = useAppStore.getState().teachers
+          const teacher = await getTeacherByEmail(user.email, teachers)
+          if (teacher?.status === 'approved') {
+            set({ role: 'teacher', teacher })
+          }
+        }
+      },
+      err => console.warn('[approvalListener]', err)
+    )
+    set({ _unsubApproval: unsub })
   },
 
   login: async () => {
