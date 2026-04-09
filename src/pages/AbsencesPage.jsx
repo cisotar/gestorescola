@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, weekStart, formatISO, parseDate } from '../lib/helpers'
@@ -15,9 +15,58 @@ import {
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
+// ─── SelectionToolbar ─────────────────────────────────────────────────────────
+
+function SelectionToolbar({ isAdmin, selectionMode, setSelectionMode, visibleSlots, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs }) {
+  if (!isAdmin) return null
+  return (
+    <div className="flex gap-2 flex-wrap items-center mb-3">
+      <button
+        className={`btn btn-xs ${selectionMode ? 'btn-dark' : 'btn-ghost'}`}
+        onClick={() => { setSelectionMode(v => !v); onClearAll() }}
+      >
+        {selectionMode ? '✕ Cancelar' : '☑ Selecionar'}
+      </button>
+      {selectionMode && (
+        <>
+          <button className="btn btn-ghost btn-xs" onClick={() => onSelectAll(visibleSlots)}>Selecionar tudo</button>
+          <button className="btn btn-ghost btn-xs" onClick={onClearAll}>Desmarcar tudo</button>
+          <button className="btn btn-ghost btn-xs" onClick={() => onSelectFaltas(visibleSlots)}>Só faltas</button>
+          <button className="btn btn-ghost btn-xs" onClick={() => onSelectSubs(visibleSlots)}>Só substituições</button>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── BulkActionBar ────────────────────────────────────────────────────────────
+
+function BulkActionBar({ count, onDelete, onClear }) {
+  if (count === 0) return null
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-navy text-white px-5 py-3 flex items-center gap-3 shadow-2xl">
+      <span className="text-sm font-semibold flex-1">{count} ausência{count !== 1 ? 's' : ''} selecionada{count !== 1 ? 's' : ''}</span>
+      <button className="btn btn-ghost btn-sm text-white border-white/30 hover:border-white" onClick={onClear}>Desmarcar tudo</button>
+      <button className="btn btn-sm bg-err text-white border-err hover:bg-red-700" onClick={onDelete}>Excluir selecionadas</button>
+    </div>
+  )
+}
+
+// ─── UndoBar ──────────────────────────────────────────────────────────────────
+
+function UndoBar({ count, onUndo }) {
+  if (!count) return null
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-amber-700 text-white px-5 py-3 flex items-center gap-3 shadow-2xl">
+      <span className="text-sm font-semibold flex-1">{count} ausência{count !== 1 ? 's' : ''} removida{count !== 1 ? 's' : ''}</span>
+      <button className="btn btn-sm bg-white text-amber-800 border-white hover:bg-amber-50" onClick={onUndo}>Desfazer</button>
+    </div>
+  )
+}
+
 // ─── SlotRow ──────────────────────────────────────────────────────────────────
 
-function SlotRow({ sl, store, isAdmin, showTeacher = false }) {
+function SlotRow({ sl, store, isAdmin, showTeacher = false, selectionMode = false, isSelected = false, onToggle }) {
   const { deleteAbsenceSlot } = useAppStore()
   const subj    = store.subjects.find(s => s.id === sl.subjectId)
   const sub     = sl.substituteId ? store.teachers.find(t => t.id === sl.substituteId) : null
@@ -26,7 +75,18 @@ function SlotRow({ sl, store, isAdmin, showTeacher = false }) {
   const teacher = showTeacher ? store.teachers.find(t => t.id === sl.teacherId) : null
 
   return (
-    <div className="flex items-center gap-3 py-2.5 border-b border-bdr/60 last:border-0">
+    <div
+      className={`flex items-center gap-3 py-2.5 border-b border-bdr/60 last:border-0 transition-colors
+        ${isSelected ? 'bg-accent-l' : ''}`}
+    >
+      {selectionMode && isAdmin && (
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggle(sl.id)}
+          className="shrink-0 w-4 h-4 accent-accent cursor-pointer"
+        />
+      )}
       <div className="min-w-[68px] font-mono text-[11px] text-t1 shrink-0">
         <div className="font-bold">{aula?.label ?? slotLabel(sl.timeSlot, store.periodConfigs)}</div>
         <div className="text-t3 text-[10px]">{aula?.inicio ?? ''}–{aula?.fim ?? ''}</div>
@@ -41,7 +101,7 @@ function SlotRow({ sl, store, isAdmin, showTeacher = false }) {
           ? <div className="text-xs font-bold text-ok">✓ {sub.name}</div>
           : <div className="text-xs font-bold text-err">⚠ Sem sub.</div>}
       </div>
-      {isAdmin && (
+      {isAdmin && !selectionMode && (
         <button
           onClick={() => { deleteAbsenceSlot(sl.absenceId, sl.id); toast('Falta removida', 'ok') }}
           className="text-t3 hover:text-err transition-colors text-sm shrink-0"
@@ -64,6 +124,45 @@ export default function AbsencesPage() {
   const [weekRef,    setWeekRef]    = useState(null)
   const [monthRef,   setMonthRef]   = useState(null)
 
+  // Seleção em lote
+  const [selectedIds,   setSelectedIds]   = useState(new Set())
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [undoBuffer,    setUndoBuffer]    = useState(null) // { absences, count }
+  const [undoTimer,     setUndoTimer]     = useState(null)
+
+  const onToggle = (id) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const onSelectAll   = (slots) => setSelectedIds(new Set(slots.map(sl => sl.id)))
+  const onClearAll    = () => setSelectedIds(new Set())
+  const onSelectFaltas = (slots) => setSelectedIds(new Set(slots.filter(sl => !sl.substituteId).map(sl => sl.id)))
+  const onSelectSubs  = (slots) => setSelectedIds(new Set(slots.filter(sl => sl.substituteId).map(sl => sl.id)))
+
+  const handleBulkDelete = () => {
+    const count = selectedIds.size
+    if (!count) return
+    const snapshot = store.absences
+    store.deleteManySlots(selectedIds)
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+    setUndoBuffer({ absences: snapshot, count })
+    toast(`${count} ausência${count !== 1 ? 's' : ''} removida${count !== 1 ? 's' : ''}`, 'warn')
+    const t = setTimeout(() => setUndoBuffer(null), 5000)
+    setUndoTimer(t)
+  }
+
+  const handleUndo = () => {
+    if (!undoBuffer) return
+    store.restoreAbsences(undoBuffer.absences)
+    clearTimeout(undoTimer)
+    setUndoBuffer(null)
+    toast('Exclusão desfeita', 'ok')
+  }
+
+  const selProps = { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs }
+
   const allSlots = useMemo(() =>
     (store.absences ?? []).flatMap(ab =>
       ab.slots.map(sl => ({ ...sl, teacherId: ab.teacherId, absenceId: ab.id }))
@@ -77,8 +176,13 @@ export default function AbsencesPage() {
     { id: 'month',   label: '📆 Por Mês' },
   ]
 
+  const handleTabChange = (id) => {
+    setMode(id); setSelTeacher(null); setSelDate(null)
+    setSelectionMode(false); setSelectedIds(new Set())
+  }
+
   return (
-    <div>
+    <div className={selectedIds.size > 0 || undoBuffer ? 'pb-16' : ''}>
       <div className="mb-5">
         <h1 className="text-xl font-extrabold tracking-tight">Relatório de Ausências</h1>
       </div>
@@ -87,24 +191,30 @@ export default function AbsencesPage() {
         {tabs.map(t => (
           <button
             key={t.id}
-            onClick={() => { setMode(t.id); setSelTeacher(null); setSelDate(null) }}
+            onClick={() => handleTabChange(t.id)}
             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors border
               ${mode === t.id ? 'bg-navy text-white border-navy' : 'bg-surf text-t2 border-bdr hover:border-t3'}`}
           >{t.label}</button>
         ))}
       </div>
 
-      {mode === 'teacher' && <ViewByTeacher store={store} isAdmin={isAdmin} allSlots={allSlots} selTeacher={selTeacher} setSelTeacher={setSelTeacher} />}
-      {mode === 'day'     && <ViewByDay     store={store} isAdmin={isAdmin} allSlots={allSlots} selDate={selDate}       setSelDate={setSelDate} />}
-      {mode === 'week'    && <ViewByWeek    store={store} isAdmin={isAdmin} allSlots={allSlots} weekRef={weekRef}       setWeekRef={setWeekRef} />}
-      {mode === 'month'   && <ViewByMonth   store={store} isAdmin={isAdmin} allSlots={allSlots} monthRef={monthRef}     setMonthRef={setMonthRef} />}
+      {mode === 'teacher' && <ViewByTeacher store={store} isAdmin={isAdmin} allSlots={allSlots} selTeacher={selTeacher} setSelTeacher={setSelTeacher} selProps={selProps} />}
+      {mode === 'day'     && <ViewByDay     store={store} isAdmin={isAdmin} allSlots={allSlots} selDate={selDate}       setSelDate={setSelDate}       selProps={selProps} />}
+      {mode === 'week'    && <ViewByWeek    store={store} isAdmin={isAdmin} allSlots={allSlots} weekRef={weekRef}       setWeekRef={setWeekRef}       selProps={selProps} />}
+      {mode === 'month'   && <ViewByMonth   store={store} isAdmin={isAdmin} allSlots={allSlots} monthRef={monthRef}     setMonthRef={setMonthRef}     selProps={selProps} />}
+
+      {undoBuffer
+        ? <UndoBar count={undoBuffer.count} onUndo={handleUndo} />
+        : <BulkActionBar count={selectedIds.size} onDelete={handleBulkDelete} onClear={onClearAll} />
+      }
     </div>
   )
 }
 
 // ─── View: Por Professor ──────────────────────────────────────────────────────
 
-function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) {
+function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, selProps }) {
+  const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
   const [filter, setFilter] = useState('all') // 'all' | 'day' | 'week' | 'month'
   const [filterDate,  setFilterDate]  = useState(new Date().toISOString().split('T')[0])
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth())
@@ -149,7 +259,7 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) 
       })
     const byDate = {}
     slots.forEach(sl => { if (!byDate[sl.date]) byDate[sl.date] = []; byDate[sl.date].push(sl) })
-    return { teacher, byDate, total: slots.length }
+    return { teacher, byDate, total: slots.length, slots }
   })() : null
 
   return (
@@ -196,7 +306,7 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) 
             </div>
           </div>
         ) : (() => {
-          const { teacher, byDate, total } = detail
+          const { teacher, byDate, total, slots: detailSlots } = detail
           const cv = colorOfTeacher(teacher, store)
           return (
             <div>
@@ -241,6 +351,18 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) 
                 <span className="text-xs text-t3 ml-1">{total} aula{total !== 1 ? 's' : ''}</span>
               </div>
 
+              {/* SelectionToolbar */}
+              <SelectionToolbar
+                isAdmin={isAdmin}
+                selectionMode={selectionMode}
+                setSelectionMode={setSelectionMode}
+                visibleSlots={detailSlots}
+                onSelectAll={onSelectAll}
+                onClearAll={onClearAll}
+                onSelectFaltas={onSelectFaltas}
+                onSelectSubs={onSelectSubs}
+              />
+
               {/* Registros */}
               {Object.keys(byDate).length === 0 ? (
                 <div className="card text-center py-8">
@@ -250,9 +372,9 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) 
               ) : (
                 <div className="space-y-3">
                   {Object.keys(byDate).sort().map(date => {
-                    const slots = byDate[date]
-                    const covered = slots.filter(s => s.substituteId).length
-                    const statusColor = covered === slots.length ? 'text-ok' : covered > 0 ? 'text-amber-600' : 'text-err'
+                    const dateSlots = byDate[date]
+                    const covered = dateSlots.filter(s => s.substituteId).length
+                    const statusColor = covered === dateSlots.length ? 'text-ok' : covered > 0 ? 'text-amber-600' : 'text-err'
                     return (
                       <div key={date} className="card">
                         <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-bdr">
@@ -261,10 +383,13 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) 
                             <div className="font-mono text-xs text-t2">{formatBR(date)}</div>
                           </div>
                           <div className={`text-xs font-bold ${statusColor}`}>
-                            {covered === slots.length ? '✓ Coberta' : covered > 0 ? `⚠ ${covered}/${slots.length}` : '✕ Sem sub.'}
+                            {covered === dateSlots.length ? '✓ Coberta' : covered > 0 ? `⚠ ${covered}/${dateSlots.length}` : '✕ Sem sub.'}
                           </div>
                         </div>
-                        {slots.map(sl => <SlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin} />)}
+                        {dateSlots.map(sl => (
+                          <SlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin}
+                            selectionMode={selectionMode} isSelected={selectedIds.has(sl.id)} onToggle={onToggle} />
+                        ))}
                       </div>
                     )
                   })}
@@ -280,7 +405,8 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher }) 
 
 // ─── View: Por Dia ────────────────────────────────────────────────────────────
 
-function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate }) {
+function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate, selProps }) {
+  const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
   const today = new Date().toISOString().split('T')[0]
   const date  = selDate ?? today
   const datesWithAbs = [...new Set(allSlots.map(s => s.date))].sort().reverse()
@@ -312,13 +438,24 @@ function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate }) {
           <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
         )}
       </div>
+      <SelectionToolbar
+        isAdmin={isAdmin}
+        selectionMode={selectionMode}
+        setSelectionMode={setSelectionMode}
+        visibleSlots={slotsOnDate}
+        onSelectAll={onSelectAll}
+        onClearAll={onClearAll}
+        onSelectFaltas={onSelectFaltas}
+        onSelectSubs={onSelectSubs}
+      />
       {slotsOnDate.length === 0 ? (
         <div className="card text-center py-10">
           <div className="text-3xl mb-2">✅</div>
           <div className="text-sm font-bold text-t2">Sem ausências em {formatBR(date)}</div>
         </div>
       ) : (
-        <GroupedByTeacher slots={slotsOnDate} store={store} isAdmin={isAdmin} />
+        <GroupedByTeacher slots={slotsOnDate} store={store} isAdmin={isAdmin}
+          selectedIds={selectedIds} selectionMode={selectionMode} onToggle={onToggle} />
       )}
     </div>
   )
@@ -326,7 +463,8 @@ function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate }) {
 
 // ─── View: Por Semana ─────────────────────────────────────────────────────────
 
-function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef }) {
+function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef, selProps }) {
+  const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
   const [filterTeacher, setFilterTeacher] = useState('')
   const refDate = weekRef ? parseDate(weekRef) : new Date()
   const monISO  = weekStart(formatISO(refDate))
@@ -371,6 +509,17 @@ function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef }) {
         )}
       </div>
 
+      <SelectionToolbar
+        isAdmin={isAdmin}
+        selectionMode={selectionMode}
+        setSelectionMode={setSelectionMode}
+        visibleSlots={weekSlots}
+        onSelectAll={onSelectAll}
+        onClearAll={onClearAll}
+        onSelectFaltas={onSelectFaltas}
+        onSelectSubs={onSelectSubs}
+      />
+
       {weekSlots.length === 0 ? (
         <div className="card text-center py-10">
           <div className="text-3xl mb-2">✅</div>
@@ -384,7 +533,8 @@ function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef }) {
             <div className="text-xs font-bold text-t2 uppercase tracking-wide mb-2">
               {dateToDayLabel(date)} · {formatBR(date)}
             </div>
-            <GroupedByTeacher slots={daySlots} store={store} isAdmin={isAdmin} />
+            <GroupedByTeacher slots={daySlots} store={store} isAdmin={isAdmin}
+              selectedIds={selectedIds} selectionMode={selectionMode} onToggle={onToggle} />
           </div>
         )
       })}
@@ -394,7 +544,8 @@ function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef }) {
 
 // ─── View: Por Mês ────────────────────────────────────────────────────────────
 
-function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef }) {
+function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef, selProps }) {
+  const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
   const [filterTeacher, setFilterTeacher] = useState('')
   const refDate = monthRef ? parseDate(monthRef) : new Date()
   const year    = refDate.getFullYear()
@@ -450,6 +601,17 @@ function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef }) {
         )}
       </div>
 
+      <SelectionToolbar
+        isAdmin={isAdmin}
+        selectionMode={selectionMode}
+        setSelectionMode={setSelectionMode}
+        visibleSlots={monthSlots}
+        onSelectAll={onSelectAll}
+        onClearAll={onClearAll}
+        onSelectFaltas={onSelectFaltas}
+        onSelectSubs={onSelectSubs}
+      />
+
       {monthSlots.length === 0 ? (
         <div className="card text-center py-10">
           <div className="text-3xl mb-2">✅</div>
@@ -460,7 +622,8 @@ function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef }) {
           <div className="text-xs font-bold text-t2 uppercase tracking-wide mb-2">
             {dateToDayLabel(date)} · {formatBR(date)}
           </div>
-          <GroupedByTeacher slots={byDate[date]} store={store} isAdmin={isAdmin} />
+          <GroupedByTeacher slots={byDate[date]} store={store} isAdmin={isAdmin}
+            selectedIds={selectedIds} selectionMode={selectionMode} onToggle={onToggle} />
         </div>
       ))}
     </div>
@@ -469,7 +632,7 @@ function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef }) {
 
 // ─── GroupedByTeacher ─────────────────────────────────────────────────────────
 
-function GroupedByTeacher({ slots, store, isAdmin }) {
+function GroupedByTeacher({ slots, store, isAdmin, selectedIds = new Set(), selectionMode = false, onToggle }) {
   const byTeacher = {}
   slots.forEach(sl => { if (!byTeacher[sl.teacherId]) byTeacher[sl.teacherId] = []; byTeacher[sl.teacherId].push(sl) })
 
@@ -493,7 +656,10 @@ function GroupedByTeacher({ slots, store, isAdmin }) {
                 {covered}/{tSlots.length} coberta{covered !== 1 ? 's' : ''}
               </div>
             </div>
-            {tSlots.map(sl => <SlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin} />)}
+            {tSlots.map(sl => (
+              <SlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin}
+                selectionMode={selectionMode} isSelected={selectedIds.has(sl.id)} onToggle={onToggle} />
+            ))}
           </div>
         )
       })}

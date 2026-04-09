@@ -312,6 +312,68 @@ export function generateByMonthHTML(year, month, teacherIdFilter, store) {
   return _wrap(title, metaHTML, bodyHTML)
 }
 
+// ─── 6. Mensagem WhatsApp ─────────────────────────────────────────────────────
+
+function _slotLine(sl, store) {
+  const aulaIdx = Number((sl.timeSlot ?? '').split('|')[2] ?? 0)
+  const ordinal = `${aulaIdx + 1}ª aula`
+  const subj = store.subjects.find(s => s.id === sl.subjectId)
+  const sub  = sl.substituteId ? store.teachers.find(t => t.id === sl.substituteId) : null
+  return `${ordinal} · ${sl.turma ?? '—'} · ${subj?.name ?? '—'} | Subst.: ${sub ? sub.name : 'EM PROCESSAMENTO'}`
+}
+
+export function buildWhatsAppMessage(mode, context, store) {
+  const { slots = [], label = '', teacherName } = context
+
+  const header = '*Relatório de Ausência*'
+
+  if (!slots.length) {
+    return `${header}\n\nNenhuma ausência registrada.`
+  }
+
+  // Modos com professor único
+  if (mode === 'teacher' || (mode === 'day' && teacherName)) {
+    const dateLabel = mode === 'day' ? `📅 Data: ${label}` : `📅 Período: ${label}`
+    const lines = slots
+      .sort((a, b) => (a.timeSlot ?? '').localeCompare(b.timeSlot ?? ''))
+      .map(sl => _slotLine(sl, store))
+    return [
+      header, '',
+      dateLabel,
+      `👤 Professor ausente: ${teacherName ?? '—'}`, '',
+      'Aulas:',
+      ...lines,
+    ].join('\n')
+  }
+
+  // Modos com múltiplos professores (week / month / day sem filtro)
+  const icon = mode === 'week' ? '🗓 Semana:' : mode === 'month' ? '📆 Mês:' : '📅 Data:'
+  const sections = []
+  const byTeacher = {}
+  slots.forEach(sl => {
+    if (!byTeacher[sl.teacherId]) byTeacher[sl.teacherId] = []
+    byTeacher[sl.teacherId].push(sl)
+  })
+
+  Object.entries(byTeacher).forEach(([tid, tSlots]) => {
+    const teacher = store.teachers.find(t => t.id === tid)
+    const byDate = {}
+    tSlots.forEach(sl => {
+      if (!byDate[sl.date]) byDate[sl.date] = []
+      byDate[sl.date].push(sl)
+    })
+    const dateParts = Object.keys(byDate).sort().map(date => {
+      const dayLines = byDate[date]
+        .sort((a, b) => (a.timeSlot ?? '').localeCompare(b.timeSlot ?? ''))
+        .map(sl => _slotLine(sl, store))
+      return [`${dateToDayLabel(date)}, ${formatBR(date)}:`, ...dayLines].join('\n')
+    })
+    sections.push([`👤 ${teacher?.name ?? '—'}`, '', ...dateParts].join('\n'))
+  })
+
+  return [header, '', `${icon} ${label}`, '', sections.join('\n\n---\n')].join('\n')
+}
+
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
 function _filterSlot(sl, filter) {

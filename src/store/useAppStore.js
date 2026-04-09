@@ -284,6 +284,24 @@ const useAppStore = create((set, get) => ({
     deleteDocById('absences', id)
     get().save()
   },
+  deleteManySlots: (slotIds) => {
+    const ids = new Set(slotIds)
+    let emptyAbsenceIds = []
+    set(s => {
+      const updated = s.absences.map(ab => ({
+        ...ab,
+        slots: ab.slots.filter(sl => !ids.has(sl.id)),
+      }))
+      emptyAbsenceIds = updated.filter(ab => ab.slots.length === 0).map(ab => ab.id)
+      return { absences: updated.filter(ab => ab.slots.length > 0) }
+    })
+    emptyAbsenceIds.forEach(id => deleteDocById('absences', id))
+    get().save()
+  },
+  restoreAbsences: (absencesSnapshot) => {
+    set({ absences: absencesSnapshot })
+    get().save()
+  },
 
   // Remove todos os substitutos de um professor em uma data (mantém as faltas)
   clearDaySubstitutes: (teacherId, date) => {
