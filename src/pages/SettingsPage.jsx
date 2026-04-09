@@ -330,6 +330,15 @@ function AreaBlock({ area, store }) {
           if (confirm(`Remover área "${area.name}"?`)) store.removeArea(area.id)
         }}>✕</button>
       </div>
+      <label className="flex items-center gap-2 text-xs text-t2 cursor-pointer mb-2">
+        <input
+          type="checkbox"
+          checked={area.shared ?? false}
+          onChange={e => store.updateArea(area.id, { shared: e.target.checked })}
+          className="accent-accent"
+        />
+        Área compartilhada
+      </label>
       <textarea
         className="inp text-xs font-mono resize-y min-h-[80px] w-full"
         placeholder="Uma disciplina por linha…"
@@ -1055,14 +1064,18 @@ function ScheduleGrid({ teacher, store, isAdmin = false }) {
                         )
                         // Conflito de professor: já tem aula neste slot/dia
                         const teacherConflict = mine.length > 0
-                        // Número de turmas ainda disponíveis neste slot/dia
-                        const occupiedTurmas = store.schedules
+                        // Turmas ocupadas por outros professores neste slot/dia
+                        const occupiedSchedules = store.schedules
                           .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+                        const hardBlockedTurmas = occupiedSchedules
+                          .filter(s => !isSharedSchedule(s, store))
                           .map(s => s.turma)
+                        const occupiedTurmas = occupiedSchedules.map(s => s.turma)
                         const allTurmas = seg.grades.flatMap(g =>
                           g.classes.map(c => `${g.name} ${c.letter}`)
                         )
-                        const freeTurmas = allTurmas.filter(t => !occupiedTurmas.includes(t))
+                        // freeTurmas: turmas sem ocupante de área não-compartilhada (inclui turmas de área compartilhada)
+                        const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
 
                         return (
                           <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
@@ -1177,13 +1190,14 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
     ? (grades.find(g => g.name === grade)?.classes ?? []).map(c => `${grade} ${c.letter}`)
     : []
 
-  // Turmas já ocupadas por outro professor neste slot/dia
-  const occupiedTurmas = new Set(
+  // Turmas bloqueadas: têm ao menos 1 ocupante de área não-compartilhada
+  const hardBlockedTurmas = new Set(
     store.schedules
       .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+      .filter(s => !isSharedSchedule(s, store))
       .map(s => s.turma)
   )
-  // Mapa turma → primeiro nome do professor que a ocupa
+  // Mapa turma → primeiro nome do professor que a ocupa (para exibição)
   const occupiedByTeacher = {}
   store.schedules
     .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
@@ -1196,8 +1210,19 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
     if (!grade || !turma) return
     if (store.schedules.find(s => s.teacherId === teacher.id && s.day === day && s.timeSlot === slot))
       { alert('Conflito: professor já tem aula neste horário.'); return }
-    if (occupiedTurmas.has(turma))
+    if (hardBlockedTurmas.has(turma))
       { alert('Conflito: esta turma já tem professor neste horário.'); return }
+    // Turma com ocupante de área compartilhada: novo subject também deve ser compartilhado
+    const turmaHasSharedOccupant = store.schedules.some(
+      s => s.timeSlot === slot && s.day === day && s.turma === turma
+        && s.teacherId !== teacher.id && isSharedSchedule(s, store)
+    )
+    if (turmaHasSharedOccupant) {
+      const newSubj = store.subjects.find(s => s.id === subjId)
+      const newArea = store.areas.find(a => a.id === newSubj?.areaId)
+      if (!newArea?.shared)
+        { alert('Esta turma está reservada para área compartilhada.'); return }
+    }
     onSave({ teacherId: teacher.id, subjectId: subjId || null, turma, day, timeSlot: slot })
   }
 
@@ -1239,7 +1264,7 @@ function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, 
               ? <p className="text-xs text-t3 mt-1">Nenhuma turma cadastrada para {grade}.</p>
               : <div className="flex flex-wrap gap-2 mt-1">
                   {allTurmasForGrade.map(t => {
-                    const locked = occupiedTurmas.has(t)
+                    const locked = hardBlockedTurmas.has(t)
                     return (
                       <button
                         key={t}
