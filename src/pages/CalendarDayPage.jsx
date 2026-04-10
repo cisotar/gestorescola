@@ -140,10 +140,6 @@ export default function CalendarDayPage() {
   const activeDate = weekDates[activeDayIdx]
   const activeDayLabel = dateToDayLabel(activeDate)
 
-  const periodos = getPeriodos(seg.id, seg.turno ?? 'manha', store.periodConfigs)
-    .filter(p => !p.isIntervalo)
-    .map(p => ({ ...p, slot: `${seg.id}|${seg.turno ?? 'manha'}|${p.aulaIdx}` }))
-
   const mine   = store.schedules.filter(s => s.teacherId === teacher.id)
   const cv     = colorOfTeacher(teacher, store)
   const hasAbs = (store.absences ?? []).some(ab => ab.teacherId === teacher.id)
@@ -167,6 +163,19 @@ export default function CalendarDayPage() {
 
   // Ações do dia
   const dayMine    = mine.filter(s => s.day === activeDayLabel)
+
+  // Segmentos do professor no dia ativo (pode ser mais de um turno)
+  const daySegIds  = [...new Set(dayMine.map(s => s.timeSlot?.split('|')[0]).filter(Boolean))]
+  // Segmento primário (recebido via navigation state) aparece primeiro
+  const segsForDay = store.segments
+    .filter(s => daySegIds.includes(s.id))
+    .sort((a, b) => (a.id === segId ? -1 : b.id === segId ? 1 : 0))
+  const segPeriodos = segsForDay.map(s => ({
+    seg: s,
+    periodos: getPeriodos(s.id, s.turno ?? 'manha', store.periodConfigs)
+      .filter(p => !p.isIntervalo)
+      .map(p => ({ ...p, slot: `${s.id}|${s.turno ?? 'manha'}|${p.aulaIdx}` }))
+  }))
   const dayAbsMap  = Object.fromEntries(
     Object.entries(absMap).filter(([k]) => k.startsWith(activeDate + '|'))
       .map(([k, v]) => [k.replace(activeDate + '|', ''), v])
@@ -293,89 +302,101 @@ export default function CalendarDayPage() {
         </div>
       )}
 
-      {/* Lista de períodos — card individual por aula */}
-      <div className="space-y-2 mt-2">
-        {periodos.map(p => {
-          const sched = dayMine.find(s => s.timeSlot === p.slot)
-          const abs   = sched ? dayAbsMap[p.slot] : null
-          const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
-          const subj  = store.subjects.find(x => x.id === sched?.subjectId)
-
+      {/* Lista de períodos — agrupados por segmento/turno */}
+      <div className="space-y-4 mt-2">
+        {segPeriodos.length === 0 && (
+          <p className="text-center text-t3 py-10 text-sm">Nenhuma aula configurada para este professor.</p>
+        )}
+        {segPeriodos.map(({ seg: s, periodos }) => {
+          const turnoLabel = (s.turno ?? 'manha') === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
           return (
-            <div key={p.aulaIdx} className={`card p-3 ${
-              abs ? 'border-[#FDB8A8] bg-[#FFF1EE]' :
-              !sched ? 'opacity-50' : ''}`}
-            >
-              <div className="flex items-start gap-3">
-                {/* Horário ancorado */}
-                <div className="text-center min-w-[56px] shrink-0 bg-surf2 rounded-lg py-1.5 px-1">
-                  <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
-                  <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
+            <div key={s.id}>
+              {segPeriodos.length > 1 && (
+                <div className="text-[11px] font-bold text-t2 uppercase tracking-wider mb-2 px-1">
+                  {s.name} — {turnoLabel}
                 </div>
+              )}
+              <div className="space-y-2">
+                {periodos.map(p => {
+                  const sched = dayMine.find(sc => sc.timeSlot === p.slot)
+                  const abs   = sched ? dayAbsMap[p.slot] : null
+                  const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
+                  const subj  = store.subjects.find(x => x.id === sched?.subjectId)
 
-                {/* Conteúdo */}
-                <div className="flex-1 min-w-0">
-                  {sched ? (
-                    <>
-                      <div className="font-bold text-sm">{sched.turma}</div>
-                      <div className="text-xs text-t2">{subj?.name ?? '—'}</div>
-                      {abs && (
-                        <div className="mt-1.5">
-                          {sub ? (
-                            /* Colapsado: substituto alocado */
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
-                              {isAdmin && (
-                                <SubPicker
-                                  absenceId={abs.absenceId} slotId={abs.slotId}
-                                  teacherId={teacher.id} date={activeDate} slot={p.slot}
-                                  subjectId={sched.subjectId} store={store}
-                                />
+                  return (
+                    <div key={p.slot} className={`card p-3 ${
+                      abs ? 'border-[#FDB8A8] bg-[#FFF1EE]' :
+                      !sched ? 'opacity-50' : ''}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Horário ancorado */}
+                        <div className="text-center min-w-[56px] shrink-0 bg-surf2 rounded-lg py-1.5 px-1">
+                          <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
+                          <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
+                        </div>
+
+                        {/* Conteúdo */}
+                        <div className="flex-1 min-w-0">
+                          {sched ? (
+                            <>
+                              <div className="font-bold text-sm">{sched.turma}</div>
+                              <div className="text-xs text-t2">{subj?.name ?? '—'}</div>
+                              {abs && (
+                                <div className="mt-1.5">
+                                  {sub ? (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
+                                      {isAdmin && (
+                                        <SubPicker
+                                          absenceId={abs.absenceId} slotId={abs.slotId}
+                                          teacherId={teacher.id} date={activeDate} slot={p.slot}
+                                          subjectId={sched.subjectId} store={store}
+                                        />
+                                      )}
+                                    </div>
+                                  ) : (
+                                    isAdmin && (
+                                      <SubPicker
+                                        absenceId={abs.absenceId} slotId={abs.slotId}
+                                        teacherId={teacher.id} date={activeDate} slot={p.slot}
+                                        subjectId={sched.subjectId} store={store}
+                                        compact
+                                      />
+                                    )
+                                  )}
+                                </div>
                               )}
-                            </div>
+                            </>
                           ) : (
-                            /* Expandido: sem substituto — mostra sugestões */
-                            isAdmin && (
-                              <SubPicker
-                                absenceId={abs.absenceId} slotId={abs.slotId}
-                                teacherId={teacher.id} date={activeDate} slot={p.slot}
-                                subjectId={sched.subjectId} store={store}
-                                compact
-                              />
-                            )
+                            <span className="text-xs text-t3 italic">Hora de estudo</span>
                           )}
                         </div>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-xs text-t3 italic">Hora de estudo</span>
-                  )}
-                </div>
 
-                {/* Ações */}
-                {isAdmin && sched && (
-                  <div className="shrink-0">
-                    {abs ? (
-                      <button
-                        className="px-2.5 py-1 rounded-full text-[11px] font-semibold border border-[#FDB8A8] text-err bg-white hover:bg-[#FDB8A8]/30 transition-colors"
-                        onClick={() => { deleteAbsenceSlot(abs.absenceId, abs.slotId); toast('Falta removida', 'ok') }}
-                      >
-                        Desfazer
-                      </button>
-                    ) : (
-                      <button className="btn btn-dark btn-xs" onClick={() => handleMarkAbsent(p, sched)}>
-                        Marcar falta
-                      </button>
-                    )}
-                  </div>
-                )}
+                        {/* Ações */}
+                        {isAdmin && sched && (
+                          <div className="shrink-0">
+                            {abs ? (
+                              <button
+                                className="px-2.5 py-1 rounded-full text-[11px] font-semibold border border-[#FDB8A8] text-err bg-white hover:bg-[#FDB8A8]/30 transition-colors"
+                                onClick={() => { deleteAbsenceSlot(abs.absenceId, abs.slotId); toast('Falta removida', 'ok') }}
+                              >
+                                Desfazer
+                              </button>
+                            ) : (
+                              <button className="btn btn-dark btn-xs" onClick={() => handleMarkAbsent(p, sched)}>
+                                Marcar falta
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
         })}
-        {periodos.length === 0 && (
-          <p className="text-center text-t3 py-10 text-sm">Nenhuma aula configurada para este professor.</p>
-        )}
       </div>
     </div>
   )

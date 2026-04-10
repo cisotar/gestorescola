@@ -103,8 +103,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 4 cards de ação */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+      {/* Cards de ação */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
         <ActionCard
           icon="📝" label="Marcar Substituições"
           desc="Registre ausências e gerencie os substitutos da semana"
@@ -124,6 +124,11 @@ export default function DashboardPage() {
           icon="👩‍🏫" label="Ver Professores"
           desc="Lista completa de professores e suas cargas horárias"
           to="/settings?tab=teachers"
+        />
+        <ActionCard
+          icon="🗓️" label="Grade da Escola"
+          desc="Visualize e filtre os horários de toda a escola"
+          to="/school-schedule"
         />
       </div>
 

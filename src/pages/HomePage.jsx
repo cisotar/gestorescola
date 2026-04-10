@@ -60,6 +60,13 @@ export default function HomePage() {
           desc="Acesse dados completos, status global e lista de escolas."
           to="/dashboard"
         />
+        {schedules.some(s => s.teacherId === myTeacher?.id) && (
+          <ActionCard
+            icon="📅" label="Minha Grade"
+            desc="Visualize e exporte sua grade de horários semanal."
+            to="/schedule"
+          />
+        )}
       </div>
     </div>
   )

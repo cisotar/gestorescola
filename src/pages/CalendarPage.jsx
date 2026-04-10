@@ -189,12 +189,14 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
 
   const dayLabel = dateToDayLabel(date)
   const mine     = store.schedules.filter(s => s.teacherId === teacher.id && s.day === dayLabel)
-  const seg      = store.segments.find(s => mine.some(m => m.timeSlot?.startsWith(s.id)))
-  const periodos = seg
-    ? getPeriodos(seg.id, seg.turno ?? 'manha', store.periodConfigs)
-        .filter(p => !p.isIntervalo)
-        .map(p => ({ ...p, slot: `${seg.id}|${seg.turno ?? 'manha'}|${p.aulaIdx}` }))
-    : []
+  const segIds   = [...new Set(mine.map(m => m.timeSlot?.split('|')[0]).filter(Boolean))]
+  const segsForDay = store.segments.filter(s => segIds.includes(s.id))
+  const segPeriodos = segsForDay.map(s => ({
+    seg: s,
+    periodos: getPeriodos(s.id, s.turno ?? 'manha', store.periodConfigs)
+      .filter(p => !p.isIntervalo)
+      .map(p => ({ ...p, slot: `${s.id}|${s.turno ?? 'manha'}|${p.aulaIdx}` }))
+  }))
 
   const absMap = {}
   ;(store.absences ?? []).forEach(ab => {
@@ -289,86 +291,100 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
       )}
 
       {/* Aulas */}
-      <div className="space-y-2">
-        {periodos.map(p => {
-          const sched = mine.find(s => s.timeSlot === p.slot)
-          const abs   = sched ? absMap[p.slot] : null
-          const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
-          const subj  = store.subjects.find(x => x.id === sched?.subjectId)
-
+      <div className="space-y-4">
+        {segPeriodos.length === 0 && (
+          <p className="text-center text-t3 py-8 text-sm">Nenhuma aula configurada para este professor.</p>
+        )}
+        {segPeriodos.map(({ seg, periodos }) => {
+          const turnoLabel = (seg.turno ?? 'manha') === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
           return (
-            <div key={p.aulaIdx} className={`p-3 rounded-xl border ${
-              abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' :
-              sched ? 'bg-surf border-bdr' :
-              'bg-surf2/50 border-bdr/50 opacity-50'}`}>
-              <div className="flex items-start gap-3">
-                {/* Horário */}
-                <div className="text-center min-w-[60px] shrink-0">
-                  <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
-                  <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
+            <div key={seg.id}>
+              {segPeriodos.length > 1 && (
+                <div className="text-[11px] font-bold text-t2 uppercase tracking-wider mb-2">
+                  {seg.name} — {turnoLabel}
                 </div>
+              )}
+              <div className="space-y-2">
+                {periodos.map(p => {
+                  const sched = mine.find(s => s.timeSlot === p.slot)
+                  const abs   = sched ? absMap[p.slot] : null
+                  const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
+                  const subj  = store.subjects.find(x => x.id === sched?.subjectId)
 
-                {/* Info + sugestões inline */}
-                <div className="flex-1 min-w-0">
-                  {sched ? (
-                    <>
-                      <div className="font-bold text-sm">{sched.turma}</div>
-                      <div className="text-xs text-t2">{subj?.name ?? '—'}</div>
-                      {abs && (
-                        <div className="mt-1.5">
-                          {sub ? (
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
-                              {isAdmin && (
-                                <SubPicker
-                                  absenceId={abs.absenceId} slotId={abs.slotId}
-                                  teacherId={teacher.id} date={date} slot={p.slot}
-                                  subjectId={sched.subjectId} store={store}
-                                />
+                  return (
+                    <div key={p.slot} className={`p-3 rounded-xl border ${
+                      abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' :
+                      sched ? 'bg-surf border-bdr' :
+                      'bg-surf2/50 border-bdr/50 opacity-50'}`}>
+                      <div className="flex items-start gap-3">
+                        {/* Horário */}
+                        <div className="text-center min-w-[60px] shrink-0">
+                          <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
+                          <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
+                        </div>
+
+                        {/* Info + sugestões inline */}
+                        <div className="flex-1 min-w-0">
+                          {sched ? (
+                            <>
+                              <div className="font-bold text-sm">{sched.turma}</div>
+                              <div className="text-xs text-t2">{subj?.name ?? '—'}</div>
+                              {abs && (
+                                <div className="mt-1.5">
+                                  {sub ? (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
+                                      {isAdmin && (
+                                        <SubPicker
+                                          absenceId={abs.absenceId} slotId={abs.slotId}
+                                          teacherId={teacher.id} date={date} slot={p.slot}
+                                          subjectId={sched.subjectId} store={store}
+                                        />
+                                      )}
+                                    </div>
+                                  ) : (
+                                    isAdmin && (
+                                      <SubPicker
+                                        absenceId={abs.absenceId} slotId={abs.slotId}
+                                        teacherId={teacher.id} date={date} slot={p.slot}
+                                        subjectId={sched.subjectId} store={store}
+                                        compact
+                                      />
+                                    )
+                                  )}
+                                </div>
                               )}
-                            </div>
+                            </>
                           ) : (
-                            isAdmin && (
-                              <SubPicker
-                                absenceId={abs.absenceId} slotId={abs.slotId}
-                                teacherId={teacher.id} date={date} slot={p.slot}
-                                subjectId={sched.subjectId} store={store}
-                                compact
-                              />
-                            )
+                            <span className="text-xs text-t3 italic">Hora de estudo</span>
                           )}
                         </div>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-xs text-t3 italic">Hora de estudo</span>
-                  )}
-                </div>
 
-                {/* Ações (admin) */}
-                {isAdmin && sched && (
-                  <div className="shrink-0">
-                    {abs ? (
-                      <button
-                        className="text-[11px] text-err hover:underline"
-                        onClick={() => { deleteAbsenceSlot(abs.absenceId, abs.slotId); toast('Falta removida', 'ok') }}
-                      >
-                        Desfazer
-                      </button>
-                    ) : (
-                      <button className="btn btn-dark btn-xs" onClick={() => handleMarkAbsent(p, sched)}>
-                        Marcar falta
-                      </button>
-                    )}
-                  </div>
-                )}
+                        {/* Ações (admin) */}
+                        {isAdmin && sched && (
+                          <div className="shrink-0">
+                            {abs ? (
+                              <button
+                                className="text-[11px] text-err hover:underline"
+                                onClick={() => { deleteAbsenceSlot(abs.absenceId, abs.slotId); toast('Falta removida', 'ok') }}
+                              >
+                                Desfazer
+                              </button>
+                            ) : (
+                              <button className="btn btn-dark btn-xs" onClick={() => handleMarkAbsent(p, sched)}>
+                                Marcar falta
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )
         })}
-        {periodos.length === 0 && (
-          <p className="text-center text-t3 py-8 text-sm">Nenhuma aula configurada para este professor.</p>
-        )}
       </div>
     </Modal>
   )

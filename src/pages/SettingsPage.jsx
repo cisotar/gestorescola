@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import { uid, colorOfTeacher, teacherSubjectNames } from '../lib/helpers'
@@ -517,6 +517,7 @@ function SubjectSelector({ store, selectedIds, onChange }) {
 
 function TabTeachers() {
   const store = useAppStore()
+  const navigate = useNavigate()
   const [modal,        setModal]        = useState(false)
   const [schedModal,   setSchedModal]   = useState(false)
   const [schedTeacher, setSchedTeacher] = useState(null)
@@ -721,6 +722,7 @@ function TabTeachers() {
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <span className="text-xs text-t2">{ct} aulas</span>
+                          <button className="btn btn-ghost btn-xs" title="Ver Grade" onClick={() => navigate(`/schedule?teacherId=${t.id}`)}>📅</button>
                           <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
                           <button className="btn btn-ghost btn-xs text-err" onClick={() => {
                             if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
@@ -785,6 +787,7 @@ function TabTeachers() {
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <span className="text-xs text-t2">{ct} aulas</span>
+                          <button className="btn btn-ghost btn-xs" title="Ver Grade" onClick={() => navigate(`/schedule?teacherId=${t.id}`)}>📅</button>
                           <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
                           <button className="btn btn-ghost btn-xs text-err" onClick={() => {
                             if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }

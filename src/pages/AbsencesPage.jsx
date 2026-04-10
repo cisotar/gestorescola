@@ -13,6 +13,7 @@ import {
   buildWhatsAppMessage,
 } from '../lib/reports'
 import Modal from '../components/ui/Modal'
+import { ScheduleGrid } from './SettingsPage'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -298,7 +299,14 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, se
       })
     const byDate = {}
     slots.forEach(sl => { if (!byDate[sl.date]) byDate[sl.date] = []; byDate[sl.date].push(sl) })
-    return { teacher, byDate, total: slots.length, slots }
+    const segIds = [...new Set(
+      store.schedules
+        .filter(s => s.teacherId === selTeacher)
+        .map(s => s.timeSlot?.split('|')[0])
+        .filter(Boolean)
+    )]
+    const relevantSegments = store.segments.filter(s => segIds.includes(s.id))
+    return { teacher, byDate, total: slots.length, slots, relevantSegments }
   })() : null
 
   return (
@@ -345,7 +353,7 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, se
             </div>
           </div>
         ) : (() => {
-          const { teacher, byDate, total, slots: detailSlots } = detail
+          const { teacher, byDate, total, slots: detailSlots, relevantSegments } = detail
           const cv = colorOfTeacher(teacher, store)
           return (
             <div>
@@ -443,6 +451,16 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, se
                       </div>
                     )
                   })}
+                </div>
+              )}
+
+              {/* Grade horária completa (exibida quando professor tem múltiplos segmentos/turnos) */}
+              {relevantSegments.length > 1 && (
+                <div className="mt-6 space-y-2">
+                  <div className="text-xs font-bold text-t2 uppercase tracking-wider">Grade Horária</div>
+                  <div className="pointer-events-none select-none">
+                    <ScheduleGrid teacher={teacher} store={store} />
+                  </div>
                 </div>
               )}
             </div>
