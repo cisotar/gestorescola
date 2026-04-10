@@ -395,7 +395,8 @@ function AreaBlock({ area, store }) {
   const subs = store.subjects.filter(s => s.areaId === area.id)
   const [name,       setName]       = useState(area.name)
   const [txt,        setTxt]        = useState(subs.map(s => s.name).join('\n'))
-  const [pendingCtx, setPendingCtx] = useState(null)
+  const [deparaOpen, setDeparaOpen] = useState(false)
+  const [deparaData, setDeparaData] = useState(null)
 
   const doSave = (lines) => {
     store.saveAreaWithSubjects(area.id, name.trim() || area.name, lines)
@@ -416,43 +417,49 @@ function AreaBlock({ area, store }) {
 
     if (affectedSchedules.length === 0) { doSave(lines); return }
 
-    const subjectsById  = Object.fromEntries(store.subjects.map(s => [s.id, s]))
-    // addedNames ainda não existem como subjects (só após doSave) — objeto sintético para exibição no modal
-    const addedSubjects = addedNames.map(n => ({ id: n, name: n }))
-    const isSwap        = removedSubjectIds.length === 1 && addedNames.length === 1
-
-    setPendingCtx({
-      teacher: { name: affectedTeachers.map(t => t.name).join(', ') },
-      removedSubjects: removedSubjectIds.map(id => subjectsById[id] ?? { id, name: id }),
-      addedSubjects,
-      affectedCount: affectedSchedules.length,
-      onMigrate: isSwap ? () => {
-        // doSave primeiro: cria o novo subject no store
-        doSave(lines)
-        // busca o ID do novo subject no estado atualizado
-        const toSubjectId = useAppStore.getState().subjects.find(
-          s => s.areaId === area.id && s.name === addedNames[0]
-        )?.id
-        if (toSubjectId) {
-          affectedTeachers.forEach(t =>
-            store.migrateScheduleSubject(t.id, removedSubjectIds[0], toSubjectId)
-          )
-        }
-        setPendingCtx(null)
-      } : null,
-      onRemove: () => {
-        affectedSchedules.forEach(s => {
-          deleteDocById('schedules', s.id)
-          store.removeSchedule(s.id)
-        })
-        doSave(lines)
-        setPendingCtx(null)
-      },
-      onCancel: () => {
-        setTxt(subs.map(s => s.name).join('\n'))
-        setPendingCtx(null)
-      },
+    const removedSubjSet = new Set(removedSubjectIds)
+    const removedSubjectsWithCount = removedSubjectIds.map(id => {
+      const subj = store.subjects.find(s => s.id === id) ?? { id, name: id }
+      const count = store.schedules.filter(s => s.subjectId === id).length
+      return { id, name: subj.name, scheduleCount: count }
     })
+    const newSubjects = addedNames.map(n => ({ id: n, name: n }))
+    const availableSubjects = [
+      ...store.subjects.filter(s => !removedSubjSet.has(s.id)),
+      ...newSubjects,
+    ]
+    setDeparaData({ removedSubjectsWithCount, availableSubjects, lines })
+    setDeparaOpen(true)
+  }
+
+  const handleDeparaConfirm = (mapping) => {
+    if (!deparaData) return
+    let savedAlready = false
+    const doSaveOnce = () => {
+      if (!savedAlready) { doSave(deparaData.lines); savedAlready = true }
+    }
+
+    Object.entries(mapping).forEach(([fromId, toId]) => {
+      if (!toId) {
+        store.schedules
+          .filter(s => s.subjectId === fromId)
+          .forEach(s => store.removeSchedule(s.id))
+      } else {
+        const isNewSubject = !store.subjects.find(s => s.id === toId)
+        if (isNewSubject) {
+          doSaveOnce()
+          const newId = useAppStore.getState().subjects.find(
+            s => s.areaId === area.id && s.name === toId
+          )?.id
+          if (newId) store.migrateMultipleSubjects(fromId, newId)
+        } else {
+          store.migrateMultipleSubjects(fromId, toId)
+        }
+      }
+    })
+
+    doSaveOnce()
+    setDeparaOpen(false)
   }
 
   return (
@@ -487,7 +494,16 @@ function AreaBlock({ area, store }) {
           onBlur={save}
         />
       </div>
-      <SubjectChangeModal ctx={pendingCtx} />
+      <DeparaModal
+        open={deparaOpen}
+        removedSubjects={deparaData?.removedSubjectsWithCount ?? []}
+        availableSubjects={deparaData?.availableSubjects ?? []}
+        onConfirm={handleDeparaConfirm}
+        onCancel={() => {
+          setTxt(subs.map(s => s.name).join('\n'))
+          setDeparaOpen(false)
+        }}
+      />
     </>
   )
 }
