@@ -91,9 +91,7 @@ export default function PendingPage() {
                 <p className="text-sm text-t2">Preencha seus dados para solicitar acesso ao sistema.</p>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Coluna esquerda — campos */}
-                <div className="space-y-5">
+              <div className="space-y-5">
                   {/* Nome + E-mail lado a lado */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -129,7 +127,7 @@ export default function PendingPage() {
                     {segGroups.length === 0 ? (
                       <p className="text-xs text-t3 mt-1">Nenhuma matéria cadastrada no sistema ainda.</p>
                     ) : (
-                      <div className="space-y-3 mt-2">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
                         {segGroups.map(({ seg, areaGroups }) => (
                           <div key={seg.id} className="border border-bdr rounded-xl p-4">
                             <div className="text-xs font-extrabold text-navy uppercase tracking-widest mb-3">{seg.name}</div>
@@ -175,16 +173,6 @@ export default function PendingPage() {
                   </div>
                 </div>
 
-                {/* Coluna direita — preview informativo (desktop) */}
-                <div className="hidden lg:flex flex-col items-center justify-center text-center p-6 rounded-xl bg-surf2 border border-bdr border-dashed">
-                  <div className="text-4xl mb-4">🗓️</div>
-                  <div className="font-bold text-sm text-t1 mb-2">Próximo passo: sua grade horária</div>
-                  <p className="text-xs text-t3 leading-relaxed">
-                    Após enviar seu cadastro, você poderá preencher sua grade de horários
-                    enquanto aguarda a aprovação do administrador.
-                  </p>
-                </div>
-              </div>
             </>
           )}
 
