@@ -223,11 +223,13 @@ const useAppStore = create((set, get) => ({
     await patchTeacherSelf(id, changes)
   },
   removeTeacher: (id) => {
+    const schedulesToDelete = get().schedules.filter(x => x.teacherId === id)
     set(s => ({
       teachers:  s.teachers.filter(t => t.id !== id),
       schedules: s.schedules.filter(x => x.teacherId !== id),
     }))
     deleteDocById('teachers', id)
+    schedulesToDelete.forEach(s => deleteDocById('schedules', s.id))
     get().save()
   },
 
