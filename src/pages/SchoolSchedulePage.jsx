@@ -7,7 +7,7 @@ import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
-function SchoolGrid({ seg, schedules, store, showTeacher = true }) {
+function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = false }) {
   const turno = seg.turno ?? 'manha'
   const aulas = getAulas(seg.id, turno, store.periodConfigs)
 
@@ -57,7 +57,7 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true }) {
                             <div key={s.id} className="leading-tight">
                               {showTeacher ? (
                                 <>
-                                  <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{teacher?.name ?? '—'}</div>
+                                  <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name || '—')}</div>
                                   <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
                                 </>
                               ) : (
@@ -91,6 +91,9 @@ export default function SchoolSchedulePage() {
   const [filterSegmento, setFilterSegmento] = useState('')
   const [filterTurma,    setFilterTurma]    = useState('')
   const [filtersOpen,    setFiltersOpen]    = useState(false)
+  const [useApelido,     setUseApelido]     = useState(false)
+
+  const anyHasApelido = store.teachers.some(t => t.apelido)
 
   // Listas para os selects
   const teachersWithSchedules = store.teachers
@@ -140,10 +143,22 @@ export default function SchoolSchedulePage() {
       {/* Cabeçalho */}
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-extrabold tracking-tight flex-1">Grade Horária da Escola</h1>
+        {anyHasApelido && (
+          <div className="flex items-center gap-1 rounded-lg border border-bdr bg-surf2 p-0.5 text-xs">
+            <button
+              className={!useApelido ? 'px-2 py-0.5 rounded bg-surf border border-bdr font-semibold text-t1' : 'px-2 py-0.5 rounded text-t2'}
+              onClick={() => setUseApelido(false)}
+            >Nome</button>
+            <button
+              className={useApelido ? 'px-2 py-0.5 rounded bg-surf border border-bdr font-semibold text-t1' : 'px-2 py-0.5 rounded text-t2'}
+              onClick={() => setUseApelido(true)}
+            >Apelido</button>
+          </div>
+        )}
         <button
           className="btn btn-ghost btn-sm"
           onClick={() => openPDF(generateSchoolScheduleHTML(
-            { teacherId: filterTeacher || undefined, segmento: filterSegmento || undefined, turma: filterTurma || undefined },
+            { teacherId: filterTeacher || undefined, segmento: filterSegmento || undefined, turma: filterTurma || undefined, useApelido },
             store
           ))}
         >
@@ -285,6 +300,7 @@ export default function SchoolSchedulePage() {
                     schedules={filtered}
                     store={store}
                     showTeacher={!filterTeacher}
+                    useApelido={useApelido}
                   />
                 </div>
               )
