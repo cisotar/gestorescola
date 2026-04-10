@@ -1073,7 +1073,7 @@ export function ScheduleGridModal({ open, onClose, teacher, store }) {
   )
 }
 
-function ScheduleGrid({ teacher, store }) {
+export function ScheduleGrid({ teacher, store }) {
   const { addSchedule, removeSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
 
@@ -1202,7 +1202,7 @@ function ScheduleGrid({ teacher, store }) {
   )
 }
 
-function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, store, onSave }) {
+export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx, day, store, onSave }) {
   const seg = store.segments.find(s => s.id === segId)
   const slot = `${segId}|${turno}|${aulaIdx}`
 

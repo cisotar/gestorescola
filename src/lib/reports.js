@@ -1,5 +1,5 @@
 import { formatBR, dateToDayLabel, parseDate } from './helpers'
-import { slotFullLabel } from './periods'
+import { slotFullLabel, getAulas } from './periods'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -393,4 +393,115 @@ function _filterLabel(filter) {
   if (filter.type === 'week') return `Semana de ${formatBR(filter.weekStart)}`
   if (filter.type === 'month') return `${MONTH_NAMES[filter.month]} ${filter.year}`
   return '—'
+}
+
+// ─── 7. Grade horária — helper interno ───────────────────────────────────────
+
+const SCHED_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
+
+function _scheduleGrid(seg, turno, schedules, store, showTeacher = false) {
+  const aulas = getAulas(seg.id, turno, store.periodConfigs)
+  if (!aulas.length) return ''
+
+  const header = `<tr><th style="min-width:90px"></th>${SCHED_DAYS.map(d => `<th>${d}</th>`).join('')}</tr>`
+
+  const rows = aulas.map(({ aulaIdx, label, inicio, fim }) => {
+    const cells = SCHED_DAYS.map(day => {
+      const matches = schedules.filter(s =>
+        s.timeSlot === `${seg.id}|${turno}|${aulaIdx}` && s.day === day
+      )
+      if (!matches.length) return '<td style="color:#c8c4bb">—</td>'
+      const lines = matches.map(s => {
+        const subj = store.subjects.find(x => x.id === s.subjectId)
+        if (showTeacher) {
+          const teacher = store.teachers.find(t => t.id === s.teacherId)
+          return `<strong>${teacher?.name ?? '—'}</strong><br>${s.turma ?? '—'} · ${subj?.name ?? '—'}`
+        }
+        return `<strong>${s.turma ?? '—'}</strong><br>${subj?.name ?? '—'}`
+      }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
+      return `<td>${lines}</td>`
+    }).join('')
+    return `<tr>
+      <td style="white-space:nowrap"><strong>${label}</strong><br><span style="color:#a09d97;font-size:10px">${inicio}–${fim}</span></td>
+      ${cells}
+    </tr>`
+  }).join('')
+
+  return `<table>${header}<tbody>${rows}</tbody></table>`
+}
+
+// ─── 8. Grade horária — por professor ────────────────────────────────────────
+
+export function generateTeacherScheduleHTML(teacher, store) {
+  // Segmentos do professor derivados das matérias
+  const teacherSegIds = [...new Set(
+    (teacher.subjectIds ?? []).flatMap(sid => {
+      const subj = store.subjects.find(s => s.id === sid)
+      const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
+      return area?.segmentIds ?? []
+    })
+  )]
+  const relevantSegments = store.segments.filter(s => teacherSegIds.includes(s.id))
+
+  const metaHTML = `
+    <div class="m-blk"><span class="m-lbl">Professor</span><span class="m-val">${teacher?.name ?? '—'}</span></div>
+    <div class="m-blk" style="margin-left:auto;text-align:right">
+      <span class="m-lbl">Aulas/semana</span>
+      <span class="m-val">${(store.schedules ?? []).filter(s => s.teacherId === teacher.id).length}</span>
+    </div>`
+
+  const teacherSchedules = (store.schedules ?? []).filter(s => s.teacherId === teacher.id)
+
+  const bodyHTML = relevantSegments.length === 0
+    ? '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
+    : relevantSegments.map(seg => {
+        const turno = seg.turno ?? 'manha'
+        const turnoLabel = turno === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
+        return `
+          <div class="section">
+            <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
+            ${_scheduleGrid(seg, turno, teacherSchedules, store, false)}
+          </div>`
+      }).join('')
+
+  return _wrap(`Grade Horária — ${teacher?.name ?? '—'}`, metaHTML, bodyHTML)
+}
+
+// ─── 9. Grade horária — escola (com filtros) ──────────────────────────────────
+
+export function generateSchoolScheduleHTML(filter = {}, store) {
+  const { teacherId, turma } = filter
+
+  const filtered = (store.schedules ?? []).filter(s =>
+    (!teacherId || s.teacherId === teacherId) &&
+    (!turma    || s.turma    === turma)
+  )
+
+  const teacherLabel = teacherId ? store.teachers.find(t => t.id === teacherId)?.name : null
+
+  const metaHTML = `
+    <div class="m-blk"><span class="m-lbl">Filtro Professor</span><span class="m-val">${teacherLabel ?? 'Todos'}</span></div>
+    <div class="m-blk"><span class="m-lbl">Filtro Turma</span><span class="m-val">${turma ?? 'Todas'}</span></div>
+    <div class="m-blk" style="margin-left:auto;text-align:right">
+      <span class="m-lbl">Total aulas</span><span class="m-val">${filtered.length}</span>
+    </div>`
+
+  // Segmentos presentes nos schedules filtrados
+  const segIds = [...new Set(filtered.map(s => s.timeSlot?.split('|')[0]).filter(Boolean))]
+  const relevantSegments = store.segments.filter(s => segIds.includes(s.id))
+
+  const bodyHTML = relevantSegments.length === 0
+    ? '<p style="color:#a09d97;padding:20px 0">Nenhum horário encontrado para os filtros selecionados.</p>'
+    : relevantSegments.map(seg => {
+        const turnoSeg = seg.turno ?? 'manha'
+        const turnoLabel = turnoSeg === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
+        return `
+          <div class="section">
+            <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
+            ${_scheduleGrid(seg, turnoSeg, filtered, store, true)}
+          </div>`
+      }).join('')
+
+  const title = [teacherLabel, turma ? `Turma ${turma}` : null].filter(Boolean).join(' · ') || 'Todos os horários'
+  return _wrap(`Grade da Escola — ${title}`, metaHTML, bodyHTML)
 }
