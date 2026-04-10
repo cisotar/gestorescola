@@ -422,7 +422,7 @@ function _filterLabel(filter) {
 
 const SCHED_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
-function _scheduleGrid(seg, turno, schedules, store, showTeacher = false) {
+function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApelido = false) {
   const aulas = getAulas(seg.id, turno, store.periodConfigs)
   if (!aulas.length) return ''
 
@@ -438,7 +438,8 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false) {
         const subj = store.subjects.find(x => x.id === s.subjectId)
         if (showTeacher) {
           const teacher = store.teachers.find(t => t.id === s.teacherId)
-          return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${teacher?.name ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
+          const displayName = useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name ?? '—')
+          return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${displayName}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
         }
         return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${s.turma ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
       }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
@@ -483,7 +484,7 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
         return `
           <div class="section">
             <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
-            ${_scheduleGrid(seg, turno, teacherSchedules, store, false)}
+            ${_scheduleGrid(seg, turno, teacherSchedules, store, false, useApelido)}
           </div>`
       }).join('')
 
@@ -493,7 +494,7 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
 // ─── 9. Grade horária — escola (com filtros) ──────────────────────────────────
 
 export function generateSchoolScheduleHTML(filter = {}, store) {
-  const { teacherId, segmento, turma } = filter
+  const { teacherId, segmento, turma, useApelido = false } = filter
 
   const filtered = (store.schedules ?? []).filter(s =>
     (!teacherId || s.teacherId === teacherId) &&
@@ -524,7 +525,7 @@ export function generateSchoolScheduleHTML(filter = {}, store) {
         return `
           <div class="section">
             <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
-            ${_scheduleGrid(seg, turnoSeg, filtered, store, !teacherId)}
+            ${_scheduleGrid(seg, turnoSeg, filtered, store, !teacherId, useApelido)}
           </div>`
       }).join('')
 
