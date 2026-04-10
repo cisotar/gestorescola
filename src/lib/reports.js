@@ -455,7 +455,7 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false) {
 
 // ─── 8. Grade horária — por professor ────────────────────────────────────────
 
-export function generateTeacherScheduleHTML(teacher, store) {
+export function generateTeacherScheduleHTML(teacher, store, useApelido = false) {
   // Segmentos do professor derivados das matérias
   const teacherSegIds = [...new Set(
     (teacher.subjectIds ?? []).flatMap(sid => {

@@ -1148,8 +1148,8 @@ export function ScheduleGrid({ teacher, store }) {
                                 const subj = store.subjects.find(x => x.id === s.subjectId)
                                 return (
                                   <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
-                                    <div className="font-bold truncate">{s.turma}</div>
-                                    <div className="text-t3 truncate">{subj?.name ?? '—'}</div>
+                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
+                                    <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
                                     <button
                                       className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
                                       onClick={() => removeSchedule(s.id)}
@@ -1478,6 +1478,7 @@ function TabProfile({ teacher }) {
   const { teacher: authTeacher } = useAuthStore()
   const t = teacher ?? authTeacher
   const [celular,          setCelular]          = useState(t?.celular ?? '')
+  const [apelido,          setApelido]          = useState(t?.apelido ?? '')
   const [selSubjs,         setSelSubjs]         = useState(t?.subjectIds ?? [])
   const [schedModal,       setSchedModal]       = useState(false)
   const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
@@ -1498,13 +1499,13 @@ function TabProfile({ teacher }) {
         affectedCount:   affectedSchedules.length,
         onMigrate: isSwap ? () => {
           store.migrateScheduleSubject(t.id, removedIds[0], addedIds[0])
-          store.updateTeacherProfile(t.id, { celular, subjectIds: selSubjs })
+          store.updateTeacherProfile(t.id, { celular, apelido: apelido.trim(), subjectIds: selSubjs })
           toast('Perfil salvo e horários migrados', 'ok')
           setSubjectChangeCtx(null)
         } : null,
         onRemove: () => {
           removedIds.forEach(sid => store.removeSchedulesBySubject(t.id, sid))
-          store.updateTeacherProfile(t.id, { celular, subjectIds: selSubjs })
+          store.updateTeacherProfile(t.id, { celular, apelido: apelido.trim(), subjectIds: selSubjs })
           toast('Perfil salvo e horários removidos', 'ok')
           setSubjectChangeCtx(null)
         },
@@ -1513,7 +1514,7 @@ function TabProfile({ teacher }) {
       return
     }
 
-    store.updateTeacherProfile(t.id, { celular, subjectIds: selSubjs })
+    store.updateTeacherProfile(t.id, { celular, apelido: apelido.trim(), subjectIds: selSubjs })
     toast('Perfil salvo', 'ok')
   }
 
@@ -1542,6 +1543,13 @@ function TabProfile({ teacher }) {
         <label className="lbl">Celular / WhatsApp</label>
         <input className="inp" type="tel" placeholder="(11) 99999-9999" value={celular}
           onChange={e => setCelular(e.target.value)} />
+      </div>
+
+      <div>
+        <label className="lbl">Como prefere ser chamado? <span className="text-t3 normal-case font-normal">(opcional)</span></label>
+        <input className="inp" type="text" placeholder="Ex: Prof. João, Joãozinho..."
+          maxLength={30} value={apelido} onChange={e => setApelido(e.target.value)} />
+        <p className="text-xs text-t3 mt-1">Apelido exibido nas grades horárias quando o toggle "Apelido" estiver ativo.</p>
       </div>
 
       <div>

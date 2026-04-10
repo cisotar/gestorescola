@@ -172,7 +172,7 @@ export async function approveTeacher(pendingId, state, setState) {
   if (!teacher) {
     const { uid } = await import('./helpers')
     teacher = { id: uid(), name: data.name, email: data.email, whatsapp: '',
-      celular: data.celular ?? '', subjectIds: data.subjectIds ?? [], status: 'approved' }
+      celular: data.celular ?? '', apelido: data.apelido ?? '', subjectIds: data.subjectIds ?? [], status: 'approved' }
     setState(s => ({ teachers: [...s.teachers, teacher] }))
   } else {
     setState(s => ({
