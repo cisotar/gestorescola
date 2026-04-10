@@ -249,6 +249,18 @@ const useAppStore = create((set, get) => ({
     set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...changes } : x) }))
     get().save()
   },
+  migrateMultipleSubjects: (fromId, toId) => {
+    set(s => ({
+      schedules: s.schedules.map(x =>
+        x.subjectId === fromId ? { ...x, subjectId: toId } : x
+      ),
+      teachers: s.teachers.map(t => ({
+        ...t,
+        subjectIds: (t.subjectIds ?? []).map(sid => sid === fromId ? toId : sid),
+      })),
+    }))
+    get().save()
+  },
   migrateScheduleSubject: (teacherId, fromSubjectId, toSubjectId) => {
     set(s => ({
       schedules: s.schedules.map(x =>
