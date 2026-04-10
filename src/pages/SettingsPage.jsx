@@ -787,7 +787,6 @@ function TabTeachers() {
         onClose={() => setSchedModal(false)}
         teacher={schedTeacher}
         store={store}
-        isAdmin={true}
       />
       <SubjectChangeModal ctx={subjectChangeCtx} />
     </div>
@@ -995,23 +994,23 @@ function TabSchedules() {
         )}
       </div>
 
-      {teacher && <ScheduleGrid teacher={teacher} store={store} isAdmin={true} />}
+      {teacher && <ScheduleGrid teacher={teacher} store={store} />}
     </div>
   )
 }
 
 // ─── ScheduleGridModal — abre grade em modal (reutilizável) ──────────────────
 
-export function ScheduleGridModal({ open, onClose, teacher, store, isAdmin = false }) {
+export function ScheduleGridModal({ open, onClose, teacher, store }) {
   if (!teacher) return null
   return (
     <Modal open={open} onClose={onClose} title={`Grade de Horários — ${teacher.name}`} size="xl">
-      <ScheduleGrid teacher={teacher} store={store} isAdmin={isAdmin} />
+      <ScheduleGrid teacher={teacher} store={store} />
     </Modal>
   )
 }
 
-function ScheduleGrid({ teacher, store, isAdmin = false }) {
+function ScheduleGrid({ teacher, store }) {
   const { addSchedule, removeSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
 
@@ -1070,7 +1069,6 @@ function ScheduleGrid({ teacher, store, isAdmin = false }) {
                         const hardBlockedTurmas = occupiedSchedules
                           .filter(s => !isSharedSchedule(s, store))
                           .map(s => s.turma)
-                        const occupiedTurmas = occupiedSchedules.map(s => s.turma)
                         const allTurmas = seg.grades.flatMap(g =>
                           g.classes.map(c => `${g.name} ${c.letter}`)
                         )
@@ -1094,44 +1092,17 @@ function ScheduleGrid({ teacher, store, isAdmin = false }) {
                                 )
                               })}
 
-                              {/* Bloquear + se professor já tem aula neste horário */}
+                              {/* Indicadores de bloqueio — sem dados de terceiros */}
                               {teacherConflict ? (
-                                <>
-                                  <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
-                                    title="Professor já tem aula neste horário">
-                                    🔒
-                                  </div>
-                                  {isAdmin && occupiedTurmas.map(turma => {
-                                    const sched = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.turma === turma)
-                                    const prof  = store.teachers.find(t => t.id === sched?.teacherId)
-                                    return (
-                                      <div key={turma} className="bg-surf2 border border-bdr rounded-lg p-1.5 text-[10px]">
-                                        <div className="font-bold truncate text-t2">{turma}</div>
-                                        <div className="text-t3 truncate">{prof?.name ?? '?'}</div>
-                                      </div>
-                                    )
-                                  })}
-                                </>
+                                <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
+                                  title="Professor já tem aula neste horário">
+                                  🔒
+                                </div>
                               ) : freeTurmas.length === 0 ? (
-                                isAdmin ? (
-                                  <div className="space-y-1">
-                                    {occupiedTurmas.map(turma => {
-                                      const sched = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.turma === turma)
-                                      const prof  = store.teachers.find(t => t.id === sched?.teacherId)
-                                      return (
-                                        <div key={turma} className="bg-surf2 border border-bdr rounded-lg p-1.5 text-[10px]">
-                                          <div className="font-bold truncate text-t2">{turma}</div>
-                                          <div className="text-t3 truncate">{prof?.name ?? '?'}</div>
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                ) : (
-                                  <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg bg-surf2 border border-dashed border-bdr"
-                                    title="Todas as turmas já têm professor neste horário">
-                                    —
-                                  </div>
-                                )
+                                <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg bg-surf2 border border-dashed border-bdr"
+                                  title="Todas as turmas já têm professor neste horário">
+                                  —
+                                </div>
                               ) : (
                                 <button
                                   onClick={() => setModal({ segId: seg.id, turno, aulaIdx: p.aulaIdx, day })}
@@ -1438,8 +1409,7 @@ function AdminsModal({ open, onClose }) {
 
 function TabProfile({ teacher }) {
   const store = useAppStore()
-  const { teacher: authTeacher, role } = useAuthStore()
-  const isAdmin = role === 'admin'
+  const { teacher: authTeacher } = useAuthStore()
   const t = teacher ?? authTeacher
   const [celular,          setCelular]          = useState(t?.celular ?? '')
   const [selSubjs,         setSelSubjs]         = useState(t?.subjectIds ?? [])
@@ -1528,7 +1498,6 @@ function TabProfile({ teacher }) {
         onClose={() => setSchedModal(false)}
         teacher={store.teachers.find(x => x.id === t.id) ?? t}
         store={store}
-        isAdmin={isAdmin}
       />
       <SubjectChangeModal ctx={subjectChangeCtx} />
     </div>
