@@ -7,7 +7,7 @@ import { getCfg, gerarPeriodos, defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
-import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin } from '../lib/db'
+import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin, deleteDocById } from '../lib/db'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -90,6 +90,13 @@ function calcSubjectChange(teacher, newSubjectIds, schedules) {
     s => s.teacherId === teacher.id && removedIds.includes(s.subjectId)
   )
   return { removedIds, addedIds, affectedSchedules }
+}
+
+function calcAreaSubjectRemovalImpact(removedSubjectIds, schedules, teachers) {
+  const affectedSchedules = schedules.filter(s => removedSubjectIds.includes(s.subjectId))
+  const affectedTeacherIds = [...new Set(affectedSchedules.map(s => s.teacherId))]
+  const affectedTeachers = teachers.filter(t => affectedTeacherIds.includes(t.id))
+  return { affectedSchedules, affectedTeachers }
 }
 
 // ─── Modal: troca/remoção de matérias com horários afetados ──────────────────
@@ -307,46 +314,102 @@ function isSharedSchedule(schedule, store) {
 function AreaBlock({ area, store }) {
   const cv   = COLOR_PALETTE[area.colorIdx % COLOR_PALETTE.length]
   const subs = store.subjects.filter(s => s.areaId === area.id)
-  const [name, setName] = useState(area.name)
-  const [txt,  setTxt]  = useState(subs.map(s => s.name).join('\n'))
+  const [name,       setName]       = useState(area.name)
+  const [txt,        setTxt]        = useState(subs.map(s => s.name).join('\n'))
+  const [pendingCtx, setPendingCtx] = useState(null)
 
-  const save = () => {
-    const lines = txt.split('\n').map(l => l.trim()).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i)
+  const doSave = (lines) => {
     store.saveAreaWithSubjects(area.id, name.trim() || area.name, lines)
     toast('Disciplinas salvas', 'ok')
   }
 
+  const save = () => {
+    const lines      = txt.split('\n').map(l => l.trim()).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i)
+    const prevNames  = subs.map(s => s.name)
+    const removedNames = prevNames.filter(n => !lines.includes(n))
+    const addedNames   = lines.filter(n => !prevNames.includes(n))
+
+    if (removedNames.length === 0) { doSave(lines); return }
+
+    const removedSubjectIds = subs.filter(s => removedNames.includes(s.name)).map(s => s.id)
+    const { affectedSchedules, affectedTeachers } =
+      calcAreaSubjectRemovalImpact(removedSubjectIds, store.schedules, store.teachers)
+
+    if (affectedSchedules.length === 0) { doSave(lines); return }
+
+    const subjectsById  = Object.fromEntries(store.subjects.map(s => [s.id, s]))
+    // addedNames ainda não existem como subjects (só após doSave) — objeto sintético para exibição no modal
+    const addedSubjects = addedNames.map(n => ({ id: n, name: n }))
+    const isSwap        = removedSubjectIds.length === 1 && addedNames.length === 1
+
+    setPendingCtx({
+      teacher: { name: affectedTeachers.map(t => t.name).join(', ') },
+      removedSubjects: removedSubjectIds.map(id => subjectsById[id] ?? { id, name: id }),
+      addedSubjects,
+      affectedCount: affectedSchedules.length,
+      onMigrate: isSwap ? () => {
+        // doSave primeiro: cria o novo subject no store
+        doSave(lines)
+        // busca o ID do novo subject no estado atualizado
+        const toSubjectId = useAppStore.getState().subjects.find(
+          s => s.areaId === area.id && s.name === addedNames[0]
+        )?.id
+        if (toSubjectId) {
+          affectedTeachers.forEach(t =>
+            store.migrateScheduleSubject(t.id, removedSubjectIds[0], toSubjectId)
+          )
+        }
+        setPendingCtx(null)
+      } : null,
+      onRemove: () => {
+        affectedSchedules.forEach(s => {
+          deleteDocById('schedules', s.id)
+          store.removeSchedule(s.id)
+        })
+        doSave(lines)
+        setPendingCtx(null)
+      },
+      onCancel: () => {
+        setTxt(subs.map(s => s.name).join('\n'))
+        setPendingCtx(null)
+      },
+    })
+  }
+
   return (
-    <div className="rounded-xl border-l-4 p-3 bg-surf border border-bdr" style={{ borderLeftColor: cv.dt }}>
-      <div className="flex items-center gap-2 mb-2">
-        <input
-          className="font-bold text-sm flex-1 bg-transparent outline-none border-b border-transparent hover:border-bdr focus:border-navy px-1 py-0.5 transition-colors"
-          value={name}
-          onChange={e => setName(e.target.value)}
+    <>
+      <div className="rounded-xl border-l-4 p-3 bg-surf border border-bdr" style={{ borderLeftColor: cv.dt }}>
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            className="font-bold text-sm flex-1 bg-transparent outline-none border-b border-transparent hover:border-bdr focus:border-navy px-1 py-0.5 transition-colors"
+            value={name}
+            onChange={e => setName(e.target.value)}
+          />
+          <span className="text-xs text-t3">{subs.length} disc.</span>
+          <button className="btn btn-dark btn-xs" onClick={save}>Salvar</button>
+          <button className="btn btn-ghost btn-xs text-err" onClick={() => {
+            if (confirm(`Remover área "${area.name}"?`)) store.removeArea(area.id)
+          }}>✕</button>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-t2 cursor-pointer mb-2">
+          <input
+            type="checkbox"
+            checked={area.shared ?? false}
+            onChange={e => store.updateArea(area.id, { shared: e.target.checked })}
+            className="accent-accent"
+          />
+          Área compartilhada
+        </label>
+        <textarea
+          className="inp text-xs font-mono resize-y min-h-[80px] w-full"
+          placeholder="Uma disciplina por linha…"
+          value={txt}
+          onChange={e => setTxt(e.target.value)}
+          onBlur={save}
         />
-        <span className="text-xs text-t3">{subs.length} disc.</span>
-        <button className="btn btn-dark btn-xs" onClick={save}>Salvar</button>
-        <button className="btn btn-ghost btn-xs text-err" onClick={() => {
-          if (confirm(`Remover área "${area.name}"?`)) store.removeArea(area.id)
-        }}>✕</button>
       </div>
-      <label className="flex items-center gap-2 text-xs text-t2 cursor-pointer mb-2">
-        <input
-          type="checkbox"
-          checked={area.shared ?? false}
-          onChange={e => store.updateArea(area.id, { shared: e.target.checked })}
-          className="accent-accent"
-        />
-        Área compartilhada
-      </label>
-      <textarea
-        className="inp text-xs font-mono resize-y min-h-[80px] w-full"
-        placeholder="Uma disciplina por linha…"
-        value={txt}
-        onChange={e => setTxt(e.target.value)}
-        onBlur={save}
-      />
-    </div>
+      <SubjectChangeModal ctx={pendingCtx} />
+    </>
   )
 }
 
