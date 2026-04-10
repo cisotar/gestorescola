@@ -522,7 +522,7 @@ function TabTeachers() {
   const [schedModal,   setSchedModal]   = useState(false)
   const [schedTeacher, setSchedTeacher] = useState(null)
   const [editId,       setEditId]       = useState(null)
-  const [form,         setForm]         = useState({ name: '', email: '', celular: '', subjectIds: [] })
+  const [form,         setForm]         = useState({ name: '', email: '', celular: '', apelido: '', subjectIds: [] })
   const [view,         setView]         = useState('cards') // 'cards' | 'table'
   const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
   const [pending,          setPending]          = useState([])
@@ -585,7 +585,7 @@ function TabTeachers() {
   const allRows = [...approvedRows, ...pendingRows]
 
   const openAdd  = () => { setForm({ name: '', email: '', celular: '', subjectIds: [] }); setEditId(null); setModal(true) }
-  const openEdit = (t) => { setForm({ name: t.name, email: t.email ?? '', celular: t.celular ?? '', subjectIds: t.subjectIds ?? [] }); setEditId(t.id); setModal(true) }
+  const openEdit = (t) => { setForm({ name: t.name, email: t.email ?? '', celular: t.celular ?? '', apelido: t.apelido ?? '', subjectIds: t.subjectIds ?? [] }); setEditId(t.id); setModal(true) }
 
   const save = () => {
     if (!form.name.trim()) return
@@ -605,13 +605,13 @@ function TabTeachers() {
           affectedCount:   affectedSchedules.length,
           onMigrate: isSwap ? () => {
             store.migrateScheduleSubject(original.id, removedIds[0], addedIds[0])
-            store.updateTeacher(editId, form)
+            store.updateTeacher(editId, { ...form, apelido: form.apelido.trim() })
             toast('Professor atualizado e horários migrados', 'ok')
             setSubjectChangeCtx(null)
           } : null,
           onRemove: () => {
             removedIds.forEach(sid => store.removeSchedulesBySubject(original.id, sid))
-            store.updateTeacher(editId, form)
+            store.updateTeacher(editId, { ...form, apelido: form.apelido.trim() })
             toast('Professor atualizado e horários removidos', 'ok')
             setSubjectChangeCtx(null)
           },
@@ -620,10 +620,10 @@ function TabTeachers() {
         return
       }
 
-      store.updateTeacher(editId, form)
+      store.updateTeacher(editId, { ...form, apelido: form.apelido.trim() })
       toast('Professor atualizado', 'ok')
     } else {
-      store.addTeacher(form.name.trim(), form)
+      store.addTeacher(form.name.trim(), { ...form, apelido: form.apelido.trim() })
       toast('Professor adicionado', 'ok')
     }
     setModal(false)
@@ -717,6 +717,7 @@ function TabTeachers() {
                           <div className="font-semibold text-sm truncate">{t.name}</div>
                           <div className="text-xs text-t1 truncate">{teacherSubjectNames(t, store.subjects) || '—'}</div>
                           {t.email   && <div className="text-xs text-t1 truncate">✉ {t.email}</div>}
+                          {t.apelido && <div className="text-xs text-t3 italic">"{t.apelido}"</div>}
                           {t.celular && <div className="text-xs text-t1 truncate">📱 {t.celular}</div>}
                           <div className="mt-1.5"><StatusSelect t={t} /></div>
                         </div>
@@ -782,6 +783,7 @@ function TabTeachers() {
                           <div className="font-semibold text-sm truncate">{t.name}</div>
                           <div className="text-[11px] text-amber-600 truncate">Sem matéria associada — clique em ✏️ para configurar</div>
                           {t.email   && <div className="text-xs text-t1 truncate">✉ {t.email}</div>}
+                          {t.apelido && <div className="text-xs text-t3 italic">"{t.apelido}"</div>}
                           {t.celular && <div className="text-xs text-t1 truncate">📱 {t.celular}</div>}
                           <div className="mt-1.5"><StatusSelect t={t} /></div>
                         </div>
@@ -816,6 +818,10 @@ function TabTeachers() {
           <div>
             <label className="lbl">Celular</label>
             <input className="inp" type="tel" value={form.celular} onChange={e => setForm(f => ({ ...f, celular: e.target.value }))} />
+          </div>
+          <div>
+            <label className="lbl">Apelido <span className="text-t3 font-normal">(opcional)</span></label>
+            <input className="inp" value={form.apelido} maxLength={30} onChange={e => setForm(f => ({ ...f, apelido: e.target.value }))} />
           </div>
           <div>
             <label className="lbl">Matérias</label>
