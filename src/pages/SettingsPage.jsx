@@ -428,12 +428,29 @@ function AreaBlock({ area, store }) {
       ...store.subjects.filter(s => !removedSubjSet.has(s.id)),
       ...newSubjects,
     ]
-    setDeparaData({ removedSubjectsWithCount, availableSubjects, lines })
+    setDeparaData({ removedSubjectsWithCount, availableSubjects, lines, mode: 'save' })
     setDeparaOpen(true)
   }
 
   const handleDeparaConfirm = (mapping) => {
     if (!deparaData) return
+
+    if (deparaData.mode === 'remove') {
+      Object.entries(mapping).forEach(([fromId, toId]) => {
+        if (!toId) {
+          store.schedules
+            .filter(s => s.subjectId === fromId)
+            .forEach(s => store.removeSchedule(s.id))
+        } else {
+          store.migrateMultipleSubjects(fromId, toId)
+        }
+      })
+      store.removeArea(area.id)
+      setDeparaOpen(false)
+      return
+    }
+
+    // modo 'save'
     let savedAlready = false
     const doSaveOnce = () => {
       if (!savedAlready) { doSave(deparaData.lines); savedAlready = true }
@@ -474,7 +491,21 @@ function AreaBlock({ area, store }) {
           <span className="text-xs text-t3">{subs.length} disc.</span>
           <button className="btn btn-dark btn-xs" onClick={save}>Salvar</button>
           <button className="btn btn-ghost btn-xs text-err" onClick={() => {
-            if (confirm(`Remover área "${area.name}"?`)) store.removeArea(area.id)
+            const areaSubjIds = subs.map(s => s.id)
+            const { affectedSchedules } = calcAreaSubjectRemovalImpact(areaSubjIds, store.schedules, store.teachers)
+            if (affectedSchedules.length === 0) {
+              if (confirm(`Remover área "${area.name}"?`)) store.removeArea(area.id)
+              return
+            }
+            const removedSubjectsWithCount = subs.map(subj => ({
+              id: subj.id,
+              name: subj.name,
+              scheduleCount: store.schedules.filter(s => s.subjectId === subj.id).length,
+            }))
+            const removedSubjSet = new Set(areaSubjIds)
+            const availableSubjects = store.subjects.filter(s => !removedSubjSet.has(s.id))
+            setDeparaData({ removedSubjectsWithCount, availableSubjects, lines: null, mode: 'remove' })
+            setDeparaOpen(true)
           }}>✕</button>
         </div>
         <label className="flex items-center gap-2 text-xs text-t2 cursor-pointer mb-2">
@@ -500,7 +531,7 @@ function AreaBlock({ area, store }) {
         availableSubjects={deparaData?.availableSubjects ?? []}
         onConfirm={handleDeparaConfirm}
         onCancel={() => {
-          setTxt(subs.map(s => s.name).join('\n'))
+          if (deparaData?.mode !== 'remove') setTxt(subs.map(s => s.name).join('\n'))
           setDeparaOpen(false)
         }}
       />
