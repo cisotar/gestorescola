@@ -51,13 +51,13 @@ function _css() {
 
 // ─── Casca HTML ───────────────────────────────────────────────────────────────
 
-function _wrap(title, metaHTML, bodyHTML) {
+function _wrap(title, metaHTML, bodyHTML, docTitle = 'GestãoEscolar — Relatório de Substituições') {
   const now = new Date().toLocaleString('pt-BR')
   return `<!DOCTYPE html><html lang="pt-BR">
 <head><meta charset="UTF-8"><title>${title}</title><style>${_css()}</style></head>
 <body><div class="page">
   <div class="doc-hdr">
-    <div class="doc-ttl">GestãoEscolar — Relatório de Substituições</div>
+    <div class="doc-ttl">${docTitle}</div>
     <div class="doc-sub">${title}</div>
     <div class="doc-meta">${metaHTML}</div>
   </div>
@@ -487,7 +487,7 @@ export function generateTeacherScheduleHTML(teacher, store) {
           </div>`
       }).join('')
 
-  return _wrap(`Grade Horária — ${teacher?.name ?? '—'}`, metaHTML, bodyHTML)
+  return _wrap(`Grade Horária — ${teacher?.name ?? '—'}`, metaHTML, bodyHTML, 'GestãoEscolar — Grade Horária')
 }
 
 // ─── 9. Grade horária — escola (com filtros) ──────────────────────────────────
@@ -521,10 +521,10 @@ export function generateSchoolScheduleHTML(filter = {}, store) {
         return `
           <div class="section">
             <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
-            ${_scheduleGrid(seg, turnoSeg, filtered, store, true)}
+            ${_scheduleGrid(seg, turnoSeg, filtered, store, !teacherId)}
           </div>`
       }).join('')
 
   const title = [teacherLabel, turma ? `Turma ${turma}` : null].filter(Boolean).join(' · ') || 'Todos os horários'
-  return _wrap(`Grade da Escola — ${title}`, metaHTML, bodyHTML)
+  return _wrap(`Grade da Escola — ${title}`, metaHTML, bodyHTML, 'GestãoEscolar — Grade Horária')
 }

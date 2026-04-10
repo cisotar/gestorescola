@@ -7,27 +7,26 @@ import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
-function SchoolGrid({ seg, schedules, store }) {
+function SchoolGrid({ seg, schedules, store, showTeacher = true }) {
   const turno = seg.turno ?? 'manha'
   const aulas = getAulas(seg.id, turno, store.periodConfigs)
 
   if (aulas.length === 0) return null
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-border">
+    <div className="overflow-x-auto rounded-xl border border-bdr">
       <table className="w-full text-xs border-collapse">
         <thead>
-          <tr className="bg-surface2">
-            <th className="text-left px-3 py-2 font-semibold text-t2 w-20 border-b border-border">Aula</th>
+          <tr className="bg-surf2">
+            <th className="text-left px-3 py-2 font-semibold text-t2 w-20 border-b border-bdr">Aula</th>
             {DAYS.map(d => (
-              <th key={d} className="text-left px-3 py-2 font-semibold text-t2 border-b border-border">{d}</th>
+              <th key={d} className="text-left px-3 py-2 font-semibold text-t2 border-b border-bdr">{d}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {aulas.map((aula, i) => {
-            const daySlots = DAYS.map((_, dayIdx) => {
-              const day = dayIdx + 1
+            const daySlots = DAYS.map((day, dayIdx) => {
               return schedules.filter(s => {
                 if (!s.timeSlot) return false
                 const [sid, , ai] = s.timeSlot.split('|')
@@ -38,15 +37,15 @@ function SchoolGrid({ seg, schedules, store }) {
             const isEmpty = daySlots.every(ds => ds.length === 0)
 
             return (
-              <tr key={aula.aulaIdx} className={i % 2 === 0 ? 'bg-bg' : 'bg-surface'}>
-                <td className="px-3 py-2 font-medium text-t2 whitespace-nowrap align-top border-r border-border">
+              <tr key={aula.aulaIdx} className={i % 2 === 0 ? 'bg-bg' : 'bg-surf'}>
+                <td className="px-3 py-2 font-medium text-t2 whitespace-nowrap align-top border-r border-bdr">
                   <div>{aula.label}</div>
                   {aula.inicio && (
                     <div className="text-[10px] text-t3">{aula.inicio}–{aula.fim}</div>
                   )}
                 </td>
-                {daySlots.map((matches, dayIdx) => (
-                  <td key={dayIdx} className="px-2 py-2 align-top border-r border-border last:border-r-0">
+                {daySlots.map((matches, i) => (
+                  <td key={i} className="px-2 py-2 align-top border-r border-bdr last:border-r-0">
                     {matches.length === 0 ? (
                       isEmpty ? null : <span className="text-t3">—</span>
                     ) : (
@@ -56,13 +55,17 @@ function SchoolGrid({ seg, schedules, store }) {
                           const subject = store.subjects?.find(sub => sub.id === s.subjectId)
                           return (
                             <div key={s.id} className="leading-tight">
-                              <span className="font-semibold text-accent">{teacher?.name ?? '—'}</span>
-                              <span className="text-t3"> • </span>
-                              <span className="text-t2">{s.turma}</span>
-                              {subject && (
+                              {showTeacher ? (
                                 <>
+                                  <span className="font-semibold text-accent">{teacher?.name ?? '—'}</span>
                                   <span className="text-t3"> • </span>
-                                  <span className="text-t3">{subject.name}</span>
+                                  <span className="text-t3">{subject?.name ?? '—'}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="font-semibold text-t1">{s.turma ?? '—'}</span>
+                                  <span className="text-t3"> • </span>
+                                  <span className="text-t3">{subject?.name ?? '—'}</span>
                                 </>
                               )}
                             </div>
@@ -146,7 +149,7 @@ export default function SchoolSchedulePage() {
           {/* Mobile: accordion toggle */}
           <div className="lg:hidden mb-3">
             <button
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-surface border border-border text-sm font-semibold"
+              className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-surf border border-bdr text-sm font-semibold"
               onClick={() => setFiltersOpen(v => !v)}
             >
               <span>🔍 Filtros {hasFilters ? '(ativos)' : ''}</span>
@@ -163,7 +166,7 @@ export default function SchoolSchedulePage() {
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-t2">Professor</label>
                 <select
-                  className="input w-full text-sm"
+                  className="inp w-full text-sm"
                   value={filterTeacher}
                   onChange={e => {
                     setFilterTeacher(e.target.value)
@@ -181,7 +184,7 @@ export default function SchoolSchedulePage() {
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-t2">Turma</label>
                 <select
-                  className="input w-full text-sm"
+                  className="inp w-full text-sm"
                   value={filterTurma}
                   onChange={e => setFilterTurma(e.target.value)}
                 >
@@ -237,7 +240,7 @@ export default function SchoolSchedulePage() {
             relevantSegments.map(seg => {
               const turnoLabel = (seg.turno ?? 'manha') === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
               return (
-                <div key={seg.id} className="space-y-2">
+                <div key={seg.id} className="card p-4 space-y-3">
                   <div className="text-sm font-bold text-t1">
                     {seg.name} — {turnoLabel}
                   </div>
@@ -245,6 +248,7 @@ export default function SchoolSchedulePage() {
                     seg={seg}
                     schedules={filtered}
                     store={store}
+                    showTeacher={!filterTeacher}
                   />
                 </div>
               )
