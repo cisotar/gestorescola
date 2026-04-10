@@ -154,9 +154,9 @@ const useAppStore = create((set, get) => ({
   },
 
   // ─── Áreas ──────────────────────────────────────────────────────────────────
-  addArea: (name, colorIdx, segmentIds = []) => {
+  addArea: (name, colorIdx, segmentIds = [], shared = false) => {
     set(s => ({
-      areas: [...s.areas, { id: uid(), name: name.trim(), colorIdx, segmentIds }],
+      areas: [...s.areas, { id: uid(), name: name.trim(), colorIdx, segmentIds, shared }],
     }))
     get().save()
   },
