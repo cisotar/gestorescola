@@ -671,7 +671,7 @@ function TabTeachers() {
 
   const handleReject = async (p) => {
     if (!confirm(`Recusar acesso de ${p.name}?`)) return
-    await rejectTeacher(p.id)
+    await rejectTeacher(p.id, useAppStore.setState)
     setPending(prev => prev.filter(x => x.id !== p.id))
     toast(`${p.name} recusado`, 'warn')
   }
@@ -1545,7 +1545,7 @@ function PendingModal({ open, onClose }) {
               }}>Aprovar</button>
               <button className="btn btn-ghost btn-sm text-err" onClick={async () => {
                 if (!confirm('Recusar?')) return
-                await rejectTeacher(p.id)
+                await rejectTeacher(p.id, useAppStore.setState)
                 setPending(prev => prev.filter(x => x.id !== p.id))
               }}>Recusar</button>
             </div>

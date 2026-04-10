@@ -184,7 +184,20 @@ export async function approveTeacher(pendingId, state, setState) {
   await deleteDoc(ref)
 }
 
-export async function rejectTeacher(pendingId) {
+export async function rejectTeacher(pendingId, setState) {
+  const orphanSnap = await getDocs(
+    query(collection(db, 'schedules'), where('teacherId', '==', pendingId))
+  )
+  if (!orphanSnap.empty) {
+    const batch = writeBatch(db)
+    orphanSnap.docs.forEach(d => batch.delete(doc(db, 'schedules', d.id)))
+    await batch.commit()
+    if (setState) {
+      setState(s => ({
+        schedules: s.schedules.filter(sc => sc.teacherId !== pendingId),
+      }))
+    }
+  }
   await deleteDoc(doc(db, 'pending_teachers', pendingId))
 }
 
