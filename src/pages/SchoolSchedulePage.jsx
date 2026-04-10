@@ -15,12 +15,12 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true }) {
 
   return (
     <div className="overflow-x-auto rounded-xl border border-bdr">
-      <table className="w-full text-xs border-collapse">
+      <table className="w-full text-xs border-collapse table-fixed">
         <thead>
           <tr className="bg-surf2">
-            <th className="text-left px-3 py-2 font-semibold text-t2 w-20 border-b border-bdr">Aula</th>
+            <th className="text-left px-3 py-2 font-bold text-[#1a1814] w-[90px] border-b border-bdr">Aula</th>
             {DAYS.map(d => (
-              <th key={d} className="text-left px-3 py-2 font-semibold text-t2 border-b border-bdr">{d}</th>
+              <th key={d} className="text-left px-3 py-2 font-bold text-[#1a1814] border-b border-bdr">{d}</th>
             ))}
           </tr>
         </thead>
@@ -38,10 +38,10 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true }) {
 
             return (
               <tr key={aula.aulaIdx} className={i % 2 === 0 ? 'bg-bg' : 'bg-surf'}>
-                <td className="px-3 py-2 font-medium text-t2 whitespace-nowrap align-top border-r border-bdr">
+                <td className="px-3 py-2 font-bold text-[#1a1814] whitespace-nowrap align-top border-r border-bdr">
                   <div>{aula.label}</div>
                   {aula.inicio && (
-                    <div className="text-[10px] text-t3">{aula.inicio}–{aula.fim}</div>
+                    <div className="text-[10px] text-[#4a4740]">{aula.inicio}–{aula.fim}</div>
                   )}
                 </td>
                 {daySlots.map((matches, i) => (
@@ -57,15 +57,13 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true }) {
                             <div key={s.id} className="leading-tight">
                               {showTeacher ? (
                                 <>
-                                  <span className="font-semibold text-accent">{teacher?.name ?? '—'}</span>
-                                  <span className="text-t3"> • </span>
-                                  <span className="text-t3">{subject?.name ?? '—'}</span>
+                                  <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{teacher?.name ?? '—'}</div>
+                                  <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
                                 </>
                               ) : (
                                 <>
-                                  <span className="font-semibold text-t1">{s.turma ?? '—'}</span>
-                                  <span className="text-t3"> • </span>
-                                  <span className="text-t3">{subject?.name ?? '—'}</span>
+                                  <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{s.turma ?? '—'}</div>
+                                  <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
                                 </>
                               )}
                             </div>
@@ -89,36 +87,49 @@ export default function SchoolSchedulePage() {
   if (role !== 'admin') return <Navigate to="/home" replace />
 
   const store = useAppStore()
-  const [filterTeacher, setFilterTeacher] = useState('')
-  const [filterTurma,   setFilterTurma]   = useState('')
-  const [filtersOpen,   setFiltersOpen]   = useState(false)
+  const [filterTeacher,  setFilterTeacher]  = useState('')
+  const [filterSegmento, setFilterSegmento] = useState('')
+  const [filterTurma,    setFilterTurma]    = useState('')
+  const [filtersOpen,    setFiltersOpen]    = useState(false)
 
   // Listas para os selects
   const teachersWithSchedules = store.teachers
     .filter(t => store.schedules.some(s => s.teacherId === t.id))
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  const segmentosComSchedules = store.segments.filter(seg =>
+    store.schedules.some(s =>
+      s.timeSlot?.split('|')[0] === seg.id &&
+      (!filterTeacher || s.teacherId === filterTeacher)
+    )
+  )
+
   const allTurmas = [...new Set(
     store.schedules
-      .filter(s => !filterTeacher || s.teacherId === filterTeacher)
+      .filter(s =>
+        (!filterTeacher  || s.teacherId === filterTeacher) &&
+        (!filterSegmento || s.timeSlot?.split('|')[0] === filterSegmento)
+      )
       .map(s => s.turma)
       .filter(Boolean)
   )].sort()
 
   // Schedules filtrados
   const filtered = store.schedules.filter(s =>
-    (!filterTeacher || s.teacherId === filterTeacher) &&
-    (!filterTurma   || s.turma    === filterTurma)
+    (!filterTeacher  || s.teacherId === filterTeacher) &&
+    (!filterSegmento || s.timeSlot?.split('|')[0] === filterSegmento) &&
+    (!filterTurma    || s.turma    === filterTurma)
   )
 
   // Segmentos com schedules filtrados
   const segIds = [...new Set(filtered.map(s => s.timeSlot?.split('|')[0]).filter(Boolean))]
   const relevantSegments = store.segments.filter(s => segIds.includes(s.id))
 
-  const hasFilters = filterTeacher || filterTurma
+  const hasFilters = filterTeacher || filterSegmento || filterTurma
 
   function clearFilters() {
     setFilterTeacher('')
+    setFilterSegmento('')
     setFilterTurma('')
   }
 
@@ -132,7 +143,7 @@ export default function SchoolSchedulePage() {
         <button
           className="btn btn-ghost btn-sm"
           onClick={() => openPDF(generateSchoolScheduleHTML(
-            { teacherId: filterTeacher || undefined, turma: filterTurma || undefined },
+            { teacherId: filterTeacher || undefined, segmento: filterSegmento || undefined, turma: filterTurma || undefined },
             store
           ))}
         >
@@ -170,12 +181,31 @@ export default function SchoolSchedulePage() {
                   value={filterTeacher}
                   onChange={e => {
                     setFilterTeacher(e.target.value)
-                    setFilterTurma('') // reset turma quando muda professor
+                    setFilterSegmento('')
+                    setFilterTurma('')
                   }}
                 >
                   <option value="">Todos os professores</option>
                   {teachersWithSchedules.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro segmento */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-t2">Segmento</label>
+                <select
+                  className="inp w-full text-sm"
+                  value={filterSegmento}
+                  onChange={e => {
+                    setFilterSegmento(e.target.value)
+                    setFilterTurma('')
+                  }}
+                >
+                  <option value="">Todos os segmentos</option>
+                  {segmentosComSchedules.map(seg => (
+                    <option key={seg.id} value={seg.id}>{seg.name}</option>
                   ))}
                 </select>
               </div>
@@ -212,7 +242,13 @@ export default function SchoolSchedulePage() {
                 {filterTeacher && (
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-accent/10 text-accent text-xs font-semibold">
                     {teachersWithSchedules.find(t => t.id === filterTeacher)?.name}
-                    <button onClick={() => setFilterTeacher('')} className="ml-1 text-accent/60 hover:text-accent">✕</button>
+                    <button onClick={() => { setFilterTeacher(''); setFilterSegmento(''); setFilterTurma('') }} className="ml-1 text-accent/60 hover:text-accent">✕</button>
+                  </span>
+                )}
+                {filterSegmento && (
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-accent/10 text-accent text-xs font-semibold">
+                    {segmentosComSchedules.find(s => s.id === filterSegmento)?.name}
+                    <button onClick={() => { setFilterSegmento(''); setFilterTurma('') }} className="ml-1 text-accent/60 hover:text-accent">✕</button>
                   </span>
                 )}
                 {filterTurma && (

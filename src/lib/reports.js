@@ -426,7 +426,7 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false) {
   const aulas = getAulas(seg.id, turno, store.periodConfigs)
   if (!aulas.length) return ''
 
-  const header = `<tr><th style="min-width:90px"></th>${SCHED_DAYS.map(d => `<th>${d}</th>`).join('')}</tr>`
+  const header = `<tr><th style="width:90px;color:#1a1814"></th>${SCHED_DAYS.map(d => `<th style="color:#1a1814">${d}</th>`).join('')}</tr>`
 
   const rows = aulas.map(({ aulaIdx, label, inicio, fim }) => {
     const cells = SCHED_DAYS.map(day => {
@@ -438,19 +438,19 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false) {
         const subj = store.subjects.find(x => x.id === s.subjectId)
         if (showTeacher) {
           const teacher = store.teachers.find(t => t.id === s.teacherId)
-          return `<strong>${teacher?.name ?? '—'}</strong><br>${s.turma ?? '—'} · ${subj?.name ?? '—'}`
+          return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${teacher?.name ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
         }
-        return `<strong>${s.turma ?? '—'}</strong><br>${subj?.name ?? '—'}`
+        return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${s.turma ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
       }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
       return `<td>${lines}</td>`
     }).join('')
     return `<tr>
-      <td style="white-space:nowrap"><strong>${label}</strong><br><span style="color:#a09d97;font-size:10px">${inicio}–${fim}</span></td>
+      <td style="width:90px;white-space:nowrap;color:#1a1814"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
       ${cells}
     </tr>`
   }).join('')
 
-  return `<table>${header}<tbody>${rows}</tbody></table>`
+  return `<table style="table-layout:fixed;width:100%">${header}<tbody>${rows}</tbody></table>`
 }
 
 // ─── 8. Grade horária — por professor ────────────────────────────────────────
@@ -493,17 +493,20 @@ export function generateTeacherScheduleHTML(teacher, store) {
 // ─── 9. Grade horária — escola (com filtros) ──────────────────────────────────
 
 export function generateSchoolScheduleHTML(filter = {}, store) {
-  const { teacherId, turma } = filter
+  const { teacherId, segmento, turma } = filter
 
   const filtered = (store.schedules ?? []).filter(s =>
     (!teacherId || s.teacherId === teacherId) &&
-    (!turma    || s.turma    === turma)
+    (!segmento  || s.timeSlot?.split('|')[0] === segmento) &&
+    (!turma     || s.turma    === turma)
   )
 
-  const teacherLabel = teacherId ? store.teachers.find(t => t.id === teacherId)?.name : null
+  const teacherLabel  = teacherId ? store.teachers.find(t => t.id === teacherId)?.name : null
+  const segmentoLabel = segmento  ? store.segments.find(s => s.id === segmento)?.name  : null
 
   const metaHTML = `
     <div class="m-blk"><span class="m-lbl">Filtro Professor</span><span class="m-val">${teacherLabel ?? 'Todos'}</span></div>
+    <div class="m-blk"><span class="m-lbl">Filtro Segmento</span><span class="m-val">${segmentoLabel ?? 'Todos'}</span></div>
     <div class="m-blk"><span class="m-lbl">Filtro Turma</span><span class="m-val">${turma ?? 'Todas'}</span></div>
     <div class="m-blk" style="margin-left:auto;text-align:right">
       <span class="m-lbl">Total aulas</span><span class="m-val">${filtered.length}</span>
