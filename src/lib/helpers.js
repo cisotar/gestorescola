@@ -41,6 +41,22 @@ export function findTurma(label, segments) {
   return allTurmaObjects(segments).find(t => t.label === label) ?? null
 }
 
+export function isSharedSeriesTurma(turma, sharedSeries = []) {
+  return sharedSeries.some(ss => ss.name === turma)
+}
+
+export function getSharedSeriesForTurma(turma, sharedSeries = []) {
+  return sharedSeries.find(ss => ss.name === turma) ?? null
+}
+
+export function getSharedSeriesActivity(subjectId, sharedSeries = []) {
+  for (const ss of sharedSeries) {
+    const act = (ss.activities ?? []).find(a => a.id === subjectId)
+    if (act) return act
+  }
+  return null
+}
+
 export function teacherSubjectNames(teacher, subjects) {
   return (teacher?.subjectIds ?? [])
     .map(sid => subjects.find(s => s.id === sid)?.name)

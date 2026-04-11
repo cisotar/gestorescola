@@ -36,6 +36,7 @@ const INITIAL_STATE = {
   },
   areas:         [],
   subjects:      [],
+  sharedSeries:  [],
   teachers:      [],
   schedules:     [],
   absences:      [],
@@ -202,6 +203,20 @@ const useAppStore = create((set, get) => ({
         teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => !removedSet.has(sid)) })),
       }
     })
+    get().save()
+  },
+
+  // ─── Turmas compartilhadas ──────────────────────────────────────────────────
+  addSharedSeries: (series) => {
+    set(s => ({ sharedSeries: [...s.sharedSeries, series] }))
+    get().save()
+  },
+  updateSharedSeries: (id, changes) => {
+    set(s => ({ sharedSeries: s.sharedSeries.map(ss => ss.id === id ? { ...ss, ...changes } : ss) }))
+    get().save()
+  },
+  removeSharedSeries: (id) => {
+    set(s => ({ sharedSeries: s.sharedSeries.filter(ss => ss.id !== id) }))
     get().save()
   },
 

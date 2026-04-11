@@ -4,7 +4,7 @@ import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { getAulas } from '../lib/periods'
 import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
-import { isFormationTurma, getFormationSubject } from '../lib/constants'
+import { isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
@@ -52,11 +52,13 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                     ) : (
                       <div className="space-y-1">
                         {matches.map(s => {
-                          const teacher      = store.teachers.find(t => t.id === s.teacherId)
-                          const subject      = store.subjects?.find(sub => sub.id === s.subjectId)
-                          const isFormation  = isFormationTurma(s.turma)
-                          const formSubj     = isFormation ? getFormationSubject(s.subjectId) : null
-                          const displayLabel = isFormation ? `Formação · ${formSubj?.name ?? '?'}` : s.turma
+                          const teacher = store.teachers.find(t => t.id === s.teacherId)
+                          const subject = store.subjects?.find(sub => sub.id === s.subjectId)
+                          const isShared = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                          const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
+                          const displayLabel = isShared
+                            ? `${s.turma} · ${sharedAct?.name ?? '?'}`
+                            : s.turma
                           return (
                             <div key={s.id} className="leading-tight">
                               {showTeacher ? (

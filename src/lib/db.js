@@ -5,6 +5,19 @@ import {
 } from 'firebase/firestore'
 
 const LS_KEY = 'gestao_v7_cache'
+const DEFAULT_SHARED_SERIES = [
+  {
+    id: 'shared-formacao',
+    name: 'FORMAÇÃO',
+    activities: [
+      { id: 'formation-atpcg',       name: 'ATPCG',       tipo: 'fixo',     order: 0 },
+      { id: 'formation-atpca',       name: 'ATPCA',       tipo: 'fixo',     order: 1 },
+      { id: 'formation-multiplica',  name: 'Multiplica',  tipo: 'variavel', order: 2 },
+      { id: 'formation-pda',         name: 'PDA',         tipo: 'variavel', order: 3 },
+      { id: 'formation-alinhamento', name: 'Alinhamento', tipo: 'variavel', order: 4 },
+    ],
+  },
+]
 
 // ─── Carregamento inicial ─────────────────────────────────────────────────────
 
@@ -26,11 +39,26 @@ export async function loadFromFirestore() {
 
 async function _loadConfig() {
   const snap = await getDoc(doc(db, 'meta', 'config'))
-  if (!snap.exists()) return {}
+  if (!snap.exists()) {
+    try {
+      await setDoc(doc(db, 'meta', 'config'), { sharedSeries: DEFAULT_SHARED_SERIES }, { merge: true })
+    } catch (e) {
+      console.warn('[db] Falha ao persistir seed de sharedSeries:', e)
+    }
+    return { sharedSeries: DEFAULT_SHARED_SERIES }
+  }
   const data = snap.data()
-  const keys = ['segments','periodConfigs','areas','subjects','workloadWarn','workloadDanger']
+  const keys = ['segments','periodConfigs','areas','subjects','sharedSeries','workloadWarn','workloadDanger']
   const result = {}
   keys.forEach(k => { if (data[k] !== undefined) result[k] = data[k] })
+  if (!data.sharedSeries?.length) {
+    result.sharedSeries = DEFAULT_SHARED_SERIES
+    try {
+      await setDoc(doc(db, 'meta', 'config'), { sharedSeries: DEFAULT_SHARED_SERIES }, { merge: true })
+    } catch (e) {
+      console.warn('[db] Falha ao persistir seed de sharedSeries:', e)
+    }
+  }
   return result
 }
 
@@ -47,7 +75,7 @@ export async function saveToFirestore(state) {
     const batch = writeBatch(db)
     batch.set(doc(db, 'meta', 'config'), {
       segments: state.segments, periodConfigs: state.periodConfigs,
-      areas: state.areas, subjects: state.subjects,
+      areas: state.areas, subjects: state.subjects, sharedSeries: state.sharedSeries ?? [],
       workloadWarn: state.workloadWarn, workloadDanger: state.workloadDanger,
       updatedAt: serverTimestamp(),
     })
@@ -86,7 +114,7 @@ export async function saveConfig(state) {
   try {
     await setDoc(doc(db, 'meta', 'config'), {
       segments: state.segments, periodConfigs: state.periodConfigs,
-      areas: state.areas, subjects: state.subjects,
+      areas: state.areas, subjects: state.subjects, sharedSeries: state.sharedSeries ?? [],
       workloadWarn: state.workloadWarn, workloadDanger: state.workloadDanger,
       updatedAt: serverTimestamp(),
     })
@@ -257,14 +285,46 @@ export async function migrateFormationSchedules() {
   return migrated
 }
 
+export async function migrateSharedSeriesActivities(idMap = {}) {
+  const entries = Object.entries(idMap).filter(([fromId, toId]) => fromId && toId && fromId !== toId)
+  if (entries.length === 0) {
+    console.log('[migration] Nada a migrar.')
+    return 0
+  }
+
+  const map = Object.fromEntries(entries)
+  const snap = await getDocs(collection(db, 'schedules'))
+  const toMigrate = snap.docs.filter(d => map[d.data().subjectId])
+
+  if (toMigrate.length === 0) {
+    console.log('[migration] Nada a migrar.')
+    return 0
+  }
+
+  const CHUNK = 400
+  let migrated = 0
+  for (let i = 0; i < toMigrate.length; i += CHUNK) {
+    const batch = writeBatch(db)
+    toMigrate.slice(i, i + CHUNK).forEach(d => {
+      batch.update(doc(db, 'schedules', d.id), { subjectId: map[d.data().subjectId] })
+    })
+    await batch.commit()
+    migrated += toMigrate.slice(i, i + CHUNK).length
+  }
+
+  console.log(`[migration] ${migrated} schedules migrados.`)
+  return migrated
+}
+
 // ─── LocalStorage fallback ────────────────────────────────────────────────────
 
 export function _saveToLS(state) {
   try {
     const { segments, periodConfigs, areas, subjects, teachers,
-            schedules, subs, absences, history, workloadWarn, workloadDanger } = state
+            schedules, subs, absences, history, sharedSeries, workloadWarn, workloadDanger } = state
     localStorage.setItem(LS_KEY, JSON.stringify({
       segments, periodConfigs, areas, subjects, teachers,
+      sharedSeries: sharedSeries ?? [],
       schedules, subs: subs ?? {}, absences: absences ?? [],
       history: history ?? [], workloadWarn, workloadDanger,
     }))
