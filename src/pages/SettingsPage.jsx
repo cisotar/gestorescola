@@ -4,7 +4,7 @@ import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import { uid, colorOfTeacher, teacherSubjectNames } from '../lib/helpers'
 import { getCfg, gerarPeriodos, defaultCfg } from '../lib/periods'
-import { COLOR_PALETTE } from '../lib/constants'
+import { COLOR_PALETTE, FORMATION_SERIES, isFormationSeries } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
 import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin, deleteDocById } from '../lib/db'
@@ -1265,7 +1265,7 @@ export function ScheduleGrid({ teacher, store }) {
                         const occupiedSchedules = store.schedules
                           .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
                         const hardBlockedTurmas = occupiedSchedules
-                          .filter(s => !isSharedSchedule(s, store))
+                          .filter(s => !isSharedSchedule(s, store) && !isFormationSeries(s.turma))
                           .map(s => s.turma)
                         const allTurmas = seg.grades.flatMap(g =>
                           g.classes.map(c => `${g.name} ${c.letter}`)
@@ -1376,21 +1376,22 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
     })
 
   const save = () => {
-    if (!grade || !turma) return
+    if (!turma) return
     if (store.schedules.find(s => s.teacherId === teacher.id && s.day === day && s.timeSlot === slot))
       { alert('Conflito: professor já tem aula neste horário.'); return }
-    if (hardBlockedTurmas.has(turma))
+    if (!isFormationSeries(turma) && hardBlockedTurmas.has(turma))
       { alert('Conflito: esta turma já tem professor neste horário.'); return }
-    // Turma com ocupante de área compartilhada: novo subject também deve ser compartilhado
-    const turmaHasSharedOccupant = store.schedules.some(
-      s => s.timeSlot === slot && s.day === day && s.turma === turma
-        && s.teacherId !== teacher.id && isSharedSchedule(s, store)
-    )
-    if (turmaHasSharedOccupant) {
-      const newSubj = store.subjects.find(s => s.id === subjId)
-      const newArea = store.areas.find(a => a.id === newSubj?.areaId)
-      if (!newArea?.shared)
-        { alert('Esta turma está reservada para área compartilhada.'); return }
+    if (!isFormationSeries(turma)) {
+      const turmaHasSharedOccupant = store.schedules.some(
+        s => s.timeSlot === slot && s.day === day && s.turma === turma
+          && s.teacherId !== teacher.id && isSharedSchedule(s, store)
+      )
+      if (turmaHasSharedOccupant) {
+        const newSubj = store.subjects.find(s => s.id === subjId)
+        const newArea = store.areas.find(a => a.id === newSubj?.areaId)
+        if (!newArea?.shared)
+          { alert('Esta turma está reservada para área compartilhada.'); return }
+      }
     }
     onSave({ teacherId: teacher.id, subjectId: subjId || null, turma, day, timeSlot: slot })
   }
@@ -1451,6 +1452,23 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
           }
         </div>
 
+        {/* Formação */}
+        <div className="pt-3 border-t border-bdr">
+          <div className="text-[10px] font-bold text-t3 uppercase tracking-wider mb-2">Formação</div>
+          <div className="flex flex-wrap gap-2">
+            {FORMATION_SERIES.map(serie => (
+              <button
+                key={serie}
+                type="button"
+                className={turma === serie ? pillOn : pillOff}
+                onClick={() => { setGrade(''); setTurma(serie) }}
+              >
+                {serie}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Matéria */}
         <div>
           <label className="lbl">Matéria <span className="font-normal text-t3">(opcional)</span></label>
@@ -1482,7 +1500,7 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
           <button
             className="btn btn-dark flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
             onClick={save}
-            disabled={!grade || !turma}
+            disabled={!turma}
           >
             Adicionar
           </button>
