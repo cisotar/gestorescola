@@ -4,6 +4,7 @@ import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { getAulas } from '../lib/periods'
 import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
+import { isFormationTurma, getFormationSubject } from '../lib/constants'
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
@@ -51,8 +52,11 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                     ) : (
                       <div className="space-y-1">
                         {matches.map(s => {
-                          const teacher = store.teachers.find(t => t.id === s.teacherId)
-                          const subject = store.subjects?.find(sub => sub.id === s.subjectId)
+                          const teacher      = store.teachers.find(t => t.id === s.teacherId)
+                          const subject      = store.subjects?.find(sub => sub.id === s.subjectId)
+                          const isFormation  = isFormationTurma(s.turma)
+                          const formSubj     = isFormation ? getFormationSubject(s.subjectId) : null
+                          const displayLabel = isFormation ? `Formação · ${formSubj?.name ?? '?'}` : s.turma
                           return (
                             <div key={s.id} className="leading-tight">
                               {showTeacher ? (
@@ -62,7 +66,7 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                                 </>
                               ) : (
                                 <>
-                                  <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{s.turma ?? '—'}</div>
+                                  <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{displayLabel ?? '—'}</div>
                                   <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
                                 </>
                               )}

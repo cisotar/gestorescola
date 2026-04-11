@@ -4,7 +4,7 @@ import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import { uid, colorOfTeacher, teacherSubjectNames } from '../lib/helpers'
 import { getCfg, gerarPeriodos, defaultCfg } from '../lib/periods'
-import { COLOR_PALETTE, FORMATION_SERIES, isFormationSeries } from '../lib/constants'
+import { COLOR_PALETTE, FORMATION_TURMA, FORMATION_SUBJECTS, isFormationTurma, getFormationSubject } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
 import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin, deleteDocById } from '../lib/db'
@@ -1287,7 +1287,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false }) {
                         const occupiedSchedules = store.schedules
                           .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
                         const hardBlockedTurmas = occupiedSchedules
-                          .filter(s => !isSharedSchedule(s, store) && !isFormationSeries(s.turma))
+                          .filter(s => !isSharedSchedule(s, store) && !isFormationTurma(s.turma))
                           .map(s => s.turma)
                         const allTurmas = seg.grades.flatMap(g =>
                           g.classes.map(c => `${g.name} ${c.letter}`)
@@ -1299,13 +1299,14 @@ export function ScheduleGrid({ teacher, store, readOnly = false }) {
                           <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                             <div className="space-y-1">
                               {mine.map(s => {
-                                const subj = store.subjects.find(x => x.id === s.subjectId)
-                                const isFormation = isFormationSeries(s.turma)
-                                const isFixed = s.turma === 'FORMAÇÃO - ATPCG' || s.turma === 'FORMAÇÃO - ATPCA'
+                                const isFormation = isFormationTurma(s.turma)
+                                const formSubj    = isFormation ? getFormationSubject(s.subjectId) : null
+                                const subj        = isFormation ? formSubj : store.subjects.find(x => x.id === s.subjectId)
+                                const isFixed     = formSubj?.tipo === 'fixo'
                                 return (
                                   <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                    {isFormation && (
+                                    {isFormation && formSubj && (
                                       <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${isFixed ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
                                         {isFixed ? 'Fixo' : 'Variável'}
                                       </span>
@@ -1394,7 +1395,7 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
   const hardBlockedTurmas = new Set(
     store.schedules
       .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
-      .filter(s => !isSharedSchedule(s, store))
+      .filter(s => !isSharedSchedule(s, store) && !isFormationTurma(s.turma))
       .map(s => s.turma)
   )
   // Mapa turma → primeiro nome do professor que a ocupa (para exibição)
@@ -1410,9 +1411,9 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
     if (!turma) return
     if (store.schedules.find(s => s.teacherId === teacher.id && s.day === day && s.timeSlot === slot))
       { alert('Conflito: professor já tem aula neste horário.'); return }
-    if (!isFormationSeries(turma) && hardBlockedTurmas.has(turma))
+    if (!isFormationTurma(turma) && hardBlockedTurmas.has(turma))
       { alert('Conflito: esta turma já tem professor neste horário.'); return }
-    if (!isFormationSeries(turma)) {
+    if (!isFormationTurma(turma)) {
       const turmaHasSharedOccupant = store.schedules.some(
         s => s.timeSlot === slot && s.day === day && s.turma === turma
           && s.teacherId !== teacher.id && isSharedSchedule(s, store)
@@ -1424,6 +1425,8 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
           { alert('Esta turma está reservada para área compartilhada.'); return }
       }
     }
+    if (isFormationTurma(turma) && !subjId)
+      { alert('Selecione a atividade de formação.'); return }
     onSave({ teacherId: teacher.id, subjectId: subjId || null, turma, day, timeSlot: slot })
   }
 
@@ -1486,18 +1489,31 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
         {/* Formação */}
         <div className="pt-3 border-t border-bdr">
           <div className="text-[10px] font-bold text-t3 uppercase tracking-wider mb-2">Formação</div>
-          <div className="flex flex-wrap gap-2">
-            {FORMATION_SERIES.map(serie => (
-              <button
-                key={serie}
-                type="button"
-                className={turma === serie ? pillOn : pillOff}
-                onClick={() => { setGrade(''); setTurma(serie) }}
-              >
-                {serie}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            className={turma === FORMATION_TURMA ? pillOn : pillOff}
+            onClick={() => { setGrade(''); setTurma(FORMATION_TURMA) }}
+          >
+            FORMAÇÃO
+          </button>
+
+          {turma === FORMATION_TURMA && (
+            <div className="mt-3">
+              <div className="text-[10px] font-bold text-t3 uppercase tracking-wider mb-2">Atividade</div>
+              <div className="flex flex-wrap gap-2">
+                {FORMATION_SUBJECTS.map(fs => (
+                  <button
+                    key={fs.id}
+                    type="button"
+                    className={subjId === fs.id ? pillOn : pillOff}
+                    onClick={() => setSubjId(fs.id)}
+                  >
+                    {fs.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Matéria */}

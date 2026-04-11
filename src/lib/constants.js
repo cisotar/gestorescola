@@ -15,11 +15,16 @@ export const COLOR_PALETTE = [
 
 export const COLOR_NEUTRAL = { bg:'#F9FAFB', bd:'#D1D5DB', tx:'#374151', dt:'#6B7280', tg:'#F3F4F6' }
 
-export const FORMATION_SERIES = [
-  'FORMAÇÃO - ATPCG',
-  'FORMAÇÃO - ATPCA',
-  'FORMAÇÃO - MULTIPLICA',
-  'FORMAÇÃO - PDA',
+export const FORMATION_TURMA = 'FORMAÇÃO'
+
+export const FORMATION_SUBJECTS = [
+  { id: 'formation-atpcg',       name: 'ATPCG',       tipo: 'fixo'     },
+  { id: 'formation-atpca',       name: 'ATPCA',       tipo: 'fixo'     },
+  { id: 'formation-multiplica',  name: 'Multiplica',  tipo: 'variavel' },
+  { id: 'formation-pda',         name: 'PDA',         tipo: 'variavel' },
+  { id: 'formation-alinhamento', name: 'Alinhamento', tipo: 'variavel' },
 ]
 
-export const isFormationSeries = (turma) => FORMATION_SERIES.includes(turma)
+export const isFormationTurma    = (turma)     => turma === FORMATION_TURMA
+export const isFormationSubject  = (subjectId) => FORMATION_SUBJECTS.some(s => s.id === subjectId)
+export const getFormationSubject = (subjectId) => FORMATION_SUBJECTS.find(s => s.id === subjectId)

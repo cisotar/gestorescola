@@ -223,6 +223,40 @@ export async function rejectTeacher(pendingId, setState) {
   await deleteDoc(doc(db, 'pending_teachers', pendingId))
 }
 
+// ─── Migrações ────────────────────────────────────────────────────────────────
+
+export async function migrateFormationSchedules() {
+  const MIGRATION_MAP = {
+    'FORMAÇÃO - ATPCG':      { turma: 'FORMAÇÃO', subjectId: 'formation-atpcg'      },
+    'FORMAÇÃO - ATPCA':      { turma: 'FORMAÇÃO', subjectId: 'formation-atpca'      },
+    'FORMAÇÃO - MULTIPLICA': { turma: 'FORMAÇÃO', subjectId: 'formation-multiplica' },
+    'FORMAÇÃO - PDA':        { turma: 'FORMAÇÃO', subjectId: 'formation-pda'        },
+  }
+
+  const snap = await getDocs(collection(db, 'schedules'))
+  const toMigrate = snap.docs.filter(d => MIGRATION_MAP[d.data().turma])
+
+  if (toMigrate.length === 0) {
+    console.log('[migration] Nenhum schedule de formação para migrar.')
+    return 0
+  }
+
+  const CHUNK = 400
+  let migrated = 0
+  for (let i = 0; i < toMigrate.length; i += CHUNK) {
+    const batch = writeBatch(db)
+    toMigrate.slice(i, i + CHUNK).forEach(d => {
+      const mapped = MIGRATION_MAP[d.data().turma]
+      batch.update(doc(db, 'schedules', d.id), mapped)
+    })
+    await batch.commit()
+    migrated += toMigrate.slice(i, i + CHUNK).length
+  }
+
+  console.log(`[migration] ${migrated} schedules migrados.`)
+  return migrated
+}
+
 // ─── LocalStorage fallback ────────────────────────────────────────────────────
 
 export function _saveToLS(state) {

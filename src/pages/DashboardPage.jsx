@@ -1,8 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
-import { colorOfTeacher } from '../lib/helpers'
-import { formatDate } from '../lib/helpers'
 import { formatBR } from '../lib/helpers'
 
 // ─── Helpers locais ───────────────────────────────────────────────────────────
