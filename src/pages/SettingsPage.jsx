@@ -665,7 +665,7 @@ function TabTeachers() {
   const isTeacherAdmin = (t) => admins.includes((t.email ?? '').toLowerCase())
 
   const handleApprove = async (p) => {
-    await approveTeacher(p.id, store, store.hydrate)
+    await approveTeacher(p.id, store, useAppStore.setState)
     setPending(prev => prev.filter(x => x.id !== p.id))
     toast(`${p.name} aprovado`, 'ok')
   }
@@ -1300,9 +1300,16 @@ export function ScheduleGrid({ teacher, store, readOnly = false }) {
                             <div className="space-y-1">
                               {mine.map(s => {
                                 const subj = store.subjects.find(x => x.id === s.subjectId)
+                                const isFormation = isFormationSeries(s.turma)
+                                const isFixed = s.turma === 'FORMAÇÃO - ATPCG' || s.turma === 'FORMAÇÃO - ATPCA'
                                 return (
                                   <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
+                                    {isFormation && (
+                                      <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${isFixed ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                        {isFixed ? 'Fixo' : 'Variável'}
+                                      </span>
+                                    )}
                                     <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
                                     {!readOnly && (
                                       <button
@@ -1597,7 +1604,7 @@ function PendingModal({ open, onClose }) {
                       </>
                     )}
                     <button className="btn btn-dark btn-sm" onClick={async () => {
-                      await approveTeacher(p.id, store, store.hydrate)
+                      await approveTeacher(p.id, store, useAppStore.setState)
                       setPending(prev => prev.filter(x => x.id !== p.id))
                       toast(`${p.name} aprovado`, 'ok')
                     }}>Aprovar</button>

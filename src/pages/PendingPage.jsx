@@ -27,13 +27,14 @@
     const [subjError,     setSubjError]  = useState('')
     const [saveError,     setSaveError]  = useState('')
 
-    // Re-entry: se celular já foi salvo, pular direto para a tela de espera
+    // Re-entry: se celular já foi salvo, retomar no step de grade horária
     useEffect(() => {
       getDoc(doc(db, 'pending_teachers', user.uid)).then(snap => {
         if (snap.exists() && snap.data().celular) {
           setCelular(snap.data().celular)
+          setApelido(snap.data().apelido ?? '')
           setSelSubjs(snap.data().subjectIds ?? [])
-          setStep('waiting')
+          setStep('schedule')
         }
       })
     }, [])
