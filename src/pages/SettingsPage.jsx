@@ -645,9 +645,10 @@ function TabTeachers() {
   const store = useAppStore()
   const navigate = useNavigate()
   const [modal,        setModal]        = useState(false)
-  const [schedModal,   setSchedModal]   = useState(false)
-  const [schedTeacher, setSchedTeacher] = useState(null)
-  const [editId,       setEditId]       = useState(null)
+  const [schedModal,      setSchedModal]      = useState(false)
+  const [schedTeacher,    setSchedTeacher]    = useState(null)
+  const [viewingSchedule, setViewingSchedule] = useState(null)
+  const [editId,          setEditId]          = useState(null)
   const [form,         setForm]         = useState({ name: '', email: '', celular: '', apelido: '', subjectIds: [] })
   const [view,         setView]         = useState('cards') // 'cards' | 'table'
   const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
@@ -880,23 +881,37 @@ function TabTeachers() {
                 </div>
                 <div className="space-y-2">
                   {/* Pendentes */}
-                  {pending.map(p => (
-                    <div key={p.id} className="flex items-start gap-2 p-2 rounded-xl border border-warn/30 bg-amber-50/60">
-                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 bg-amber-100 text-amber-700">
-                        {p.name.charAt(0)}
+                  {pending.map(p => {
+                    const scheduleCount = store.schedules.filter(s => s.teacherId === p.id).length
+                    const syntheticTeacher = { id: p.id, name: p.name, subjectIds: p.subjectIds ?? [] }
+                    return (
+                      <div key={p.id} className="flex items-start gap-2 p-2 rounded-xl border border-warn/30 bg-amber-50/60">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 bg-amber-100 text-amber-700">
+                          {p.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm truncate">{p.name}</div>
+                          <span className="badge bg-warn/10 text-warn border border-warn/30 text-[10px] mb-1">Pendente</span>
+                          <div className="text-xs text-t1 truncate">✉ {p.email}</div>
+                          {p.apelido && <div className="text-xs text-t3 mt-0.5">Apelido: <span className="text-t1 font-semibold">{p.apelido}</span></div>}
+                          {p.celular && <div className="text-xs text-t1 truncate">📱 {p.celular}</div>}
+                          {scheduleCount > 0 && (
+                            <div className="text-xs text-ok font-semibold mt-0.5">✅ {scheduleCount} horário{scheduleCount !== 1 ? 's' : ''} sugerido{scheduleCount !== 1 ? 's' : ''}</div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          {scheduleCount > 0 && (
+                            <>
+                              <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: true })}>👁 Ver</button>
+                              <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: false })}>✏️ Grade</button>
+                            </>
+                          )}
+                          <button className="btn btn-dark btn-xs" onClick={() => handleApprove(p)}>Aprovar</button>
+                          <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(p)}>Recusar</button>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-sm truncate">{p.name}</div>
-                        <span className="badge bg-warn/10 text-warn border border-warn/30 text-[10px] mb-1">Pendente</span>
-                        <div className="text-xs text-t1 truncate">✉ {p.email}</div>
-                        {p.celular && <div className="text-xs text-t1 truncate">📱 {p.celular}</div>}
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <button className="btn btn-dark btn-xs" onClick={() => handleApprove(p)}>Aprovar</button>
-                        <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(p)}>Recusar</button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                   {/* Aprovados sem segmento */}
                   {unassigned.map(t => {
                     const ct = store.schedules.filter(s => s.teacherId === t.id).length
@@ -985,6 +1000,13 @@ function TabTeachers() {
         onClose={() => setSchedModal(false)}
         teacher={schedTeacher}
         store={store}
+      />
+      <ScheduleGridModal
+        open={!!viewingSchedule}
+        onClose={() => setViewingSchedule(null)}
+        teacher={viewingSchedule?.teacher}
+        store={store}
+        readOnly={viewingSchedule?.readOnly ?? false}
       />
       <SubjectChangeModal ctx={subjectChangeCtx} />
     </div>
@@ -1199,16 +1221,16 @@ function TabSchedules() {
 
 // ─── ScheduleGridModal — abre grade em modal (reutilizável) ──────────────────
 
-export function ScheduleGridModal({ open, onClose, teacher, store }) {
+export function ScheduleGridModal({ open, onClose, teacher, store, readOnly = false }) {
   if (!teacher) return null
   return (
     <Modal open={open} onClose={onClose} title={`Grade de Horários — ${teacher.name}`} size="xl">
-      <ScheduleGrid teacher={teacher} store={store} />
+      <ScheduleGrid teacher={teacher} store={store} readOnly={readOnly} />
     </Modal>
   )
 }
 
-export function ScheduleGrid({ teacher, store }) {
+export function ScheduleGrid({ teacher, store, readOnly = false }) {
   const { addSchedule, removeSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
 
@@ -1282,16 +1304,18 @@ export function ScheduleGrid({ teacher, store }) {
                                   <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
                                     <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
-                                    <button
-                                      className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
-                                      onClick={() => removeSchedule(s.id)}
-                                    >✕</button>
+                                    {!readOnly && (
+                                      <button
+                                        className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
+                                        onClick={() => removeSchedule(s.id)}
+                                      >✕</button>
+                                    )}
                                   </div>
                                 )
                               })}
 
                               {/* Indicadores de bloqueio — sem dados de terceiros */}
-                              {teacherConflict ? (
+                              {!readOnly && (teacherConflict ? (
                                 <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
                                   title="Professor já tem aula neste horário">
                                   🔒
@@ -1306,7 +1330,7 @@ export function ScheduleGrid({ teacher, store }) {
                                   onClick={() => setModal({ segId: seg.id, turno, aulaIdx: p.aulaIdx, day })}
                                   className="w-full text-center text-[10px] text-t3 hover:text-navy py-1 rounded-lg hover:bg-surf2 transition-colors border border-dashed border-bdr hover:border-bdr"
                                 >＋</button>
-                              )}
+                              ))}
                             </div>
                           </td>
                         )
@@ -1537,40 +1561,66 @@ function TabAdmin() {
 
 function PendingModal({ open, onClose }) {
   const store = useAppStore()
-  const [pending, setPending] = useState([])
-  const [loaded,  setLoaded]  = useState(false)
+  const [pending,         setPending]         = useState([])
+  const [loaded,          setLoaded]          = useState(false)
+  const [viewingSchedule, setViewingSchedule] = useState(null)
 
   const load = async () => { setPending(await listPendingTeachers()); setLoaded(true) }
 
   return (
-    <Modal open={open} onClose={onClose} title="Professores Pendentes">
-      {!loaded ? (
-        <div className="text-center py-8"><button className="btn btn-dark" onClick={load}>Carregar</button></div>
-      ) : pending.length === 0 ? (
-        <div className="text-center py-8 text-t3">✅ Nenhum professor aguardando aprovação.</div>
-      ) : (
-        <div className="space-y-3">
-          {pending.map(p => (
-            <div key={p.id} className="flex items-center gap-3 p-3 rounded-xl border border-bdr">
-              <div className="flex-1">
-                <div className="font-bold text-sm">{p.name}</div>
-                <div className="text-xs text-t2">{p.email}</div>
-              </div>
-              <button className="btn btn-dark btn-sm" onClick={async () => {
-                await approveTeacher(p.id, store, store.hydrate)
-                setPending(prev => prev.filter(x => x.id !== p.id))
-                toast(`${p.name} aprovado`, 'ok')
-              }}>Aprovar</button>
-              <button className="btn btn-ghost btn-sm text-err" onClick={async () => {
-                if (!confirm('Recusar?')) return
-                await rejectTeacher(p.id, useAppStore.setState)
-                setPending(prev => prev.filter(x => x.id !== p.id))
-              }}>Recusar</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </Modal>
+    <>
+      <Modal open={open} onClose={onClose} title="Professores Pendentes">
+        {!loaded ? (
+          <div className="text-center py-8"><button className="btn btn-dark" onClick={load}>Carregar</button></div>
+        ) : pending.length === 0 ? (
+          <div className="text-center py-8 text-t3">✅ Nenhum professor aguardando aprovação.</div>
+        ) : (
+          <div className="space-y-3">
+            {pending.map(p => {
+              const scheduleCount = store.schedules.filter(s => s.teacherId === p.id).length
+              const syntheticTeacher = { id: p.id, name: p.name, subjectIds: p.subjectIds ?? [] }
+              return (
+                <div key={p.id} className="flex items-start gap-3 p-3 rounded-xl border border-bdr">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm truncate">{p.name}</div>
+                    <div className="text-xs text-t2 truncate">{p.email}</div>
+                    {p.apelido && <div className="text-xs text-t3 mt-0.5">Apelido: <span className="text-t1 font-semibold">{p.apelido}</span></div>}
+                    {scheduleCount > 0 && (
+                      <div className="text-xs text-ok font-semibold mt-0.5">✅ {scheduleCount} horário{scheduleCount !== 1 ? 's' : ''} sugerido{scheduleCount !== 1 ? 's' : ''}</div>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    {scheduleCount > 0 && (
+                      <>
+                        <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: true })}>👁 Ver</button>
+                        <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: false })}>✏️ Grade</button>
+                      </>
+                    )}
+                    <button className="btn btn-dark btn-sm" onClick={async () => {
+                      await approveTeacher(p.id, store, store.hydrate)
+                      setPending(prev => prev.filter(x => x.id !== p.id))
+                      toast(`${p.name} aprovado`, 'ok')
+                    }}>Aprovar</button>
+                    <button className="btn btn-ghost btn-sm text-err" onClick={async () => {
+                      if (!confirm('Recusar?')) return
+                      await rejectTeacher(p.id, useAppStore.setState)
+                      setPending(prev => prev.filter(x => x.id !== p.id))
+                    }}>Recusar</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Modal>
+      <ScheduleGridModal
+        open={!!viewingSchedule}
+        onClose={() => setViewingSchedule(null)}
+        teacher={viewingSchedule?.teacher}
+        store={store}
+        readOnly={viewingSchedule?.readOnly ?? false}
+      />
+    </>
   )
 }
 
