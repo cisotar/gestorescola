@@ -168,19 +168,41 @@ export async function approveTeacher(pendingId, state, setState) {
   const snap = await getDoc(ref)
   if (!snap.exists()) return
   const data = snap.data()
+
   let teacher = state.teachers.find(t => t.email?.toLowerCase() === data.email)
   if (!teacher) {
     const { uid } = await import('./helpers')
-    teacher = { id: uid(), name: data.name, email: data.email, whatsapp: '',
-      celular: data.celular ?? '', apelido: data.apelido ?? '', subjectIds: data.subjectIds ?? [], status: 'approved' }
+    teacher = {
+      id: uid(), name: data.name, email: data.email, whatsapp: '',
+      celular: data.celular ?? '', apelido: data.apelido ?? '',
+      subjectIds: data.subjectIds ?? [], status: 'approved',
+    }
     setState(s => ({ teachers: [...s.teachers, teacher] }))
   } else {
     setState(s => ({
-      teachers: s.teachers.map(t => t.id === teacher.id
-        ? { ...t, status: 'approved' } : t)
+      teachers: s.teachers.map(t => t.id === teacher.id ? { ...t, status: 'approved' } : t),
     }))
   }
+
   await setDoc(doc(db, 'teachers', teacher.id), { ...teacher, status: 'approved' })
+
+  // Migrar schedules do UID pendente para o novo teacher.id
+  const orphanSnap = await getDocs(
+    query(collection(db, 'schedules'), where('teacherId', '==', pendingId))
+  )
+  if (!orphanSnap.empty) {
+    const batch = writeBatch(db)
+    orphanSnap.docs.forEach(d => {
+      batch.update(doc(db, 'schedules', d.id), { teacherId: teacher.id })
+    })
+    await batch.commit()
+    setState(s => ({
+      schedules: s.schedules.map(sc =>
+        sc.teacherId === pendingId ? { ...sc, teacherId: teacher.id } : sc
+      ),
+    }))
+  }
+
   await deleteDoc(ref)
 }
 
