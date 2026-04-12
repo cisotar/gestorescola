@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { allTurmaObjects, findTurma, parseDate, colorOfTeacher, teacherSubjectNames,
@@ -130,6 +130,11 @@ export default function SubstitutionsPage() {
   const store             = useAppStore()
   const { role, teacher } = useAuthStore()
   const isAdmin           = role === 'admin'
+
+  // Load absences on mount
+  useEffect(() => {
+    store.loadAbsencesIfNeeded()
+  }, [store])
 
   // Filtros globais
   const [selSubstitute, setSelSubstitute] = useState(isAdmin ? null : (teacher?.id ?? null))

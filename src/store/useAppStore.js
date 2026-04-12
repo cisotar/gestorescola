@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { uid } from '../lib/helpers'
-import { saveToFirestore, saveDoc, deleteDocById, _saveToLS, patchTeacherSelf } from '../lib/db'
+import { saveToFirestore, saveDoc, deleteDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener } from '../lib/db'
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import {
@@ -12,6 +12,10 @@ import {
 
 // ─── Debounce Timer ─────────────────────────────────────────────────────────
 let saveTimer = null
+
+// ─── Lazy Listener Unsubscribes ──────────────────────────────────────────────
+let absencesUnsubscribe = null
+let historyUnsubscribe = null
 
 const INITIAL_STATE = {
   segments: [
@@ -48,6 +52,10 @@ const INITIAL_STATE = {
   workloadWarn:  20,
   workloadDanger:26,
   loaded:        false,
+  teachersLoaded: false,
+  schedulesLoaded: false,
+  absencesLoaded: false,
+  historyLoaded: false,
 }
 
 const useAppStore = create((set, get) => {
@@ -63,7 +71,14 @@ const useAppStore = create((set, get) => {
     ...INITIAL_STATE,
 
     // ─── Hidratação ─────────────────────────────────────────────────────────────
-    hydrate: (data) => set({ ...data, loaded: true }),
+    hydrate: (data) => set({
+      ...data,
+      loaded: true,
+      teachersLoaded: !!data.teachers?.length,
+      schedulesLoaded: !!data.schedules?.length,
+      absencesLoaded: !!data.absences?.length,
+      historyLoaded: !!data.history?.length,
+    }),
 
     // ─── Persistência ──────────────────────────────────────────────────────────
     save: async () => {
@@ -395,6 +410,42 @@ const useAppStore = create((set, get) => {
   setWorkload: (warn, danger) => {
     set({ workloadWarn: warn, workloadDanger: danger })
     debouncedSave()
+  },
+
+  // ─── Lazy loading ──────────────────────────────────────────────────────────────
+  markTeachersLoaded: () => set({ teachersLoaded: true }),
+  markSchedulesLoaded: () => set({ schedulesLoaded: true }),
+  markAbsencesLoaded: () => set({ absencesLoaded: true }),
+  markHistoryLoaded: () => set({ historyLoaded: true }),
+
+  loadAbsencesIfNeeded: async () => {
+    const { absencesLoaded, absences } = get()
+    if (absencesLoaded || absences.length > 0) return
+    try {
+      const loaded = await _loadCol('absences')
+      set({ absences: loaded, absencesLoaded: true })
+      // Register listener after loading
+      if (!absencesUnsubscribe) {
+        absencesUnsubscribe = registerAbsencesListener(get())
+      }
+    } catch (e) {
+      console.warn('[store] Falha ao carregar absences:', e)
+    }
+  },
+
+  loadHistoryIfNeeded: async () => {
+    const { historyLoaded, history } = get()
+    if (historyLoaded || history.length > 0) return
+    try {
+      const loaded = await _loadCol('history')
+      set({ history: loaded, historyLoaded: true })
+      // Register listener after loading
+      if (!historyUnsubscribe) {
+        historyUnsubscribe = registerHistoryListener(get())
+      }
+    } catch (e) {
+      console.warn('[store] Falha ao carregar history:', e)
+    }
   },
 
   clearSaveTimer: () => {

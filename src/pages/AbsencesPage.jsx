@@ -164,6 +164,11 @@ export default function AbsencesPage() {
   const [weekRef,    setWeekRef]    = useState(null)
   const [monthRef,   setMonthRef]   = useState(null)
 
+  // Load absences on mount
+  useEffect(() => {
+    store.loadAbsencesIfNeeded()
+  }, [store])
+
   // Seleção em lote
   const [selectedIds,   setSelectedIds]   = useState(new Set())
   const [selectionMode, setSelectionMode] = useState(false)

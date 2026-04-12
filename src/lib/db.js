@@ -73,7 +73,7 @@ async function _loadConfig() {
   return result
 }
 
-async function _loadCol(name) {
+export async function _loadCol(name) {
   const snap = await getDocs(collection(db, name))
   return snap.empty ? [] : snap.docs.map(d => d.data())
 }
@@ -107,7 +107,10 @@ export function setupRealtimeListeners(store) {
   // Teachers listener
   const unsubTeachers = onSnapshot(
     collection(db, 'teachers'),
-    snap => store.setTeachers(snap.docs.map(d => d.data())),
+    snap => {
+      store.setTeachers(snap.docs.map(d => d.data()))
+      store.markTeachersLoaded()
+    },
     err => console.warn('[teachersListener]', err)
   )
   unsubscribes.push(unsubTeachers)
@@ -115,28 +118,39 @@ export function setupRealtimeListeners(store) {
   // Schedules listener
   const unsubSchedules = onSnapshot(
     collection(db, 'schedules'),
-    snap => store.setSchedules(snap.docs.map(d => d.data())),
+    snap => {
+      store.setSchedules(snap.docs.map(d => d.data()))
+      store.markSchedulesLoaded()
+    },
     err => console.warn('[schedulesListener]', err)
   )
   unsubscribes.push(unsubSchedules)
 
-  // Absences listener
-  const unsubAbsences = onSnapshot(
+  return unsubscribes
+}
+
+// ─── Lazy listener registration ────────────────────────────────────────────────
+
+export function registerAbsencesListener(store) {
+  return onSnapshot(
     collection(db, 'absences'),
-    snap => store.setAbsences(snap.docs.map(d => d.data())),
+    snap => {
+      store.setAbsences(snap.docs.map(d => d.data()))
+      store.markAbsencesLoaded()
+    },
     err => console.warn('[absencesListener]', err)
   )
-  unsubscribes.push(unsubAbsences)
+}
 
-  // History listener
-  const unsubHistory = onSnapshot(
+export function registerHistoryListener(store) {
+  return onSnapshot(
     collection(db, 'history'),
-    snap => store.setHistory(snap.docs.map(d => d.data())),
+    snap => {
+      store.setHistory(snap.docs.map(d => d.data()))
+      store.markHistoryLoaded()
+    },
     err => console.warn('[historyListener]', err)
   )
-  unsubscribes.push(unsubHistory)
-
-  return unsubscribes
 }
 
 // ─── Persistência ─────────────────────────────────────────────────────────────
