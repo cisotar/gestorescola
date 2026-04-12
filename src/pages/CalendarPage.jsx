@@ -5,9 +5,11 @@ import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
 import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, businessDaysBetween, formatISO } from '../lib/helpers'
 import { getPeriodos, slotLabel } from '../lib/periods'
-import { rankCandidates, createAbsence as _buildAbsence } from '../lib/absences'
+import { rankCandidates, suggestSubstitutes, createAbsence as _buildAbsence } from '../lib/absences'
 import { generateDayHTML, openPDF } from '../lib/reports'
 import Modal from '../components/ui/Modal'
+import ToggleRuleButtons from '../components/ui/ToggleRuleButtons'
+import SuggestionPills from '../components/ui/SuggestionPills'
 import { toast } from '../hooks/useToast'
 
 // ─── Helpers de semana ────────────────────────────────────────────────────────
@@ -58,12 +60,22 @@ function TeacherCard({ teacher, selected, onClick, store }) {
 
 function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store, compact = false }) {
   const [open, setOpen] = useState(false)
+  const [ruleType, setRuleType] = useState('qualitative')
   const { assignSubstitute } = useAppStore()
 
   const candidates = useMemo(() =>
     rankCandidates(teacherId, date, slot, subjectId,
       store.teachers, store.schedules, store.absences, store.subjects, store.areas),
     [teacherId, date, slot, subjectId, store]
+  )
+
+  const absenceSlot = useMemo(() => ({
+    absentTeacherId: teacherId, date, slot, subjectId,
+  }), [teacherId, date, slot, subjectId])
+
+  const suggestions = useMemo(
+    () => suggestSubstitutes(absenceSlot, ruleType, store),
+    [absenceSlot, ruleType, store]
   )
 
   const curSub = (() => {
@@ -112,15 +124,28 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
         >ver todos ({candidates.length})</button>
 
         <Modal open={open} onClose={() => setOpen(false)} title="Selecionar Substituto">
-          <FullCandidateList
-            candidates={candidates} curSub={curSub} matchLabel={matchLabel}
-            store={store}
-            onSelect={(t) => {
-              assignSubstitute(absenceId, slotId, t.id)
-              toast(`Substituto: ${t.name}`, 'ok')
-              setOpen(false)
-            }}
-          />
+          <div className="mb-4 space-y-3">
+            <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
+            <SuggestionPills
+              suggestions={suggestions}
+              onSelect={(t) => {
+                assignSubstitute(absenceId, slotId, t.id)
+                toast(`Substituto: ${t.name}`, 'ok')
+                setOpen(false)
+              }}
+            />
+          </div>
+          <div className="border-t border-bdr pt-3">
+            <FullCandidateList
+              candidates={candidates} curSub={curSub} matchLabel={matchLabel}
+              store={store}
+              onSelect={(t) => {
+                assignSubstitute(absenceId, slotId, t.id)
+                toast(`Substituto: ${t.name}`, 'ok')
+                setOpen(false)
+              }}
+            />
+          </div>
         </Modal>
       </div>
     )
@@ -137,15 +162,28 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
       </button>
 
       <Modal open={open} onClose={() => setOpen(false)} title="Selecionar Substituto">
-        <FullCandidateList
-          candidates={candidates} curSub={curSub} matchLabel={matchLabel}
-          store={store}
-          onSelect={(t) => {
-            assignSubstitute(absenceId, slotId, t.id)
-            toast(`Substituto: ${t.name}`, 'ok')
-            setOpen(false)
-          }}
-        />
+        <div className="mb-4 space-y-3">
+          <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
+          <SuggestionPills
+            suggestions={suggestions}
+            onSelect={(t) => {
+              assignSubstitute(absenceId, slotId, t.id)
+              toast(`Substituto: ${t.name}`, 'ok')
+              setOpen(false)
+            }}
+          />
+        </div>
+        <div className="border-t border-bdr pt-3">
+          <FullCandidateList
+            candidates={candidates} curSub={curSub} matchLabel={matchLabel}
+            store={store}
+            onSelect={(t) => {
+              assignSubstitute(absenceId, slotId, t.id)
+              toast(`Substituto: ${t.name}`, 'ok')
+              setOpen(false)
+            }}
+          />
+        </div>
       </Modal>
     </>
   )
