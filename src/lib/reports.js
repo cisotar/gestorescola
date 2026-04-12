@@ -654,7 +654,7 @@ export function generateSubstitutionBalanceHTML(teacher, coveredSlots, absenceSl
 
 // ─── 12. Substituições — Ranking de Carga Real ───────────────────────────────
 
-export function generateSubstitutionRankingHTML(rankingData, month, year, store) {
+export function generateSubstitutionRankingHTML(rankingData, month, year) {
   const metaHTML = `
     <div class="m-blk"><span class="m-lbl">Mês</span><span class="m-val">${MONTH_NAMES[month]} ${year}</span></div>
     <div class="m-blk" style="margin-left:auto;text-align:right">
@@ -662,30 +662,37 @@ export function generateSubstitutionRankingHTML(rankingData, month, year, store)
       <span class="m-val">${rankingData.length}</span>
     </div>`
 
-  const rows = rankingData.map((row, idx) => `
+  const colorFor = pct => pct > 90 ? '#16a34a' : pct >= 70 ? '#ca8a04' : '#dc2626'
+
+  const rows = rankingData.map((row, idx) => {
+    const pct = row.scheduled > 0 ? ((row.scheduled - row.absences) / row.scheduled * 100) : null
+    const pctStr = pct !== null ? `${pct.toFixed(1)}%` : '—'
+    const pctColor = pct !== null ? colorFor(pct) : '#a09d97'
+    return `
     <tr>
       <td style="text-align:center;width:40px"><strong>${idx + 1}</strong></td>
       <td>${row.teacher?.name ?? '—'}</td>
       <td style="text-align:center">${row.scheduled}</td>
-      <td style="text-align:center">${row.substitutions}</td>
-      <td style="text-align:center"><strong>${row.total}</strong></td>
-    </tr>`).join('')
+      <td style="text-align:center">${row.absences}</td>
+      <td style="text-align:center;font-weight:700;color:${pctColor}">${pctStr}</td>
+    </tr>`
+  }).join('')
 
   const bodyHTML = rankingData.length ? `
     <table>
       <thead><tr>
         <th style="width:40px;text-align:center">#</th>
         <th>Professor</th>
-        <th style="text-align:center">Próprias</th>
-        <th style="text-align:center">Substituições</th>
-        <th style="text-align:center">Total</th>
+        <th style="text-align:center">Aulas Próprias</th>
+        <th style="text-align:center">Ausências</th>
+        <th style="text-align:center">% Assiduidade</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>` : '<p style="color:#a09d97;padding:20px 0">Nenhum professor no ranking.</p>'
 
   return _wrap(
-    `Ranking de Carga Real — ${MONTH_NAMES[month]} ${year}`,
+    `Ranking de Assiduidade — ${MONTH_NAMES[month]} ${year}`,
     metaHTML, bodyHTML,
-    'GestãoEscolar — Ranking de Carga'
+    'GestãoEscolar — Ranking de Assiduidade'
   )
 }

@@ -3,13 +3,15 @@ import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { allTurmaObjects, findTurma, parseDate, colorOfTeacher, teacherSubjectNames,
          businessDaysBetween, dateToDayLabel, formatISO, weekStart, formatBR } from '../lib/helpers'
-import { slotLabel, getAulas, makeSlot } from '../lib/periods'
+import { slotLabel, getAulas } from '../lib/periods'
 import {
   openPDF,
   generateSubstitutionTimesheetHTML,
   generateSubstitutionBalanceHTML,
   generateSubstitutionRankingHTML,
 } from '../lib/reports'
+import { toast } from '../hooks/useToast'
+import Modal from '../components/ui/Modal'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -139,7 +141,50 @@ export default function SubstitutionsPage() {
   // Tab ativa
   const [mode, setMode] = useState('substitute')
 
-  const handleTabChange = (id) => setMode(id)
+  // Seleção em lote
+  const [selectedIds,   setSelectedIds]   = useState(new Set())
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [undoBuffer,    setUndoBuffer]    = useState(null)
+  const [undoTimer,     setUndoTimer]     = useState(null)
+
+  const onToggle = (id) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const onSelectAll   = (slots) => setSelectedIds(new Set(slots.map(sl => sl.id)))
+  const onClearAll    = () => setSelectedIds(new Set())
+  const onSelectFaltas = (slots) => setSelectedIds(new Set(slots.filter(sl => !sl.substituteId).map(sl => sl.id)))
+  const onSelectSubs  = (slots) => setSelectedIds(new Set(slots.filter(sl => sl.substituteId).map(sl => sl.id)))
+
+  const handleBulkDelete = () => {
+    const count = selectedIds.size
+    if (!count) return
+    const snapshot = store.absences
+    store.deleteManySlots(selectedIds)
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+    setUndoBuffer({ absences: snapshot, count })
+    toast(`${count} substituição${count !== 1 ? 'ões' : ''} removida${count !== 1 ? 's' : ''}`, 'warn')
+    const t = setTimeout(() => setUndoBuffer(null), 5000)
+    setUndoTimer(t)
+  }
+
+  const handleUndo = () => {
+    if (!undoBuffer) return
+    store.restoreAbsences(undoBuffer.absences)
+    clearTimeout(undoTimer)
+    setUndoBuffer(null)
+    toast('Exclusão desfeita', 'ok')
+  }
+
+  const selProps = { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs }
+
+  const handleTabChange = (id) => {
+    setMode(id)
+    setSelectionMode(false)
+    setSelectedIds(new Set())
+  }
 
   // Todos os slots que possuem substituição
   const allSubSlots = useMemo(() =>
@@ -212,7 +257,6 @@ export default function SubstitutionsPage() {
     { id: 'day',        label: '📅 Dia' },
     { id: 'week',       label: '🗓 Semana' },
     { id: 'month',      label: '📆 Mês' },
-    { id: 'ranking',    label: '🏆 Ranking' },
   ]
 
   const filterProps = {
@@ -225,7 +269,7 @@ export default function SubstitutionsPage() {
   }
 
   return (
-    <div>
+    <div className={selectedIds.size > 0 || undoBuffer ? 'pb-16' : ''}>
       <div className="mb-5">
         <h1 className="text-xl font-extrabold tracking-tight">Relatório de Substituições</h1>
       </div>
@@ -254,155 +298,251 @@ export default function SubstitutionsPage() {
           filterMonth={filterMonth}
           filterYear={filterYear}
           filters={{ selSegment, selTurma, filterMonth, filterYear }}
+          selProps={selProps}
         />
       )}
-      {mode === 'day'        && <ViewByDay        store={store} isAdmin={isAdmin} filteredSlots={filteredSlots} selSegment={selSegment} selTurma={selTurma} />}
-      {mode === 'week'       && <ViewByWeek       store={store} isAdmin={isAdmin} filteredSlots={filteredSlots} />}
-      {mode === 'month'      && <ViewByMonth      store={store} isAdmin={isAdmin} filteredSlots={filteredSlots} filterMonth={filterMonth} filterYear={filterYear} />}
-      {mode === 'ranking'    && <ViewRanking      store={store} isAdmin={isAdmin} filteredSlots={filteredSlots} filterMonth={filterMonth} filterYear={filterYear} />}
+      {mode === 'day'        && <ViewByDay        store={store} isAdmin={isAdmin} filteredSlots={filteredSlots} selProps={selProps} />}
+      {mode === 'week'       && <ViewByWeek       store={store} isAdmin={isAdmin} filteredSlots={filteredSlots} selProps={selProps} />}
+      {mode === 'month'      && <ViewByMonth      store={store} isAdmin={isAdmin} filteredSlots={filteredSlots} selProps={selProps} />}
+
+      {undoBuffer
+        ? <UndoBar count={undoBuffer.count} onUndo={handleUndo} />
+        : <BulkActionBar count={selectedIds.size} onDelete={handleBulkDelete} onClear={onClearAll} />
+      }
+    </div>
+  )
+}
+
+// ─── SelectionToolbar ─────────────────────────────────────────────────────────
+
+function SelectionToolbar({ isAdmin, selectionMode, setSelectionMode, visibleSlots, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs }) {
+  if (!isAdmin) return null
+  return (
+    <div className="flex gap-2 flex-wrap items-center mb-3">
+      <button
+        className={`btn btn-xs ${selectionMode ? 'btn-dark' : 'btn-ghost'}`}
+        onClick={() => { setSelectionMode(v => !v); onClearAll() }}
+      >
+        {selectionMode ? '✕ Cancelar' : '☑ Selecionar'}
+      </button>
+      {selectionMode && (
+        <>
+          <button className="btn btn-ghost btn-xs" onClick={() => onSelectAll(visibleSlots)}>Selecionar tudo</button>
+          <button className="btn btn-ghost btn-xs" onClick={onClearAll}>Desmarcar tudo</button>
+          <button className="btn btn-ghost btn-xs" onClick={() => onSelectFaltas(visibleSlots)}>Só faltas</button>
+          <button className="btn btn-ghost btn-xs" onClick={() => onSelectSubs(visibleSlots)}>Só substituições</button>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─── BulkActionBar ────────────────────────────────────────────────────────────
+
+function BulkActionBar({ count, onDelete, onClear }) {
+  if (count === 0) return null
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-navy text-white px-5 py-3 flex items-center gap-3 shadow-2xl">
+      <span className="text-sm font-semibold flex-1">{count} substituição{count !== 1 ? 'ões' : ''} selecionada{count !== 1 ? 's' : ''}</span>
+      <button className="btn btn-ghost btn-sm text-white border-white/30 hover:border-white" onClick={onClear}>Desmarcar tudo</button>
+      <button className="btn btn-sm bg-err text-white border-err hover:bg-red-700" onClick={onDelete}>Excluir selecionadas</button>
+    </div>
+  )
+}
+
+// ─── UndoBar ──────────────────────────────────────────────────────────────────
+
+function UndoBar({ count, onUndo }) {
+  if (!count) return null
+  return (
+    <div className="fixed bottom-0 left-0 right-0 z-50 bg-amber-700 text-white px-5 py-3 flex items-center gap-3 shadow-2xl">
+      <span className="text-sm font-semibold flex-1">{count} substituição{count !== 1 ? 'ões' : ''} removida{count !== 1 ? 's' : ''}</span>
+      <button className="btn btn-sm bg-white text-amber-800 border-white hover:bg-amber-50" onClick={onUndo}>Desfazer</button>
     </div>
   )
 }
 
 // ─── SubSlotRow ───────────────────────────────────────────────────────────────
 
-function SubSlotRow({ sl, store }) {
-  const sub     = store.teachers.find(t => t.id === sl.substituteId)
-  const teacher = store.teachers.find(t => t.id === sl.teacherId)
-  return (
-    <div className="flex items-center gap-2 py-1.5 text-xs border-b border-bdr/60 last:border-0">
-      <span className="font-mono text-[11px] text-t2 shrink-0">
-        {slotLabel(sl.timeSlot, store.periodConfigs)}
-      </span>
-      <span className="text-t3">·</span>
-      <span className="font-bold text-t1 truncate">{sl.turma}</span>
-      <span className="text-t3">—</span>
-      <span className="text-ok font-bold truncate">{sub?.name ?? '—'}</span>
-      <span className="text-t3">cobriu</span>
-      <span className="text-t2 truncate">{teacher?.name ?? '—'}</span>
-    </div>
-  )
-}
-
-// ─── TeacherSubCard ───────────────────────────────────────────────────────────
-
-function TeacherSubCard({ teacher, store, coveredSlots, absenceCount, filters }) {
-  const [open, setOpen] = useState(false)
-  const cv            = colorOfTeacher(teacher, store)
-  const covered       = coveredSlots.length
-  const balance       = covered - absenceCount
-  const balanceClass  = balance >= 0 ? 'text-ok' : 'text-err'
-  const balanceLabel  = balance >= 0 ? `+${balance}` : `${balance}`
-
-  const handleTimesheetPDF = (e) => {
-    e.stopPropagation()
-    openPDF(generateSubstitutionTimesheetHTML(teacher, coveredSlots, store))
-  }
-
-  const handleBalancePDF = (e) => {
-    e.stopPropagation()
-    const absenceSlots = computeAbsenceSlots(teacher.id, filters, store)
-    openPDF(generateSubstitutionBalanceHTML(teacher, coveredSlots, absenceSlots, store))
-  }
+function SubSlotRow({ sl, store, isAdmin = false, selectionMode = false, isSelected = false, onToggle }) {
+  const { deleteAbsenceSlot } = useAppStore()
+  const subj    = store.subjects.find(s => s.id === sl.subjectId)
+  const absent  = store.teachers.find(t => t.id === sl.teacherId)
+  const parts   = sl.timeSlot?.split('|') ?? []
+  const aula    = parts.length >= 3
+    ? getAulas(parts[0], parts[1], store.periodConfigs).find(p => p.aulaIdx === Number(parts[2]))
+    : null
 
   return (
-    <div className="card p-0 overflow-hidden">
-      <div
-        className="w-full flex items-center gap-3 px-4 py-3 transition-colors"
-        style={{ background: cv.bg, borderBottom: open ? `1px solid ${cv.bd}` : 'none' }}
-      >
-        <button
-          type="button"
-          onClick={() => setOpen(v => !v)}
-          className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-90"
-        >
-          <div
-            className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-extrabold shrink-0"
-            style={{ background: cv.tg, color: cv.tx }}
-          >
-            {teacher.name.charAt(0)}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-extrabold text-sm truncate" style={{ color: cv.tx }}>
-              {teacher.name}
-            </div>
-            <div className="text-[11px] opacity-70 truncate" style={{ color: cv.tx }}>
-              {teacherSubjectNames(teacher, store.subjects) || '—'}
-            </div>
-          </div>
-        </button>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={handleTimesheetPDF}
-            className="btn btn-ghost btn-sm"
-            title="Folha de Ponto"
-          >
-            📄 Folha de Ponto
-          </button>
-          <button
-            type="button"
-            onClick={handleBalancePDF}
-            className="btn btn-ghost btn-sm"
-            title="Extrato de Saldo"
-          >
-            📄 Extrato de Saldo
-          </button>
-          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-surf border border-bdr text-t1">
-            {covered} coberta{covered !== 1 ? 's' : ''}
-          </span>
-          <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-surf border border-bdr ${balanceClass}`}>
-            saldo {balanceLabel}
-          </span>
-          <button
-            type="button"
-            onClick={() => setOpen(v => !v)}
-            className="text-t3 text-xs ml-1 p-1"
-            aria-label={open ? 'Colapsar' : 'Expandir'}
-          >
-            {open ? '▾' : '▸'}
-          </button>
+    <div
+      className={`flex items-center gap-3 py-2.5 border-b border-bdr/60 last:border-0 transition-colors
+        ${isSelected ? 'bg-accent-l' : ''}`}
+    >
+      {selectionMode && isAdmin && (
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={() => onToggle?.(sl.id)}
+          className="shrink-0 w-4 h-4 accent-accent cursor-pointer"
+        />
+      )}
+      {sl.date && (
+        <div className="min-w-[52px] text-[11px] text-t3 font-mono shrink-0">
+          {formatBR(sl.date)}
         </div>
+      )}
+      <div className="min-w-[68px] font-mono text-[11px] text-t1 shrink-0">
+        <div className="font-bold">{aula?.label ?? slotLabel(sl.timeSlot, store.periodConfigs)}</div>
+        <div className="text-t3 text-[10px]">{aula?.inicio ?? ''}–{aula?.fim ?? ''}</div>
       </div>
-      {open && (
-        <div className="px-4 py-2 bg-surf">
-          {coveredSlots.length === 0
-            ? <div className="text-xs text-t3 py-2">Nenhuma aula coberta no período.</div>
-            : coveredSlots.map(sl => (
-                <SubSlotRow key={sl.id} sl={sl} store={store} />
-              ))
-          }
-        </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-bold text-sm truncate">{sl.turma}</div>
+        <div className="text-xs text-t2 truncate">{subj?.name ?? '—'}</div>
+      </div>
+      <div className="text-right min-w-[110px] shrink-0">
+        <div className="text-xs font-bold text-t1">{absent?.name ?? '—'}</div>
+        <div className="text-[10px] text-t3">professor ausente</div>
+      </div>
+      {isAdmin && !selectionMode && (
+        <button
+          onClick={() => { deleteAbsenceSlot(sl.absenceId, sl.id); toast('Substituição removida', 'ok') }}
+          className="text-t3 hover:text-err transition-colors text-sm shrink-0"
+          title="Remover"
+        >✕</button>
       )}
     </div>
   )
 }
 
-// ─── ViewBySubstitute ─────────────────────────────────────────────────────────
+// ─── WhatsAppButton ──────────────────────────────────────────────────────────
+
+function WhatsAppButton({ message }) {
+  const [open, setOpen] = useState(false)
+  const [phone, setPhone] = useState(() => localStorage.getItem('gestao_whatsapp_phone') ?? '')
+  const handleSend = () => {
+    const digits = phone.replace(/\D/g, '')
+    localStorage.setItem('gestao_whatsapp_phone', digits)
+    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(message)}`, '_blank')
+    setOpen(false)
+  }
+  return (
+    <>
+      <button className="btn btn-ghost btn-xs shrink-0" onClick={() => setOpen(true)}>📱 WhatsApp</button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Enviar por WhatsApp">
+        <div className="space-y-4">
+          <div>
+            <label className="lbl">Número WhatsApp</label>
+            <input className="inp" type="tel" placeholder="55 11 99999-9999" value={phone}
+              onChange={e => setPhone(e.target.value)} />
+            <p className="text-xs text-t3 mt-1">Incluir código do país. Ex: 5511999999999</p>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
+            <button className="btn btn-dark" onClick={handleSend} disabled={!phone.replace(/\D/g, '')}>
+              Abrir WhatsApp
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  )
+}
+
+// ─── ViewBySubstitute (master-detail) ────────────────────────────────────────
 
 function ViewBySubstitute({
   store,
+  isAdmin,
   filteredSlotsAllSubs,
   absenceCountByTeacher,
   selSubstitute,
   filters,
+  selProps,
 }) {
-  const ids = selSubstitute
-    ? [selSubstitute]
-    : [...new Set(filteredSlotsAllSubs.map(sl => sl.substituteId))]
+  const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
+  const [selTeacher, setSelTeacher] = useState(selSubstitute)
+  const [filter, setFilter]         = useState('all')
+  const [filterDate, setFilterDate] = useState(formatISO(new Date()))
+  const [filterMonth, setFilterMonth] = useState(new Date().getMonth())
+  const [filterYear, setFilterYear]   = useState(new Date().getFullYear())
 
-  const teachers = ids
-    .map(id => store.teachers.find(t => t.id === id))
-    .filter(Boolean)
-    .map(t => {
-      const coveredSlots = filteredSlotsAllSubs.filter(sl => sl.substituteId === t.id)
-      return { teacher: t, coveredSlots }
+  const withSubs = useMemo(() => {
+    const ids = selSubstitute
+      ? [selSubstitute]
+      : [...new Set(filteredSlotsAllSubs.map(sl => sl.substituteId))]
+    return ids
+      .map(id => store.teachers.find(t => t.id === id))
+      .filter(Boolean)
+      .map(t => ({
+        teacher: t,
+        count: filteredSlotsAllSubs.filter(sl => sl.substituteId === t.id).length,
+      }))
+      .filter(({ count }) => count > 0)
+      .sort((a, b) => a.teacher.name.localeCompare(b.teacher.name))
+  }, [filteredSlotsAllSubs, selSubstitute, store.teachers])
+
+  const buildFilter = () => {
+    if (filter === 'all')   return { type: 'all' }
+    if (filter === 'day')   return { type: 'day', date: filterDate }
+    if (filter === 'month') return { type: 'month', year: filterYear, month: filterMonth }
+    if (filter === 'week') {
+      const ws = weekStart(filterDate)
+      const we = (() => { const d = parseDate(ws); d.setDate(d.getDate() + 4); return formatISO(d) })()
+      return { type: 'week', weekStart: ws, weekEnd: we }
+    }
+    return null
+  }
+
+  const detail = selTeacher ? (() => {
+    const teacher = store.teachers.find(t => t.id === selTeacher)
+    if (!teacher) return null
+    const f = buildFilter()
+    const allTeacherSlots = filteredSlotsAllSubs.filter(sl => sl.substituteId === selTeacher)
+    const slots = allTeacherSlots.filter(sl => {
+      if (!f || f.type === 'all') return true
+      if (f.type === 'day')   return sl.date === f.date
+      if (f.type === 'week')  return sl.date >= f.weekStart && sl.date <= f.weekEnd
+      if (f.type === 'month') {
+        const d = parseDate(sl.date)
+        return d.getFullYear() === f.year && d.getMonth() === f.month
+      }
+      return true
     })
-    .filter(({ coveredSlots }) => coveredSlots.length > 0)
-    .sort((a, b) => a.teacher.name.localeCompare(b.teacher.name))
+    const byDate = {}
+    slots.forEach(sl => { if (!byDate[sl.date]) byDate[sl.date] = []; byDate[sl.date].push(sl) })
+    const covered = allTeacherSlots.length
+    const absenceCount = absenceCountByTeacher.get(teacher.id) ?? 0
+    const balance = covered - absenceCount
+    return { teacher, byDate, total: slots.length, slots, covered, absenceCount, balance }
+  })() : null
 
-  if (teachers.length === 0) {
+  const handleTimesheetPDF = () => {
+    if (!detail) return
+    openPDF(generateSubstitutionTimesheetHTML(detail.teacher, detail.slots, store))
+  }
+
+  const handleBalancePDF = () => {
+    if (!detail) return
+    const absenceSlots = computeAbsenceSlots(detail.teacher.id, filters, store)
+    openPDF(generateSubstitutionBalanceHTML(detail.teacher, detail.slots, absenceSlots, store))
+  }
+
+  const buildWhatsAppMsg = () => {
+    if (!detail) return ''
+    const { teacher, slots, covered, balance } = detail
+    const periodLabel = filter === 'day' ? formatBR(filterDate)
+      : filter === 'week' ? (() => { const ws = weekStart(filterDate); const d = parseDate(ws); d.setDate(d.getDate() + 4); return `${formatBR(ws)} – ${formatBR(formatISO(d))}` })()
+      : filter === 'month' ? `${MONTH_NAMES[filterMonth]} ${filterYear}`
+      : 'Todos os registros'
+    let msg = `*Substituições — ${teacher.name}*\nPeríodo: ${periodLabel}\nTotal: ${covered} coberturas | Saldo: ${balance >= 0 ? '+' : ''}${balance}\n`
+    slots.forEach(sl => {
+      const absent = store.teachers.find(t => t.id === sl.teacherId)
+      msg += `\n• ${formatBR(sl.date)} — ${slotLabel(sl.timeSlot, store.periodConfigs)} — ${sl.turma} (cobriu ${absent?.name ?? '—'})`
+    })
+    return msg
+  }
+
+  if (withSubs.length === 0) {
     return (
       <div className="card text-center py-8">
         <div className="text-3xl mb-2">✅</div>
@@ -412,34 +552,164 @@ function ViewBySubstitute({
   }
 
   return (
-    <div className="grid gap-3">
-      {teachers.map(({ teacher, coveredSlots }) => (
-        <TeacherSubCard
-          key={teacher.id}
-          teacher={teacher}
-          store={store}
-          coveredSlots={coveredSlots}
-          absenceCount={absenceCountByTeacher.get(teacher.id) ?? 0}
-          filters={filters}
-        />
-      ))}
+    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
+      {/* Sidebar */}
+      <div>
+        <div className="text-[11px] font-bold text-t2 uppercase tracking-wide mb-2">
+          {withSubs.length} substituto{withSubs.length !== 1 ? 's' : ''} no período
+        </div>
+        <div className="space-y-1.5 max-h-[65vh] overflow-y-auto scroll-thin pr-1">
+          {withSubs.map(({ teacher: t, count }) => {
+            const cv = colorOfTeacher(t, store)
+            return (
+              <button key={t.id} onClick={() => setSelTeacher(t.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all
+                  ${selTeacher === t.id ? 'border-navy bg-surf' : 'border-bdr bg-surf hover:border-t3'}`}>
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+                  style={{ background: cv.tg, color: cv.tx }}>{t.name.charAt(0)}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-sm truncate">{t.name}</div>
+                  <div className="text-[11px] text-t3">{count} cobertura{count !== 1 ? 's' : ''}</div>
+                </div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                  style={{ background: cv.tg, color: cv.tx }}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Painel central */}
+      <div>
+        {!detail ? (
+          <div className="flex items-center justify-center h-48 text-t3">
+            <div className="text-center">
+              <div className="text-4xl mb-2">👤</div>
+              <div className="text-sm">Selecione um professor</div>
+            </div>
+          </div>
+        ) : (() => {
+          const { teacher, byDate, total, covered, balance } = detail
+          const cv = colorOfTeacher(teacher, store)
+          const balanceClass = balance >= 0 ? 'text-ok' : 'text-err'
+          const balanceLabel = balance >= 0 ? `+${balance}` : `${balance}`
+          return (
+            <div>
+              {/* Cabeçalho do professor */}
+              <div className="flex items-start gap-3 p-4 rounded-xl border-2 mb-3"
+                style={{ background: cv.bg, borderColor: cv.bd }}>
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg font-extrabold shrink-0"
+                  style={{ background: cv.tg, color: cv.tx }}>{teacher.name.charAt(0)}</div>
+                <div className="flex-1">
+                  <div className="font-extrabold text-base" style={{ color: cv.tx }}>{teacher.name}</div>
+                  <div className="text-xs opacity-70" style={{ color: cv.tx }}>{teacherSubjectNames(teacher, store.subjects) || '—'}</div>
+                  <div className="flex gap-2 mt-1.5">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-surf border border-bdr text-t1">
+                      {covered} coberta{covered !== 1 ? 's' : ''}
+                    </span>
+                    <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full bg-surf border border-bdr ${balanceClass}`}>
+                      saldo {balanceLabel}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-1.5 shrink-0 flex-wrap justify-end">
+                  <button onClick={handleTimesheetPDF} className="btn btn-ghost btn-xs">📄 Folha de Ponto</button>
+                  <button onClick={handleBalancePDF} className="btn btn-ghost btn-xs">📄 Extrato</button>
+                  <WhatsAppButton message={buildWhatsAppMsg()} />
+                </div>
+              </div>
+
+              {/* Filtros temporais internos */}
+              <div className="flex gap-2 flex-wrap mb-4 items-center">
+                {['all','day','week','month'].map(f => (
+                  <button key={f} onClick={() => setFilter(f)}
+                    className={`btn btn-xs ${filter === f ? 'btn-dark' : 'btn-ghost'}`}>
+                    {f === 'all' ? 'Todos' : f === 'day' ? 'Por Dia' : f === 'week' ? 'Por Semana' : 'Por Mês'}
+                  </button>
+                ))}
+                {filter === 'day' && (
+                  <input type="date" className="inp !w-auto py-1 text-xs" value={filterDate}
+                    onChange={e => setFilterDate(e.target.value)} />
+                )}
+                {filter === 'week' && (
+                  <input type="date" className="inp !w-auto py-1 text-xs" value={filterDate}
+                    onChange={e => setFilterDate(e.target.value)} />
+                )}
+                {filter === 'month' && (
+                  <div className="flex gap-1.5 flex-wrap">
+                    {MONTH_NAMES.map((m, i) => (
+                      <button key={i} onClick={() => setFilterMonth(i)}
+                        className={`btn btn-xs ${filterMonth === i ? 'btn-dark' : 'btn-ghost'}`}>{m.slice(0,3)}</button>
+                    ))}
+                    <input type="number" className="inp !w-20 py-1 text-xs" value={filterYear}
+                      onChange={e => setFilterYear(Number(e.target.value))} />
+                  </div>
+                )}
+                <span className="text-xs text-t3 ml-1">{total} aula{total !== 1 ? 's' : ''}</span>
+              </div>
+
+              <SelectionToolbar isAdmin={isAdmin} selectionMode={selectionMode} setSelectionMode={setSelectionMode}
+                visibleSlots={detail.slots} onSelectAll={onSelectAll} onClearAll={onClearAll} onSelectFaltas={onSelectFaltas} onSelectSubs={onSelectSubs} />
+
+              {/* Lista de registros agrupados por data */}
+              {Object.keys(byDate).length === 0 ? (
+                <div className="card text-center py-8">
+                  <div className="text-2xl mb-2">✅</div>
+                  <div className="text-sm text-t2">Nenhuma substituição no período selecionado</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.keys(byDate).sort().map(date => {
+                    const dateSlots = byDate[date]
+                    return (
+                      <div key={date} className="card">
+                        <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-bdr">
+                          <div>
+                            <div className="font-bold text-sm">{dateToDayLabel(date)}</div>
+                            <div className="font-mono text-xs text-t2">{formatBR(date)}</div>
+                          </div>
+                          <div className="text-xs font-bold text-ok">
+                            {dateSlots.length} cobertura{dateSlots.length !== 1 ? 's' : ''}
+                          </div>
+                        </div>
+                        {dateSlots.map(sl => (
+                          <SubSlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin}
+                            selectionMode={selectionMode} isSelected={selectedIds.has(sl.id)} onToggle={onToggle} />
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+      </div>
     </div>
   )
 }
 
-// ─── ViewByDay helpers ────────────────────────────────────────────────────────
+// ─── Shared helper ───────────────────────────────────────────────────────────
 
-function dayDisplayName(teacher) {
-  if (!teacher) return '—'
-  if (teacher.apelido?.trim()) return teacher.apelido.trim()
-  return teacher.name?.split(' ')[0] ?? teacher.name ?? '—'
+function groupBySubstitute(slots, store) {
+  const map = new Map()
+  for (const sl of slots) {
+    if (!map.has(sl.substituteId)) map.set(sl.substituteId, [])
+    map.get(sl.substituteId).push(sl)
+  }
+  return [...map.entries()]
+    .map(([id, ss]) => ({ teacher: store.teachers.find(t => t.id === id), slots: ss }))
+    .filter(g => g.teacher)
+    .sort((a, b) => a.teacher.name.localeCompare(b.teacher.name))
 }
+
+// ─── ViewByDay helpers ────────────────────────────────────────────────────────
 
 function initialDate() {
   const today = new Date()
   const day = today.getDay()
-  if (day === 0) today.setDate(today.getDate() + 1)       // domingo → segunda
-  else if (day === 6) today.setDate(today.getDate() + 2)  // sábado → segunda
+  if (day === 0) today.setDate(today.getDate() + 1)
+  else if (day === 6) today.setDate(today.getDate() + 2)
   return formatISO(today)
 }
 
@@ -455,174 +725,111 @@ function nextBusinessDay(iso) {
   return formatISO(d)
 }
 
-// ─── DayPicker ────────────────────────────────────────────────────────────────
-
-function DayPicker({ selDate, setSelDate }) {
-  const dayLabel = dateToDayLabel(selDate)
-  const label = `${dayLabel ?? 'Fim de semana'}, ${formatBR(selDate)}`
-  return (
-    <div className="flex items-center gap-2 mb-4 flex-wrap">
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={() => setSelDate(prevBusinessDay(selDate))}
-        aria-label="Dia anterior"
-      >◀</button>
-      <div className="text-sm font-bold text-t1 px-2 min-w-[180px] text-center">
-        {label}
-      </div>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={() => setSelDate(nextBusinessDay(selDate))}
-        aria-label="Próximo dia"
-      >▶</button>
-      <input
-        type="date"
-        className="inp ml-2"
-        value={selDate}
-        onChange={e => e.target.value && setSelDate(e.target.value)}
-      />
-    </div>
-  )
-}
-
-// ─── DayGridBySegment ─────────────────────────────────────────────────────────
-
-function DayGridBySegment({ seg, store, dayLabel, subByTurmaSlot, turmaFilter }) {
-  const turno = seg.turno ?? 'manha'
-  const aulas = getAulas(seg.id, turno, store.periodConfigs)
-  let turmas = (seg.grades ?? []).flatMap(g =>
-    (g.classes ?? []).map(c => `${g.name} ${c.letter}`)
-  )
-  if (turmaFilter) turmas = turmas.filter(t => t === turmaFilter)
-
-  if (!turmas.length || !aulas.length) return null
-
-  return (
-    <div className="card p-0 overflow-x-auto mb-4">
-      <div className="px-4 py-2 bg-surf2 border-b border-bdr">
-        <div className="font-extrabold text-sm text-t1">{seg.name}</div>
-      </div>
-      <table className="w-full text-xs border-collapse">
-        <thead>
-          <tr className="bg-surf2 border-b border-bdr">
-            <th className="px-3 py-2 text-left font-bold text-t2 w-[110px]">Aula</th>
-            {turmas.map(t => (
-              <th key={t} className="px-2 py-2 text-center font-bold text-t2 min-w-[100px]">
-                {t}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {aulas.map(p => {
-            const slot = makeSlot(seg.id, turno, p.aulaIdx)
-            return (
-              <tr key={p.aulaIdx} className="border-b border-bdr/50">
-                <td className="px-3 py-1.5 align-top">
-                  <div className="font-bold font-mono">{p.label}</div>
-                  <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
-                </td>
-                {turmas.map(turma => {
-                  const sched = (store.schedules ?? []).find(s =>
-                    s.day === dayLabel && s.timeSlot === slot && s.turma === turma
-                  )
-                  const titular = sched ? store.teachers.find(t => t.id === sched.teacherId) : null
-                  const subDisplay = subByTurmaSlot.get(`${turma}||${slot}`)
-                  return (
-                    <td key={turma} className="px-1.5 py-1.5 align-top">
-                      {subDisplay ? (
-                        <div className="text-[11px] font-bold text-ok truncate">
-                          ✓ {subDisplay}
-                        </div>
-                      ) : titular ? (
-                        <div className="text-[11px] text-t2 truncate">
-                          {dayDisplayName(titular)}
-                        </div>
-                      ) : (
-                        <div className="text-[11px] text-t3">—</div>
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
 // ─── ViewByDay ────────────────────────────────────────────────────────────────
 
-function ViewByDay({ store, filteredSlots, selSegment, selTurma }) {
+function ViewByDay({ store, isAdmin, filteredSlots, selProps }) {
+  const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
   const [selDate, setSelDate] = useState(() => initialDate())
-  const dayLabel = dateToDayLabel(selDate)
 
   const daySlots = useMemo(
-    () => filteredSlots.filter(sl => sl.date === selDate && sl.substituteId),
+    () => filteredSlots.filter(sl => sl.date === selDate),
     [filteredSlots, selDate]
   )
 
-  const subByTurmaSlot = useMemo(() => {
-    const map = new Map()
-    for (const sl of daySlots) {
-      const sub = store.teachers.find(t => t.id === sl.substituteId)
-      map.set(`${sl.turma}||${sl.timeSlot}`, dayDisplayName(sub))
-    }
-    return map
-  }, [daySlots, store.teachers])
+  const recentDates = useMemo(
+    () => [...new Set(filteredSlots.map(sl => sl.date))].sort().reverse().slice(0, 10),
+    [filteredSlots]
+  )
 
-  const segmentsToRender = selSegment
-    ? store.segments.filter(s => s.id === selSegment)
-    : store.segments
+  const grouped = useMemo(() => groupBySubstitute(daySlots, store), [daySlots, store.teachers])
 
-  if (dayLabel === null) {
-    return (
-      <div>
-        <DayPicker selDate={selDate} setSelDate={setSelDate} />
-        <div className="card text-center py-8 text-t3 text-sm">
-          Sem aulas em fim de semana.
-        </div>
-      </div>
-    )
+  const handlePDF = () => {
+    openPDF(generateSubstitutionTimesheetHTML(null, daySlots, store))
   }
 
-  const renderedSegments = segmentsToRender.filter(seg => {
-    const turmas = (seg.grades ?? []).flatMap(g =>
-      (g.classes ?? []).map(c => `${g.name} ${c.letter}`)
-    )
-    const filtered = selTurma ? turmas.filter(t => t === selTurma) : turmas
-    const aulas = getAulas(seg.id, seg.turno ?? 'manha', store.periodConfigs)
-    return filtered.length > 0 && aulas.length > 0
-  })
+  const buildWhatsAppMsg = () => {
+    let msg = `*Substituições — ${dateToDayLabel(selDate) ?? ''}, ${formatBR(selDate)}*\n`
+    msg += `Total: ${daySlots.length} cobertura${daySlots.length !== 1 ? 's' : ''}\n`
+    grouped.forEach(({ teacher, slots }) => {
+      msg += `\n*${teacher.name}* (${slots.length}):`
+      slots.forEach(sl => {
+        const absent = store.teachers.find(t => t.id === sl.teacherId)
+        msg += `\n  • ${slotLabel(sl.timeSlot, store.periodConfigs)} — ${sl.turma} (cobriu ${absent?.name ?? '—'})`
+      })
+    })
+    return msg
+  }
 
   return (
     <div>
-      <DayPicker selDate={selDate} setSelDate={setSelDate} />
-      {daySlots.length === 0 && (
-        <div className="text-xs text-t3 mb-3">
-          Nenhuma substituição neste dia no período filtrado.
+      {/* Controles */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <button className="btn btn-ghost btn-sm" onClick={() => setSelDate(prevBusinessDay(selDate))}>◀</button>
+        <div className="text-sm font-bold text-t1 min-w-[160px] text-center">
+          {dateToDayLabel(selDate) ?? 'Fim de semana'}, {formatBR(selDate)}
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={() => setSelDate(nextBusinessDay(selDate))}>▶</button>
+        <button className="btn btn-ghost btn-xs" onClick={() => setSelDate(initialDate())}>Hoje</button>
+        <input type="date" className="inp !w-auto py-1 text-xs ml-2" value={selDate}
+          onChange={e => e.target.value && setSelDate(e.target.value)} />
+        {daySlots.length > 0 && (
+          <>
+            <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 PDF</button>
+            <WhatsAppButton message={buildWhatsAppMsg()} />
+          </>
+        )}
+      </div>
+
+      {/* Pills rápidos */}
+      {recentDates.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap mb-4">
+          <span className="text-[11px] font-bold text-t3 uppercase tracking-wider self-center mr-1">Datas:</span>
+          {recentDates.map(d => (
+            <button key={d} onClick={() => setSelDate(d)}
+              className={`btn btn-xs ${d === selDate ? 'btn-dark' : 'btn-ghost'}`}>
+              {formatBR(d)}
+            </button>
+          ))}
         </div>
       )}
-      {renderedSegments.length === 0 ? (
-        <div className="card text-center py-8 text-t3 text-sm">
-          Nenhum segmento com aulas para exibir.
+
+      <SelectionToolbar isAdmin={isAdmin} selectionMode={selectionMode} setSelectionMode={setSelectionMode}
+        visibleSlots={daySlots} onSelectAll={onSelectAll} onClearAll={onClearAll} onSelectFaltas={onSelectFaltas} onSelectSubs={onSelectSubs} />
+
+      {/* Conteúdo */}
+      {daySlots.length === 0 ? (
+        <div className="card text-center py-10">
+          <div className="text-3xl mb-2">✅</div>
+          <div className="text-sm font-bold text-t2">
+            Nenhuma substituição em {formatBR(selDate)}
+          </div>
         </div>
       ) : (
-        renderedSegments.map(seg => (
-          <DayGridBySegment
-            key={seg.id}
-            seg={seg}
-            store={store}
-            selDate={selDate}
-            dayLabel={dayLabel}
-            subByTurmaSlot={subByTurmaSlot}
-            turmaFilter={selTurma}
-          />
-        ))
+        <div className="space-y-4">
+          {grouped.map(({ teacher, slots }) => {
+            const cv = colorOfTeacher(teacher, store)
+            return (
+              <div key={teacher.id} className="card">
+                <div className="flex items-center gap-3 mb-3 pb-2.5 border-b border-bdr">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+                    style={{ background: cv.tg, color: cv.tx }}>{teacher.name.charAt(0)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm truncate">{teacher.name}</div>
+                    <div className="text-[11px] text-t3">{teacherSubjectNames(teacher, store.subjects) || '—'}</div>
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                    style={{ background: cv.tg, color: cv.tx }}>
+                    {slots.length} coberta{slots.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                {slots.map(sl => (
+                  <SubSlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin}
+                    selectionMode={selectionMode} isSelected={selectedIds.has(sl.id)} onToggle={onToggle} />
+                ))}
+              </div>
+            )
+          })}
+        </div>
       )}
     </div>
   )
@@ -630,8 +837,10 @@ function ViewByDay({ store, filteredSlots, selSegment, selTurma }) {
 
 // ─── ViewByWeek ───────────────────────────────────────────────────────────────
 
-function ViewByWeek({ store, filteredSlots }) {
+function ViewByWeek({ store, isAdmin, filteredSlots, selProps }) {
+  const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
   const [weekRef, setWeekRef] = useState(() => weekStart(formatISO(new Date())))
+  const [filterSub, setFilterSub] = useState('')
 
   const monISO  = weekRef
   const monDate = parseDate(monISO)
@@ -639,61 +848,112 @@ function ViewByWeek({ store, filteredSlots }) {
   const friISO  = formatISO(friDate)
   const label   = `${formatBR(monISO)} – ${formatBR(friISO)}`
 
-  const prev = () => {
-    const d = parseDate(monISO); d.setDate(d.getDate() - 7); setWeekRef(formatISO(d))
-  }
-  const next = () => {
-    const d = parseDate(monISO); d.setDate(d.getDate() + 7); setWeekRef(formatISO(d))
-  }
+  const prev = () => { const d = parseDate(monISO); d.setDate(d.getDate() - 7); setWeekRef(formatISO(d)) }
+  const next = () => { const d = parseDate(monISO); d.setDate(d.getDate() + 7); setWeekRef(formatISO(d)) }
 
   const days = useMemo(() => Array.from({ length: 5 }, (_, i) => {
     const d = new Date(monDate); d.setDate(monDate.getDate() + i); return formatISO(d)
   }), [monISO])
 
   const weekSlots = useMemo(
-    () => filteredSlots.filter(sl => sl.date >= monISO && sl.date <= friISO),
-    [filteredSlots, monISO, friISO]
+    () => filteredSlots
+      .filter(sl => sl.date >= monISO && sl.date <= friISO)
+      .filter(sl => !filterSub || sl.substituteId === filterSub),
+    [filteredSlots, monISO, friISO, filterSub]
   )
 
-  const byDate = useMemo(() => {
-    const out = {}
-    for (const sl of weekSlots) {
-      if (!sl.date) continue
-      if (!out[sl.date]) out[sl.date] = []
-      out[sl.date].push(sl)
-    }
-    return out
-  }, [weekSlots])
+  const subsThisWeek = useMemo(() => {
+    const ids = [...new Set(filteredSlots.filter(sl => sl.date >= monISO && sl.date <= friISO).map(sl => sl.substituteId))]
+    return ids.map(id => store.teachers.find(t => t.id === id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+  }, [filteredSlots, monISO, friISO, store.teachers])
+
+  const handlePDF = () => openPDF(generateSubstitutionTimesheetHTML(null, weekSlots, store))
+
+  const buildWhatsAppMsg = () => {
+    let msg = `*Substituições — Semana ${label}*\n`
+    msg += `Total: ${weekSlots.length} cobertura${weekSlots.length !== 1 ? 's' : ''}\n`
+    days.forEach(date => {
+      const daySlots = weekSlots.filter(sl => sl.date === date)
+      if (!daySlots.length) return
+      msg += `\n*${dateToDayLabel(date)}, ${formatBR(date)}*`
+      const grouped = groupBySubstitute(daySlots, store)
+      grouped.forEach(({ teacher, slots }) => {
+        msg += `\n  *${teacher.name}* (${slots.length}):`
+        slots.forEach(sl => {
+          const absent = store.teachers.find(t => t.id === sl.teacherId)
+          msg += `\n    • ${slotLabel(sl.timeSlot, store.periodConfigs)} — ${sl.turma} (cobriu ${absent?.name ?? '—'})`
+        })
+      })
+    })
+    return msg
+  }
 
   return (
     <div>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <button className="btn btn-ghost btn-sm" onClick={prev}>◀ Semana anterior</button>
+        <button className="btn btn-ghost btn-sm" onClick={prev}>◀</button>
         <div className="font-bold text-sm min-w-[200px] text-center">{label}</div>
-        <button className="btn btn-ghost btn-sm" onClick={next}>Semana seguinte ▶</button>
-        <button
-          className="btn btn-ghost btn-xs text-accent"
-          onClick={() => setWeekRef(weekStart(formatISO(new Date())))}
-        >
-          Hoje
-        </button>
+        <button className="btn btn-ghost btn-sm" onClick={next}>▶</button>
+        <button className="btn btn-ghost btn-xs" onClick={() => setWeekRef(weekStart(formatISO(new Date())))}>Hoje</button>
+
+        {subsThisWeek.length > 0 && (
+          <select className="inp !w-auto py-1 text-xs ml-2" value={filterSub} onChange={e => setFilterSub(e.target.value)}>
+            <option value="">Todos os substitutos</option>
+            {subsThisWeek.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
+
+        {weekSlots.length > 0 && (
+          <>
+            <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 PDF</button>
+            <WhatsAppButton message={buildWhatsAppMsg()} />
+          </>
+        )}
       </div>
 
+      <SelectionToolbar isAdmin={isAdmin} selectionMode={selectionMode} setSelectionMode={setSelectionMode}
+        visibleSlots={weekSlots} onSelectAll={onSelectAll} onClearAll={onClearAll} onSelectFaltas={onSelectFaltas} onSelectSubs={onSelectSubs} />
+
       {weekSlots.length === 0 ? (
-        <p className="text-t3 text-sm">Nenhuma substituição neste período.</p>
+        <div className="card text-center py-10">
+          <div className="text-3xl mb-2">✅</div>
+          <div className="text-sm font-bold text-t2">Nenhuma substituição nesta semana</div>
+        </div>
       ) : (
-        days.map(date => {
-          const daySlots = byDate[date]
-          if (!daySlots?.length) return null
-          return (
-            <div key={date}>
-              <div className="text-xs font-bold text-t2 uppercase tracking-wider py-1 mt-3">
-                {dateToDayLabel(date)} — {formatBR(date)}
+        <div className="card">
+          {days.map(date => {
+            const daySlots = weekSlots.filter(sl => sl.date === date)
+            if (!daySlots.length) return null
+            const grouped = groupBySubstitute(daySlots, store)
+            return (
+              <div key={date} className="mb-4 last:mb-0">
+                <div className="text-xs font-bold text-t2 uppercase tracking-wider mb-2">
+                  {dateToDayLabel(date)} · {formatBR(date)}
+                </div>
+                <div className="space-y-3">
+                  {grouped.map(({ teacher, slots }) => {
+                    const cv = colorOfTeacher(teacher, store)
+                    return (
+                      <div key={teacher.id} className="border border-bdr rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                            style={{ background: cv.tg, color: cv.tx }}>{teacher.name.charAt(0)}</div>
+                          <div className="font-bold text-sm truncate flex-1">{teacher.name}</div>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                            style={{ background: cv.tg, color: cv.tx }}>
+                            {slots.length} coberta{slots.length !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                        {slots.map(sl => <SubSlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin}
+                          selectionMode={selectionMode} isSelected={selectedIds.has(sl.id)} onToggle={onToggle} />)}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-              {daySlots.map(sl => <SubSlotRow key={sl.id} sl={sl} store={store} />)}
-            </div>
-          )
-        })
+            )
+          })}
+        </div>
       )}
     </div>
   )
@@ -701,66 +961,56 @@ function ViewByWeek({ store, filteredSlots }) {
 
 // ─── ViewByMonth ──────────────────────────────────────────────────────────────
 
-function ViewByMonth({ store, filteredSlots, filterMonth, filterYear }) {
-  // filteredSlots já vem restrito ao mês pelo pai, mas aplicamos novamente
-  // por robustez e para deixar a intenção explícita no componente.
-  const monthSlots = useMemo(() => filteredSlots.filter(sl => {
-    if (!sl.date) return false
-    const d = parseDate(sl.date)
-    return d.getMonth() === filterMonth && d.getFullYear() === filterYear
-  }), [filteredSlots, filterMonth, filterYear])
+function ViewByMonth({ store, isAdmin, filteredSlots, selProps }) {
+  const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
+  const now = new Date()
+  const [year, setYear]   = useState(now.getFullYear())
+  const [month, setMonth] = useState(now.getMonth())
+  const [filterSub, setFilterSub] = useState('')
+  const [showRanking, setShowRanking] = useState(false)
+  const [rankSort, setRankSort] = useState('attendance') // 'attendance' | 'scheduled' | 'absences'
 
-  const byDate = useMemo(() => {
-    const out = {}
-    for (const sl of monthSlots) {
-      if (!out[sl.date]) out[sl.date] = []
-      out[sl.date].push(sl)
+  const monthSlots = useMemo(
+    () => filteredSlots
+      .filter(sl => { const d = parseDate(sl.date); return d.getFullYear() === year && d.getMonth() === month })
+      .filter(sl => !filterSub || sl.substituteId === filterSub),
+    [filteredSlots, year, month, filterSub]
+  )
+
+  const subsThisMonth = useMemo(() => {
+    const ids = [...new Set(
+      filteredSlots.filter(sl => { const d = parseDate(sl.date); return d.getFullYear() === year && d.getMonth() === month })
+        .map(sl => sl.substituteId)
+    )]
+    return ids.map(id => store.teachers.find(t => t.id === id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
+  }, [filteredSlots, year, month, store.teachers])
+
+  // Agrupar dias em semanas (Seg–Sex) para cards semanais
+  const weeks = useMemo(() => {
+    const sortedDates = [...new Set(monthSlots.map(sl => sl.date))].sort()
+    if (!sortedDates.length) return []
+    const wks = []
+    let currentWeekStart = null
+    let currentWeek = []
+    for (const date of sortedDates) {
+      const ws = weekStart(date)
+      if (ws !== currentWeekStart) {
+        if (currentWeek.length) wks.push({ weekStart: currentWeekStart, dates: currentWeek })
+        currentWeekStart = ws
+        currentWeek = []
+      }
+      currentWeek.push(date)
     }
-    return out
+    if (currentWeek.length) wks.push({ weekStart: currentWeekStart, dates: currentWeek })
+    return wks
   }, [monthSlots])
 
-  const sortedDates = useMemo(() => Object.keys(byDate).sort(), [byDate])
-
-  if (monthSlots.length === 0) {
-    return <p className="text-t3 text-sm">Nenhuma substituição neste período.</p>
-  }
-
-  return (
-    <div>
-      {sortedDates.map(date => (
-        <div key={date}>
-          <div className="text-xs font-bold text-t2 uppercase tracking-wider py-1 mt-3">
-            {dateToDayLabel(date)} — {formatBR(date)}
-          </div>
-          {byDate[date].map(sl => <SubSlotRow key={sl.id} sl={sl} store={store} />)}
-        </div>
-      ))}
-    </div>
-  )
-}
-// ─── Ranking ─────────────────────────────────────────────────────────────────
-// Usa a mesma lógica de contagem de src/lib/absences.js → monthlyLoad,
-// mas (1) varre o mês inteiro (não só até hoje) e (2) retorna scheduled e
-// substitutions separados para suportar sub-legenda e alternância de ordenação.
-// Ignora `filteredSlots` de propósito — ranking é sempre global.
-function ViewRanking({ store, filterMonth, filterYear }) {
-  const [sortBy, setSortBy] = useState('total') // 'total' | 'substitutions'
-
-  const rows = useMemo(() => {
-    const monthStart = formatISO(new Date(filterYear, filterMonth, 1))
-    const monthEnd   = formatISO(new Date(filterYear, filterMonth + 1, 0))
+  // Ranking: assiduidade por professor
+  const rankingRows = useMemo(() => {
+    const monthStart = formatISO(new Date(year, month, 1))
+    const monthEnd   = formatISO(new Date(year, month + 1, 0))
     const days       = businessDaysBetween(monthStart, monthEnd)
-
-    const dayLabels = days.map(d => dateToDayLabel(d)).filter(Boolean)
-
-    const subsByTeacher = new Map()
-    ;(store.absences ?? []).forEach(ab => {
-      ab.slots.forEach(sl => {
-        if (!sl.substituteId) return
-        if (sl.date < monthStart || sl.date > monthEnd) return
-        subsByTeacher.set(sl.substituteId, (subsByTeacher.get(sl.substituteId) ?? 0) + 1)
-      })
-    })
+    const dayLabels  = days.map(d => dateToDayLabel(d)).filter(Boolean)
 
     const schedByTeacherDay = new Map()
     ;(store.schedules ?? []).forEach(s => {
@@ -768,86 +1018,207 @@ function ViewRanking({ store, filterMonth, filterYear }) {
       schedByTeacherDay.set(key, (schedByTeacherDay.get(key) ?? 0) + 1)
     })
 
+    const absByTeacher = new Map()
+    ;(store.absences ?? []).forEach(ab => {
+      ab.slots.forEach(sl => {
+        if (sl.date < monthStart || sl.date > monthEnd) return
+        absByTeacher.set(sl.teacherId, (absByTeacher.get(sl.teacherId) ?? 0) + 1)
+      })
+    })
+
     return (store.teachers ?? []).map(t => {
       const scheduled = dayLabels.reduce(
-        (acc, lbl) => acc + (schedByTeacherDay.get(`${t.id}||${lbl}`) ?? 0),
-        0
+        (acc, lbl) => acc + (schedByTeacherDay.get(`${t.id}||${lbl}`) ?? 0), 0
       )
-      const substitutions = subsByTeacher.get(t.id) ?? 0
-      return {
-        teacher: t,
-        scheduled,
-        substitutions,
-        total: scheduled + substitutions,
-      }
+      const absences = absByTeacher.get(t.id) ?? 0
+      const attendance = scheduled > 0 ? ((scheduled - absences) / scheduled * 100) : null
+      return { teacher: t, scheduled, absences, attendance }
     })
-  }, [store.teachers, store.schedules, store.absences, filterMonth, filterYear])
+  }, [store.teachers, store.schedules, store.absences, year, month])
 
-  const sorted = useMemo(() => {
-    const key = sortBy
-    return [...rows].sort((a, b) => {
-      if (b[key] !== a[key]) return b[key] - a[key]
+  const sortedRanking = useMemo(() => {
+    return [...rankingRows].sort((a, b) => {
+      if (rankSort === 'attendance') {
+        const aa = a.attendance ?? -1, bb = b.attendance ?? -1
+        if (bb !== aa) return bb - aa
+      } else if (rankSort === 'scheduled') {
+        if (b.scheduled !== a.scheduled) return b.scheduled - a.scheduled
+      } else {
+        if (b.absences !== a.absences) return b.absences - a.absences
+      }
       return a.teacher.name.localeCompare(b.teacher.name)
     })
-  }, [rows, sortBy])
+  }, [rankingRows, rankSort])
 
-  const toggleLabel = sortBy === 'total'
-    ? 'Ordenar por: Apenas Substituições'
-    : 'Ordenar por: Carga Total'
+  const handlePDF = () => openPDF(generateSubstitutionTimesheetHTML(null, monthSlots, store))
 
-  const handleRankingPDF = () => {
-    openPDF(generateSubstitutionRankingHTML(sorted, filterMonth, filterYear, store))
+  const handleRankingPDF = () => openPDF(generateSubstitutionRankingHTML(sortedRanking, month, year))
+
+  const buildWhatsAppMsg = () => {
+    let msg = `*Substituições — ${MONTH_NAMES[month]} ${year}*\n`
+    msg += `Total: ${monthSlots.length} cobertura${monthSlots.length !== 1 ? 's' : ''}\n`
+    const sortedDates = [...new Set(monthSlots.map(sl => sl.date))].sort()
+    sortedDates.forEach(date => {
+      const daySlots = monthSlots.filter(sl => sl.date === date)
+      msg += `\n*${dateToDayLabel(date)}, ${formatBR(date)}*`
+      const grouped = groupBySubstitute(daySlots, store)
+      grouped.forEach(({ teacher, slots }) => {
+        msg += `\n  *${teacher.name}* (${slots.length}):`
+        slots.forEach(sl => {
+          const absent = store.teachers.find(t => t.id === sl.teacherId)
+          msg += `\n    • ${slotLabel(sl.timeSlot, store.periodConfigs)} — ${sl.turma} (cobriu ${absent?.name ?? '—'})`
+        })
+      })
+    })
+    return msg
   }
 
-  if (!sorted.length) {
-    return <div className="text-t3 text-sm p-4">Nenhum professor cadastrado.</div>
-  }
+  const colorForPct = pct => pct > 90 ? 'text-green-600' : pct >= 70 ? 'text-amber-600' : 'text-red-600'
+
+  const sortLabels = { attendance: '% Assiduidade', scheduled: 'Aulas Próprias', absences: 'Ausências' }
+  const nextSort = () => setRankSort(s => s === 'attendance' ? 'scheduled' : s === 'scheduled' ? 'absences' : 'attendance')
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end gap-2">
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={handleRankingPDF}
-        >
-          📄 PDF Ranking
-        </button>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => setSortBy(s => s === 'total' ? 'substitutions' : 'total')}
-        >
-          {toggleLabel}
-        </button>
+    <div>
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <button className="btn btn-ghost btn-sm" onClick={() => setYear(y => y - 1)}>◀</button>
+        <span className="font-bold text-sm">{year}</span>
+        <button className="btn btn-ghost btn-sm" onClick={() => setYear(y => y + 1)}>▶</button>
+
+        <div className="flex gap-1 flex-wrap">
+          {MONTH_NAMES.map((name, idx) => (
+            <button key={idx} onClick={() => setMonth(idx)}
+              className={`btn btn-xs ${idx === month ? 'btn-dark' : 'btn-ghost'}`}>
+              {name.slice(0, 3)}
+            </button>
+          ))}
+        </div>
+
+        <button className="btn btn-ghost btn-xs" onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth()) }}>Hoje</button>
+
+        {!showRanking && subsThisMonth.length > 0 && (
+          <select className="inp !w-auto py-1 text-xs ml-2" value={filterSub} onChange={e => setFilterSub(e.target.value)}>
+            <option value="">Todos os substitutos</option>
+            {subsThisMonth.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
+
+        <div className="flex gap-2 ml-auto">
+          <button onClick={() => setShowRanking(r => !r)}
+            className={`btn btn-sm ${showRanking ? 'btn-dark' : 'btn-ghost'}`}>
+            🏆 Ranking
+          </button>
+          {!showRanking && monthSlots.length > 0 && (
+            <>
+              <button onClick={handlePDF} className="btn btn-ghost btn-sm">📄 PDF</button>
+              <WhatsAppButton message={buildWhatsAppMsg()} />
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="card p-0 overflow-hidden">
-        <ul className="divide-y divide-bdr/60">
-          {sorted.map((r, idx) => {
-            const cor = colorOfTeacher(r.teacher, store)
-            const mainValue = sortBy === 'total' ? r.total : r.substitutions
-            return (
-              <li key={r.teacher.id} className="flex items-center gap-3 px-4 py-3 hover:bg-surf2 transition-colors">
-                <div className="w-8 text-t3 text-xs font-mono tabular-nums">#{idx + 1}</div>
-                <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-                  style={{ background: cor.bg, color: cor.tx, borderColor: cor.bd, borderWidth: 1 }}
-                >
-                  {r.teacher.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-t1 text-sm truncate">{r.teacher.name}</div>
-                  <div className="text-t3 text-xs">
-                    {r.scheduled} próprias | {r.substitutions} substituições
+      {showRanking ? (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-t3">Ordenar por:</span>
+            <button onClick={nextSort} className="btn btn-ghost btn-xs">{sortLabels[rankSort]} ↓</button>
+            <button onClick={handleRankingPDF} className="btn btn-ghost btn-sm ml-auto">📄 PDF Ranking</button>
+          </div>
+
+          <div className="card p-0 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-surf2 text-t2 text-xs uppercase tracking-wider">
+                  <th className="px-3 py-2 text-center w-10">#</th>
+                  <th className="px-3 py-2 text-left">Professor</th>
+                  <th className="px-3 py-2 text-center">Aulas Próprias</th>
+                  <th className="px-3 py-2 text-center">Ausências</th>
+                  <th className="px-3 py-2 text-center">% Assiduidade</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-bdr/60">
+                {sortedRanking.map((r, idx) => {
+                  const cv = colorOfTeacher(r.teacher, store)
+                  const pctStr = r.attendance !== null ? `${r.attendance.toFixed(1)}%` : '—'
+                  const pctClass = r.attendance !== null ? colorForPct(r.attendance) : 'text-t3'
+                  return (
+                    <tr key={r.teacher.id} className="hover:bg-surf2 transition-colors even:bg-surf/50">
+                      <td className="px-3 py-2.5 text-center text-t3 font-mono text-xs">{idx + 1}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                            style={{ background: cv.tg, color: cv.tx }}>{r.teacher.name.charAt(0)}</div>
+                          <span className="font-semibold truncate">{r.teacher.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-center tabular-nums">{r.scheduled}</td>
+                      <td className="px-3 py-2.5 text-center tabular-nums">{r.absences}</td>
+                      <td className={`px-3 py-2.5 text-center font-bold tabular-nums ${pctClass}`}>{pctStr}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <>
+          <SelectionToolbar isAdmin={isAdmin} selectionMode={selectionMode} setSelectionMode={setSelectionMode}
+            visibleSlots={monthSlots} onSelectAll={onSelectAll} onClearAll={onClearAll} onSelectFaltas={onSelectFaltas} onSelectSubs={onSelectSubs} />
+
+          {monthSlots.length === 0 ? (
+            <div className="card text-center py-10">
+              <div className="text-3xl mb-2">✅</div>
+              <div className="text-sm font-bold text-t2">Nenhuma substituição em {MONTH_NAMES[month]} {year}</div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {weeks.map(wk => {
+                const wkMonDate = parseDate(wk.weekStart)
+                const wkFriDate = new Date(wkMonDate); wkFriDate.setDate(wkMonDate.getDate() + 4)
+                const wkLabel = `${formatBR(wk.weekStart)} – ${formatBR(formatISO(wkFriDate))}`
+                return (
+                  <div key={wk.weekStart} className="card">
+                    <div className="text-[11px] font-bold text-t3 uppercase tracking-wider mb-3">Semana {wkLabel}</div>
+                    {wk.dates.map(date => {
+                      const daySlots = monthSlots.filter(sl => sl.date === date)
+                      if (!daySlots.length) return null
+                      const grouped = groupBySubstitute(daySlots, store)
+                      return (
+                        <div key={date} className="mb-4 last:mb-0">
+                          <div className="text-xs font-bold text-t2 uppercase tracking-wider mb-2">
+                            {dateToDayLabel(date)} · {formatBR(date)}
+                          </div>
+                          <div className="space-y-3">
+                            {grouped.map(({ teacher, slots }) => {
+                              const cv = colorOfTeacher(teacher, store)
+                              return (
+                                <div key={teacher.id} className="border border-bdr rounded-lg p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                                      style={{ background: cv.tg, color: cv.tx }}>{teacher.name.charAt(0)}</div>
+                                    <div className="font-bold text-sm truncate flex-1">{teacher.name}</div>
+                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0"
+                                      style={{ background: cv.tg, color: cv.tx }}>
+                                      {slots.length} coberta{slots.length !== 1 ? 's' : ''}
+                                    </span>
+                                  </div>
+                                  {slots.map(sl => <SubSlotRow key={sl.id} sl={sl} store={store} isAdmin={isAdmin}
+                                    selectionMode={selectionMode} isSelected={selectedIds.has(sl.id)} onToggle={onToggle} />)}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
-                </div>
-                <div className="text-2xl font-extrabold text-t1 tabular-nums">
-                  {mainValue}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
