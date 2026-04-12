@@ -108,80 +108,56 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
 // Retorna top 3 professores sugeridos de acordo com a regra selecionada
 
 export function suggestSubstitutes(absenceSlot, ruleType, store) {
-  // Se ruleType não for qualitativo, retornar vazio (Issue #116 adicionará quantitativo)
-  if (ruleType !== 'qualitative') {
-    return []
+  if (!absenceSlot || !absenceSlot.absentTeacherId) return []
+
+  // Candidatos base: aprovados, disponíveis e diferentes do ausente
+  const baseCandidates = store.teachers.filter(t =>
+    t.id !== absenceSlot.absentTeacherId &&
+    t.status === 'approved' &&
+    !isBusy(t.id, absenceSlot.date, absenceSlot.slot, store.schedules, store.absences)
+  )
+
+  if (ruleType === 'qualitative') {
+    const absentTeacher = store.teachers.find(t => t.id === absenceSlot.absentTeacherId)
+    if (!absentTeacher) return []
+
+    const absentSubjectId = absenceSlot.subjectId || (absentTeacher.subjectIds?.[0] ?? null)
+    const absentArea = absentSubjectId
+      ? store.subjects.find(s => s.id === absentSubjectId)?.areaId ?? null
+      : null
+
+    return baseCandidates
+      .map(teacher => {
+        let hierarchyLevel = 3
+
+        if (absentSubjectId && (teacher.subjectIds ?? []).includes(absentSubjectId)) {
+          hierarchyLevel = 1
+        } else if (absentArea && (teacher.subjectIds ?? []).some(
+          sid => store.subjects.find(s => s.id === sid)?.areaId === absentArea
+        )) {
+          hierarchyLevel = 2
+        }
+
+        const load = monthlyLoad(teacher.id, absenceSlot.date, store.schedules, store.absences)
+        return { teacher, score: hierarchyLevel * 1000 + load }
+      })
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 3)
+      .map(item => item.teacher)
   }
 
-  // Passo 1: Extrair dados do absenceSlot
-  if (!absenceSlot || !absenceSlot.absentTeacherId) {
-    return []
-  }
-
-  const absentTeacher = store.teachers.find(t => t.id === absenceSlot.absentTeacherId)
-  if (!absentTeacher) {
-    return []
-  }
-
-  // Extrair subject do slot (pode vir do absenceSlot.subjectId ou da primeira matéria do professor)
-  const absentSubjectId = absenceSlot.subjectId || (absentTeacher.subjectIds?.[0] ?? null)
-
-  // Se professor ausente não tem matéria, todos ficam em Nível 3
-  const absentArea = absentSubjectId
-    ? store.subjects.find(s => s.id === absentSubjectId)?.areaId ?? null
-    : null
-
-  // Passo 2: Montar lista de candidatos (aprovados e disponíveis)
-  const candidates = store.teachers
-    .filter(t => {
-      // Excluir o próprio professor ausente
-      if (t.id === absentTeacher.id) return false
-
-      // Apenas professores aprovados
-      if (t.status !== 'approved') return false
-
-      // Verificar disponibilidade (sem aula no horário e sem outra substituição)
-      if (isBusy(t.id, absenceSlot.date, absenceSlot.slot, store.schedules, store.absences)) {
-        return false
-      }
-
-      return true
-    })
-    .map(teacher => {
-      // Passo 3: Calcular score qualitativo para cada candidato
-      let hierarchyLevel = 3 // Default: outro professor
-
-      // Nível 1: mesma matéria
-      if (absentSubjectId && (teacher.subjectIds ?? []).includes(absentSubjectId)) {
-        hierarchyLevel = 1
-      }
-      // Nível 2: mesma área (se não for nível 1)
-      else if (absentArea && (teacher.subjectIds ?? []).some(
-        sid => store.subjects.find(s => s.id === sid)?.areaId === absentArea
-      )) {
-        hierarchyLevel = 2
-      }
-
-      // Calcular carga mensal
-      const load = monthlyLoad(teacher.id, absenceSlot.date, store.schedules, store.absences)
-
-      // Score = (hierarchyLevel * 1000) + load
-      // Menor score vence
-      const score = hierarchyLevel * 1000 + load
-
-      return {
+  if (ruleType === 'quantitative') {
+    return baseCandidates
+      .map(teacher => ({
         teacher,
-        score,
-        hierarchyLevel,
-        load,
-      }
-    })
+        load: monthlyLoad(teacher.id, absenceSlot.date, store.schedules, store.absences),
+      }))
+      .sort((a, b) => a.load - b.load)
+      .slice(0, 3)
+      .map(item => item.teacher)
+  }
 
-  // Passo 4: Ordenar por score crescente e retornar top 3
-  return candidates
-    .sort((a, b) => a.score - b.score)
-    .slice(0, 3)
-    .map(item => item.teacher)
+  return []
 }
 
 // ─── CRUD (retornam novos arrays para Zustand) ────────────────────────────────
