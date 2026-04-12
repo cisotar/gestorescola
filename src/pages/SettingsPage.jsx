@@ -1555,7 +1555,7 @@ export function ScheduleGridModal({ open, onClose, teacher, store, readOnly = fa
   )
 }
 
-export function ScheduleGrid({ teacher, store, readOnly = false }) {
+export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap }) {
   const { addSchedule, removeSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
 
@@ -1647,6 +1647,12 @@ export function ScheduleGrid({ teacher, store, readOnly = false }) {
                                   </div>
                                 )
                               })}
+
+                              {substitutionMap?.[slot] && (
+                                <div className="text-[10px] font-bold text-ok truncate">
+                                  ✓ {substitutionMap[slot]}
+                                </div>
+                              )}
 
                               {/* Indicadores de bloqueio — sem dados de terceiros */}
                               {!readOnly && (teacherConflict ? (

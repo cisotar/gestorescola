@@ -532,3 +532,160 @@ export function generateSchoolScheduleHTML(filter = {}, store) {
   const title = [teacherLabel, turma ? `Turma ${turma}` : null].filter(Boolean).join(' · ') || 'Todos os horários'
   return _wrap(`Grade da Escola — ${title}`, metaHTML, bodyHTML, 'GestãoEscolar — Grade Horária')
 }
+
+// ─── 10. Substituições — Folha de Ponto ──────────────────────────────────────
+
+export function generateSubstitutionTimesheetHTML(teacher, slots, store) {
+  const sorted = [...slots].sort((a, b) =>
+    (a.date ?? '').localeCompare(b.date ?? '') || (a.timeSlot ?? '').localeCompare(b.timeSlot ?? '')
+  )
+
+  const firstDate = sorted[0]?.date
+  const lastDate  = sorted[sorted.length - 1]?.date
+  const periodLabel = firstDate && lastDate
+    ? (firstDate === lastDate ? formatBR(firstDate) : `${formatBR(firstDate)} – ${formatBR(lastDate)}`)
+    : '—'
+
+  const metaHTML = `
+    <div class="m-blk"><span class="m-lbl">Substituto</span><span class="m-val">${teacher?.name ?? '—'}</span></div>
+    <div class="m-blk"><span class="m-lbl">Período</span><span class="m-val">${periodLabel}</span></div>
+    <div class="m-blk" style="margin-left:auto;text-align:right">
+      <span class="m-lbl">Total</span>
+      <span class="m-val">${sorted.length} aula${sorted.length !== 1 ? 's' : ''}</span>
+    </div>`
+
+  const rows = sorted.map(sl => {
+    const faltante = store.teachers.find(t => t.id === sl.teacherId)
+    return `<tr>
+      <td>${formatBR(sl.date)}</td>
+      <td>${slotFullLabel(sl.timeSlot, store.periodConfigs)}</td>
+      <td>${sl.turma ?? '—'}</td>
+      <td>${faltante?.name ?? '—'}</td>
+    </tr>`
+  }).join('')
+
+  const bodyHTML = sorted.length ? `
+    <table>
+      <thead><tr><th>Data</th><th>Horário</th><th>Turma</th><th>Professor Faltante</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>` : ''
+
+  return _wrap(
+    `Folha de Ponto — ${teacher?.name ?? '—'} — ${periodLabel}`,
+    metaHTML, bodyHTML,
+    'GestãoEscolar — Folha de Ponto'
+  )
+}
+
+// ─── 11. Substituições — Extrato de Saldo ────────────────────────────────────
+
+export function generateSubstitutionBalanceHTML(teacher, coveredSlots, absenceSlots, store) {
+  const faltas     = absenceSlots.length
+  const realizadas = coveredSlots.length
+  const saldo      = realizadas - faltas
+  const saldoClass = saldo >= 0 ? 'ok' : 'err'
+
+  const metaHTML = `
+    <div class="m-blk"><span class="m-lbl">Professor</span><span class="m-val">${teacher?.name ?? '—'}</span></div>
+    <div class="m-blk" style="margin-left:auto;text-align:right">
+      <span class="m-lbl">Faltas</span><span class="m-val err">${faltas}</span>
+    </div>
+    <div class="m-blk" style="text-align:right">
+      <span class="m-lbl">Substituições</span><span class="m-val ok">${realizadas}</span>
+    </div>
+    <div class="m-blk" style="text-align:right">
+      <span class="m-lbl">Saldo</span>
+      <span class="m-val ${saldoClass}">${saldo >= 0 ? '+' : ''}${saldo}</span>
+    </div>`
+
+  const renderRow = (sl) => {
+    const subj = store.subjects.find(s => s.id === sl.subjectId)
+    return `<tr>
+      <td>${formatBR(sl.date)}</td>
+      <td>${slotFullLabel(sl.timeSlot, store.periodConfigs)}</td>
+      <td>${sl.turma ?? '—'}</td>
+      <td>${subj?.name ?? '—'}</td>
+    </tr>`
+  }
+
+  const sortByDate = (a, b) =>
+    (a.date ?? '').localeCompare(b.date ?? '') || (a.timeSlot ?? '').localeCompare(b.timeSlot ?? '')
+
+  const sortedAbs = [...absenceSlots].sort(sortByDate)
+  const sortedCov = [...coveredSlots].sort(sortByDate)
+
+  const absencesSection = `
+    <div class="section">
+      <div class="sec-hdr">Faltas Cometidas (${faltas})</div>
+      ${sortedAbs.length ? `
+        <table>
+          <thead><tr><th>Data</th><th>Horário</th><th>Turma</th><th>Disciplina</th></tr></thead>
+          <tbody>${sortedAbs.map(renderRow).join('')}</tbody>
+        </table>` : '<p style="color:#a09d97;padding:8px 0">Nenhuma falta no período.</p>'}
+    </div>`
+
+  const coveredSection = `
+    <div class="section">
+      <div class="sec-hdr">Substituições Realizadas (${realizadas})</div>
+      ${sortedCov.length ? `
+        <table>
+          <thead><tr><th>Data</th><th>Horário</th><th>Turma</th><th>Disciplina</th></tr></thead>
+          <tbody>${sortedCov.map(renderRow).join('')}</tbody>
+        </table>` : '<p style="color:#a09d97;padding:8px 0">Nenhuma substituição no período.</p>'}
+    </div>`
+
+  const totalsFooter = `
+    <div class="section" style="margin-top:18px;padding:12px;background:#f4f2ee;border-radius:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px">
+        <span><strong>Substituições:</strong> ${realizadas}</span>
+        <span><strong>Faltas:</strong> ${faltas}</span>
+        <span class="${saldoClass}" style="font-size:14px"><strong>Saldo:</strong> ${saldo >= 0 ? '+' : ''}${saldo}</span>
+      </div>
+    </div>`
+
+  const bodyHTML = absencesSection + coveredSection + totalsFooter
+
+  return _wrap(
+    `Extrato de Saldo — ${teacher?.name ?? '—'}`,
+    metaHTML, bodyHTML,
+    'GestãoEscolar — Extrato de Saldo'
+  )
+}
+
+// ─── 12. Substituições — Ranking de Carga Real ───────────────────────────────
+
+export function generateSubstitutionRankingHTML(rankingData, month, year, store) {
+  const metaHTML = `
+    <div class="m-blk"><span class="m-lbl">Mês</span><span class="m-val">${MONTH_NAMES[month]} ${year}</span></div>
+    <div class="m-blk" style="margin-left:auto;text-align:right">
+      <span class="m-lbl">Professores</span>
+      <span class="m-val">${rankingData.length}</span>
+    </div>`
+
+  const rows = rankingData.map((row, idx) => `
+    <tr>
+      <td style="text-align:center;width:40px"><strong>${idx + 1}</strong></td>
+      <td>${row.teacher?.name ?? '—'}</td>
+      <td style="text-align:center">${row.scheduled}</td>
+      <td style="text-align:center">${row.substitutions}</td>
+      <td style="text-align:center"><strong>${row.total}</strong></td>
+    </tr>`).join('')
+
+  const bodyHTML = rankingData.length ? `
+    <table>
+      <thead><tr>
+        <th style="width:40px;text-align:center">#</th>
+        <th>Professor</th>
+        <th style="text-align:center">Próprias</th>
+        <th style="text-align:center">Substituições</th>
+        <th style="text-align:center">Total</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>` : '<p style="color:#a09d97;padding:20px 0">Nenhum professor no ranking.</p>'
+
+  return _wrap(
+    `Ranking de Carga Real — ${MONTH_NAMES[month]} ${year}`,
+    metaHTML, bodyHTML,
+    'GestãoEscolar — Ranking de Carga'
+  )
+}

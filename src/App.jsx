@@ -13,6 +13,7 @@ import HomePage from './pages/HomePage'
 import CalendarPage from './pages/CalendarPage'
 import CalendarDayPage from './pages/CalendarDayPage'
 import AbsencesPage from './pages/AbsencesPage'
+import SubstitutionsPage from './pages/SubstitutionsPage'
 import SettingsPage from './pages/SettingsPage'
 import WorkloadPage from './pages/WorkloadPage'
 import SchedulePage from './pages/SchedulePage'
@@ -84,7 +85,8 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/calendar"      element={<CalendarPage />} />
           <Route path="/calendar/day"  element={<CalendarDayPage />} />
-          <Route path="/absences"  element={<AbsencesPage />} />
+          <Route path="/absences"       element={<AbsencesPage />} />
+          <Route path="/substitutions"  element={<SubstitutionsPage />} />
           <Route path="/settings"  element={<SettingsPage />} />
           <Route path="/workload"  element={<WorkloadPage />} />
           <Route path="/schedule"  element={<SchedulePage />} />

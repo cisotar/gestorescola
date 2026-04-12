@@ -50,6 +50,7 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-1 flex-1">
           <NavLink to={isAdmin ? '/dashboard' : '/home'} className={linkClass}>🏠 Início</NavLink>
           <NavLink to="/absences" className={linkClass}>📋 Relatório de Ausências</NavLink>
+          <NavLink to="/substitutions" className={linkClass}>🔄 Substituições</NavLink>
         </div>
 
         {/* Auth bar — só desktop */}
@@ -143,6 +144,7 @@ export default function Navbar() {
             <div className="py-1">
               <MobileMenuLink to={isAdmin ? '/dashboard' : '/home'} onClick={closeMenu}>🏠 Início</MobileMenuLink>
               <MobileMenuLink to="/absences" onClick={closeMenu}>📋 Relatório de Ausências</MobileMenuLink>
+              <MobileMenuLink to="/substitutions" onClick={closeMenu}>🔄 Substituições</MobileMenuLink>
               <MobileMenuLink to="/settings" onClick={closeMenu}>
                 ⚙️ {isAdmin ? 'Configurações' : 'Meu Perfil'}
                 {isAdmin && pendingCt > 0 && (
