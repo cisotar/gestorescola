@@ -22,6 +22,16 @@ const DEFAULT_SHARED_SERIES = [
 // ─── Carregamento inicial ─────────────────────────────────────────────────────
 
 export async function loadFromFirestore() {
+  const TTL_MS = 3600000 // 1 hora
+  const cached = _loadFromLS()
+
+  // Se cache é recente (< 1h), usar cache
+  if (cached.data && cached.timestamp && Date.now() - cached.timestamp < TTL_MS) {
+    const remainingMin = Math.round((TTL_MS - (Date.now() - cached.timestamp)) / 1000 / 60)
+    console.log(`[db] Usando cache LS (válido por ${remainingMin}min)`)
+    return cached.data
+  }
+
   try {
     const [config, teachers, schedules, absences, history] = await Promise.all([
       _loadConfig(),
@@ -33,7 +43,8 @@ export async function loadFromFirestore() {
     return { ...config, teachers, schedules, absences, history }
   } catch (e) {
     console.warn('[db] Firestore falhou, usando cache:', e)
-    return _loadFromLS()
+    // Sempre tem fallback: cache antigo (mesmo que expirado) é melhor que vazio
+    return cached.data || {}
   }
 }
 
@@ -323,10 +334,13 @@ export function _saveToLS(state) {
     const { segments, periodConfigs, areas, subjects, teachers,
             schedules, subs, absences, history, sharedSeries, workloadWarn, workloadDanger } = state
     localStorage.setItem(LS_KEY, JSON.stringify({
-      segments, periodConfigs, areas, subjects, teachers,
-      sharedSeries: sharedSeries ?? [],
-      schedules, subs: subs ?? {}, absences: absences ?? [],
-      history: history ?? [], workloadWarn, workloadDanger,
+      data: {
+        segments, periodConfigs, areas, subjects, teachers,
+        sharedSeries: sharedSeries ?? [],
+        schedules, subs: subs ?? {}, absences: absences ?? [],
+        history: history ?? [], workloadWarn, workloadDanger,
+      },
+      timestamp: Date.now()
     }))
   } catch {}
 }
@@ -334,7 +348,12 @@ export function _saveToLS(state) {
 function _loadFromLS() {
   try {
     const raw = localStorage.getItem(LS_KEY)
-    if (!raw) return {}
-    return JSON.parse(raw)
-  } catch { return {} }
+    if (!raw) return { data: {}, timestamp: null }
+    const cached = JSON.parse(raw)
+    // Backward compat: se é objeto plano sem 'data' key, significa era old format
+    if (!cached.data && !cached.timestamp) {
+      return { data: cached, timestamp: null }
+    }
+    return cached
+  } catch { return { data: {}, timestamp: null } }
 }
