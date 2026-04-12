@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
-import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, businessDaysBetween } from '../lib/helpers'
+import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, businessDaysBetween, formatISO } from '../lib/helpers'
 import { getPeriodos, slotLabel } from '../lib/periods'
 import { rankCandidates, createAbsence as _buildAbsence } from '../lib/absences'
 import { generateDayHTML, openPDF } from '../lib/reports'
@@ -20,7 +20,7 @@ function getWeekDates(offset = 0) {
   return DAYS.map((_, i) => {
     const d = new Date(mon)
     d.setDate(mon.getDate() + i)
-    return d.toISOString().split('T')[0]
+    return formatISO(d)
   })
 }
 
@@ -405,7 +405,7 @@ export default function CalendarPage() {
 
   const dates     = getWeekDates(weekOffset)
   const weekLabel = `${formatBR(dates[0])} – ${formatBR(dates[4])}`
-  const todayISO  = new Date().toISOString().split('T')[0]
+  const todayISO  = formatISO(new Date())
 
   const teachersBySegment = useMemo(() =>
     store.segments.map(seg => {

@@ -66,8 +66,19 @@ export function teacherSubjectNames(teacher, subjects) {
 
 // ─── Datas ────────────────────────────────────────────────────────────────────
 
-export const parseDate  = (s) => new Date(s + 'T12:00:00')
-export const formatISO  = (d) => d.toISOString().split('T')[0]
+export const parseDate = (s) => {
+  if (!s || typeof s !== 'string') return new Date(NaN)
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(y, (m ?? 1) - 1, d ?? 1)
+}
+
+export const formatISO = (d) => {
+  if (!d || isNaN(d.getTime())) return null
+  const y   = d.getFullYear()
+  const m   = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 export const formatBR   = (s) => {
   if (!s) return '—'
   const [y, m, d] = s.split('-')

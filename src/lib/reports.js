@@ -1,4 +1,4 @@
-import { formatBR, dateToDayLabel, parseDate } from './helpers'
+import { formatBR, dateToDayLabel, parseDate, formatISO } from './helpers'
 import { slotFullLabel, getAulas } from './periods'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
@@ -225,11 +225,11 @@ export function generateByDayHTML(date, store) {
 export function generateByWeekHTML(monISO, teacherIdFilter, store) {
   const monDate = parseDate(monISO)
   const friDate = new Date(monDate); friDate.setDate(monDate.getDate() + 4)
-  const friISO  = friDate.toISOString().split('T')[0]
+  const friISO  = formatISO(friDate)
 
   const days = Array.from({ length: 5 }, (_, i) => {
     const d = new Date(monDate); d.setDate(monDate.getDate() + i)
-    return d.toISOString().split('T')[0]
+    return formatISO(d)
   })
 
   const allSlots = (store.absences ?? [])

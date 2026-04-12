@@ -256,7 +256,7 @@ export default function AbsencesPage() {
 function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, selProps }) {
   const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
   const [filter, setFilter] = useState('all') // 'all' | 'day' | 'week' | 'month'
-  const [filterDate,  setFilterDate]  = useState(new Date().toISOString().split('T')[0])
+  const [filterDate,  setFilterDate]  = useState(formatISO(new Date()))
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth())
   const [filterYear,  setFilterYear]  = useState(new Date().getFullYear())
 
@@ -454,15 +454,6 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, se
                 </div>
               )}
 
-              {/* Grade horária completa (exibida quando professor tem múltiplos segmentos/turnos) */}
-              {relevantSegments.length > 1 && (
-                <div className="mt-6 space-y-2">
-                  <div className="text-xs font-bold text-t2 uppercase tracking-wider">Grade Horária</div>
-                  <div className="pointer-events-none select-none">
-                    <ScheduleGrid teacher={teacher} store={store} />
-                  </div>
-                </div>
-              )}
             </div>
           )
         })()}
@@ -475,7 +466,7 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, se
 
 function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate, selProps }) {
   const { selectedIds, selectionMode, setSelectionMode, onToggle, onSelectAll, onClearAll, onSelectFaltas, onSelectSubs } = selProps
-  const today = new Date().toISOString().split('T')[0]
+  const today = formatISO(new Date())
   const date  = selDate ?? today
   const datesWithAbs = [...new Set(allSlots.map(s => s.date))].sort().reverse()
   const slotsOnDate  = allSlots.filter(sl => sl.date === date)
