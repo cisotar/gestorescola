@@ -6,9 +6,9 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
-import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel } from '../lib/helpers'
+import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, formatMonthlyAulas } from '../lib/helpers'
 import { getPeriodos } from '../lib/periods'
-import { rankCandidates, suggestSubstitutes } from '../lib/absences'
+import { rankCandidates, suggestSubstitutes, monthlyLoad } from '../lib/absences'
 import { generateDayHTML, openPDF } from '../lib/reports'
 import Modal from '../components/ui/Modal'
 import ToggleRuleButtons from '../components/ui/ToggleRuleButtons'
@@ -41,7 +41,7 @@ function FullCandidateList({ candidates, curSub, store, onSelect }) {
           >
             <div className="flex-1 min-w-0">
               <div className="font-bold text-sm">{c.teacher.name}</div>
-              <div className="text-[11px] text-t2">{matchLabel(c)} · {c.load} aulas/mês</div>
+              <div className="text-[11px] text-t2">{matchLabel(c)} · {formatMonthlyAulas(c.load)}/mês</div>
             </div>
             {isCur && <span className="text-[11px] font-bold text-ok shrink-0">atual ✓</span>}
             <span className="text-t3 text-lg shrink-0">›</span>
@@ -68,8 +68,11 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
   }), [teacherId, date, slot, subjectId])
 
   const suggestions = useMemo(
-    () => suggestSubstitutes(absenceSlot, ruleType, store),
-    [absenceSlot, ruleType, store]
+    () => suggestSubstitutes(absenceSlot, ruleType, store).map(t => ({
+      ...t,
+      monthlyAulas: monthlyLoad(t.id, date, store.schedules, store.absences),
+    })),
+    [absenceSlot, ruleType, store, date]
   )
 
   const curSub = (() => {
@@ -91,7 +94,7 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
               className="flex-1 flex items-center gap-1.5 text-left px-2 py-1 rounded-lg bg-surf border border-bdr hover:border-navy hover:bg-surf2 transition-all text-[11px]"
             >
               <span className="font-bold truncate">{c.teacher.name}</span>
-              <span className="text-t3 shrink-0">{c.load}h</span>
+              <span className="text-t3 shrink-0">{formatMonthlyAulas(c.load)}</span>
             </button>
             <span className="text-[9px] text-t3 shrink-0">
               {c.match === 'subject' ? '⭐' : c.match === 'area' ? '🔵' : '⚪'}

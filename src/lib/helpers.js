@@ -109,3 +109,6 @@ export function businessDaysBetween(from, to) {
   }
   return result
 }
+
+export const formatMonthlyAulas = (count) =>
+  count === 1 ? '1 aula' : `${count} aulas`

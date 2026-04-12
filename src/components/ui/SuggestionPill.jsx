@@ -1,6 +1,6 @@
-export default function SuggestionPill({ teacher, monthlyAulas, onClick }) {
-  const label = monthlyAulas === 1 ? '1 aula' : `${monthlyAulas} aulas`
+import { formatMonthlyAulas } from '../../lib/helpers'
 
+export default function SuggestionPill({ teacher, monthlyAulas, onClick }) {
   return (
     <button
       onClick={onClick}
@@ -9,7 +9,7 @@ export default function SuggestionPill({ teacher, monthlyAulas, onClick }) {
                  transition-colors duration-150 text-left flex-1 min-w-0"
     >
       <span className="text-sm font-bold text-t1 truncate w-full">{teacher.name}</span>
-      <span className="text-xs text-t2">{label}</span>
+      <span className="text-xs text-t2">{formatMonthlyAulas(monthlyAulas)}</span>
     </button>
   )
 }
