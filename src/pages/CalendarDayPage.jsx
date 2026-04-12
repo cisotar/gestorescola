@@ -9,7 +9,7 @@ import { DAYS } from '../lib/constants'
 import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, formatMonthlyAulas } from '../lib/helpers'
 import { getPeriodos } from '../lib/periods'
 import { rankCandidates, suggestSubstitutes, monthlyLoad } from '../lib/absences'
-import { generateDayHTML, openPDF } from '../lib/reports'
+import { generateDayHTML, generateSlotCertificateHTML, openPDF } from '../lib/reports'
 import Modal from '../components/ui/Modal'
 import ToggleRuleButtons from '../components/ui/ToggleRuleButtons'
 import SuggestionPills from '../components/ui/SuggestionPills'
@@ -55,6 +55,7 @@ function FullCandidateList({ candidates, curSub, store, onSelect }) {
 function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store, compact = false }) {
   const [open, setOpen] = useState(false)
   const [ruleType, setRuleType] = useState('qualitative')
+  const [assignedTeacher, setAssignedTeacher] = useState(null)
   const { assignSubstitute } = useAppStore()
 
   const candidates = useMemo(() =>
@@ -81,6 +82,22 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
     return sl?.substituteId ? store.teachers.find(t => t.id === sl.substituteId) : null
   })()
 
+  const absentTeacher = store.teachers.find(t => t.id === teacherId)
+
+  const handleAssign = (t) => {
+    assignSubstitute(absenceId, slotId, t.id)
+    setAssignedTeacher(t)
+    toast(`Substituto: ${t.name}`, 'ok')
+  }
+
+  const handleDownloadPDF = () => {
+    const ab = store.absences?.find(a => a.id === absenceId)
+    const sl = ab?.slots.find(s => s.id === slotId)
+    if (!sl || !assignedTeacher) return
+    const html = generateSlotCertificateHTML(sl, absentTeacher, assignedTeacher, store)
+    openPDF(html)
+  }
+
   if (compact) {
     const top3 = candidates.slice(0, 3)
     if (!top3.length) return <div className="text-[11px] text-t3 mt-1.5 italic">Nenhum disponível</div>
@@ -105,18 +122,23 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
         <button className="text-[11px] text-navy underline underline-offset-2" onClick={() => setOpen(true)}>
           ver todos ({candidates.length})
         </button>
-        <Modal open={open} onClose={() => setOpen(false)} title="Selecionar Substituto">
+        <Modal open={open} onClose={() => { setOpen(false); setAssignedTeacher(null) }} title="Selecionar Substituto">
           <div className="mb-4 space-y-3">
             <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
-            <SuggestionPills
-              suggestions={suggestions}
-              onSelect={t => { assignSubstitute(absenceId, slotId, t.id); toast(`Substituto: ${t.name}`, 'ok'); setOpen(false) }}
-            />
+            <SuggestionPills suggestions={suggestions} onSelect={handleAssign} />
           </div>
           <div className="border-t border-bdr pt-3">
             <FullCandidateList candidates={candidates} curSub={curSub} store={store}
-              onSelect={t => { assignSubstitute(absenceId, slotId, t.id); toast(`Substituto: ${t.name}`, 'ok'); setOpen(false) }} />
+              onSelect={handleAssign} />
           </div>
+          {assignedTeacher && (
+            <div className="border-t border-bdr pt-3 mt-3 flex justify-between items-center">
+              <span className="text-xs text-ok font-bold">✓ {assignedTeacher.name} atribuído</span>
+              <button className="btn btn-sm btn-dark" onClick={handleDownloadPDF}>
+                Baixar Comprovante
+              </button>
+            </div>
+          )}
         </Modal>
       </div>
     )
@@ -127,18 +149,23 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
       <button className="text-[11px] text-navy underline underline-offset-2" onClick={() => setOpen(true)}>
         {curSub ? '↺ Trocar' : '+ Escolher substituto'}
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Selecionar Substituto">
+      <Modal open={open} onClose={() => { setOpen(false); setAssignedTeacher(null) }} title="Selecionar Substituto">
         <div className="mb-4 space-y-3">
           <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
-          <SuggestionPills
-            suggestions={suggestions}
-            onSelect={t => { assignSubstitute(absenceId, slotId, t.id); toast(`Substituto: ${t.name}`, 'ok'); setOpen(false) }}
-          />
+          <SuggestionPills suggestions={suggestions} onSelect={handleAssign} />
         </div>
         <div className="border-t border-bdr pt-3">
           <FullCandidateList candidates={candidates} curSub={curSub} store={store}
-            onSelect={t => { assignSubstitute(absenceId, slotId, t.id); toast(`Substituto: ${t.name}`, 'ok'); setOpen(false) }} />
+            onSelect={handleAssign} />
         </div>
+        {assignedTeacher && (
+          <div className="border-t border-bdr pt-3 mt-3 flex justify-between items-center">
+            <span className="text-xs text-ok font-bold">✓ {assignedTeacher.name} atribuído</span>
+            <button className="btn btn-sm btn-dark" onClick={handleDownloadPDF}>
+              Baixar Comprovante
+            </button>
+          </div>
+        )}
       </Modal>
     </>
   )

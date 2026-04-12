@@ -696,3 +696,47 @@ export function generateSubstitutionRankingHTML(rankingData, month, year) {
     'GestãoEscolar — Ranking de Assiduidade'
   )
 }
+
+// ─── 13. Comprovante de Substituição ─────────────────────────────────────────
+
+export function generateSlotCertificateHTML(slot, absentTeacher, substituteTeacher, store) {
+  // slot: { date, timeSlot, turma, subjectId }
+  const dayLabel = dateToDayLabel(slot.date)
+  const period   = slotFullLabel(slot.timeSlot, store.periodConfigs)
+  const subj     = store.subjects.find(s => s.id === slot.subjectId)
+  const now      = new Date().toLocaleString('pt-BR')
+
+  const metaHTML = `
+    <div class="m-blk"><span class="m-lbl">Professor Ausente</span><span class="m-val">${absentTeacher?.name ?? '—'}</span></div>
+    <div class="m-blk"><span class="m-lbl">Data</span><span class="m-val">${formatBR(slot.date)}</span></div>
+    <div class="m-blk"><span class="m-lbl">Dia</span><span class="m-val">${dayLabel ?? '—'}</span></div>
+    <div class="m-blk" style="margin-left:auto;text-align:right">
+      <span class="m-lbl">Status</span>
+      <span class="m-val ok">✓ Atribuído</span>
+    </div>`
+
+  const bodyHTML = `
+    <div class="section">
+      <div class="sec-hdr">Detalhes da Substituição</div>
+      <table>
+        <thead><tr><th>Horário</th><th>Turma</th><th>Disciplina</th><th>Substituto</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>${period}</td>
+            <td>${slot.turma ?? '—'}</td>
+            <td>${subj?.name ?? '—'}</td>
+            <td class="ok">${substituteTeacher?.name ?? '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:16px;padding:10px 12px;background:#f0fdf4;border-radius:6px;border-left:3px solid #16a34a;font-size:11px;color:#14532d">
+      Comprovante gerado em ${now} — GestãoEscolar
+    </div>`
+
+  return _wrap(
+    `Comprovante — ${dayLabel ?? ''}, ${formatBR(slot.date)}`,
+    metaHTML, bodyHTML,
+    'GestãoEscolar — Comprovante de Substituição'
+  )
+}
