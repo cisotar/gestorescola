@@ -10,6 +10,9 @@ import {
   deleteAbsence as _deleteAbsence,
 } from '../lib/absences'
 
+// ─── Debounce Timer ─────────────────────────────────────────────────────────
+let saveTimer = null
+
 const INITIAL_STATE = {
   segments: [
     {
@@ -47,22 +50,31 @@ const INITIAL_STATE = {
   loaded:        false,
 }
 
-const useAppStore = create((set, get) => ({
-  ...INITIAL_STATE,
+const useAppStore = create((set, get) => {
+  const debouncedSave = () => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      get().save()
+      saveTimer = null
+    }, 2000)
+  }
 
-  // ─── Hidratação ─────────────────────────────────────────────────────────────
-  hydrate: (data) => set({ ...data, loaded: true }),
+  return {
+    ...INITIAL_STATE,
 
-  // ─── Persistência ──────────────────────────────────────────────────────────
-  save: async () => {
-    const s = get()
-    _saveToLS(s)
-    try {
-      await saveToFirestore(s)
-    } catch (e) {
-      console.warn('Sync falhou, salvo localmente:', e)
-    }
-  },
+    // ─── Hidratação ─────────────────────────────────────────────────────────────
+    hydrate: (data) => set({ ...data, loaded: true }),
+
+    // ─── Persistência ──────────────────────────────────────────────────────────
+    save: async () => {
+      const s = get()
+      _saveToLS(s)
+      try {
+        await saveToFirestore(s)
+      } catch (e) {
+        console.warn('Sync falhou, salvo localmente:', e)
+      }
+    },
 
   // ─── Segmentos ──────────────────────────────────────────────────────────────
   addSegment: (name, turno = 'manha') => {
@@ -71,14 +83,14 @@ const useAppStore = create((set, get) => ({
       segments: [...s.segments, seg],
       periodConfigs: { ...s.periodConfigs, [seg.id]: { [turno]: defaultCfg(turno) } },
     }))
-    get().save()
+    debouncedSave()
   },
   removeSegment: (id) => {
     set(s => {
       const { [id]: _, ...rest } = s.periodConfigs
       return { segments: s.segments.filter(x => x.id !== id), periodConfigs: rest }
     })
-    get().save()
+    debouncedSave()
   },
   setSegmentTurno: (segId, turno) => {
     set(s => ({
@@ -91,7 +103,7 @@ const useAppStore = create((set, get) => ({
         [segId]: { ...(s.periodConfigs[segId] || {}), [turno]: s.periodConfigs[segId]?.[turno] ?? defaultCfg(turno) },
       },
     }))
-    get().save()
+    debouncedSave()
   },
   addGrade: (segId, gradeName) => {
     set(s => ({
@@ -101,7 +113,7 @@ const useAppStore = create((set, get) => ({
           : { ...seg, grades: [...seg.grades, { name: gradeName.trim(), classes: [] }] }
       ),
     }))
-    get().save()
+    debouncedSave()
   },
   removeGrade: (segId, gradeName) => {
     set(s => ({
@@ -109,7 +121,7 @@ const useAppStore = create((set, get) => ({
         seg.id !== segId ? seg : { ...seg, grades: seg.grades.filter(g => g.name !== gradeName) }
       ),
     }))
-    get().save()
+    debouncedSave()
   },
   addClassToGrade: (segId, gradeName, letter) => {
     const up = letter.trim().toUpperCase()
@@ -127,7 +139,7 @@ const useAppStore = create((set, get) => ({
         }
       }),
     }))
-    get().save()
+    debouncedSave()
   },
   removeClassFromGrade: (segId, gradeName, letter) => {
     set(s => ({
@@ -140,7 +152,7 @@ const useAppStore = create((set, get) => ({
         }
       ),
     }))
-    get().save()
+    debouncedSave()
   },
 
   // ─── Períodos ───────────────────────────────────────────────────────────────
@@ -151,7 +163,7 @@ const useAppStore = create((set, get) => ({
         [segId]: { ...(s.periodConfigs[segId] || {}), [turno]: cfg },
       },
     }))
-    get().save()
+    debouncedSave()
   },
 
   // ─── Áreas ──────────────────────────────────────────────────────────────────
@@ -159,11 +171,11 @@ const useAppStore = create((set, get) => ({
     set(s => ({
       areas: [...s.areas, { id: uid(), name: name.trim(), colorIdx, segmentIds, shared }],
     }))
-    get().save()
+    debouncedSave()
   },
   updateArea: (id, changes) => {
     set(s => ({ areas: s.areas.map(a => a.id === id ? { ...a, ...changes } : a) }))
-    get().save()
+    debouncedSave()
   },
   removeArea: (id) => {
     set(s => {
@@ -174,20 +186,20 @@ const useAppStore = create((set, get) => ({
         teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => !removedSubjIds.has(sid)) })),
       }
     })
-    get().save()
+    debouncedSave()
   },
 
   // ─── Matérias ────────────────────────────────────────────────────────────────
   addSubject: (name, areaId) => {
     set(s => ({ subjects: [...s.subjects, { id: uid(), name: name.trim(), areaId }] }))
-    get().save()
+    debouncedSave()
   },
   removeSubject: (id) => {
     set(s => ({
       subjects: s.subjects.filter(x => x.id !== id),
       teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => sid !== id) })),
     }))
-    get().save()
+    debouncedSave()
   },
   saveAreaWithSubjects: (areaId, name, subjectNames) => {
     set(s => {
@@ -203,21 +215,21 @@ const useAppStore = create((set, get) => ({
         teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => !removedSet.has(sid)) })),
       }
     })
-    get().save()
+    debouncedSave()
   },
 
   // ─── Turmas compartilhadas ──────────────────────────────────────────────────
   addSharedSeries: (series) => {
     set(s => ({ sharedSeries: [...s.sharedSeries, series] }))
-    get().save()
+    debouncedSave()
   },
   updateSharedSeries: (id, changes) => {
     set(s => ({ sharedSeries: s.sharedSeries.map(ss => ss.id === id ? { ...ss, ...changes } : ss) }))
-    get().save()
+    debouncedSave()
   },
   removeSharedSeries: (id) => {
     set(s => ({ sharedSeries: s.sharedSeries.filter(ss => ss.id !== id) }))
-    get().save()
+    debouncedSave()
   },
 
   // ─── Professores ─────────────────────────────────────────────────────────────
@@ -227,11 +239,11 @@ const useAppStore = create((set, get) => ({
       email: opts.email ?? '', whatsapp: '', celular: opts.celular ?? '', status: 'approved' }
     set(s => ({ teachers: [...s.teachers, teacher] }))
     saveDoc('teachers', teacher)
-    get().save()
+    debouncedSave()
   },
   updateTeacher: (id, changes) => {
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
-    get().save()
+    debouncedSave()
   },
   updateTeacherProfile: async (id, changes) => {
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
@@ -245,7 +257,7 @@ const useAppStore = create((set, get) => ({
     }))
     deleteDocById('teachers', id)
     schedulesToDelete.forEach(s => deleteDocById('schedules', s.id))
-    get().save()
+    debouncedSave()
   },
 
   // ─── Horários ────────────────────────────────────────────────────────────────
@@ -253,16 +265,16 @@ const useAppStore = create((set, get) => ({
     const item = { id: uid(), ...sched }
     set(s => ({ schedules: [...s.schedules, item] }))
     saveDoc('schedules', item)
-    get().save()
+    debouncedSave()
   },
   removeSchedule: (id) => {
     set(s => ({ schedules: s.schedules.filter(x => x.id !== id) }))
     deleteDocById('schedules', id)
-    get().save()
+    debouncedSave()
   },
   updateSchedule: (id, changes) => {
     set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...changes } : x) }))
-    get().save()
+    debouncedSave()
   },
   migrateMultipleSubjects: (fromId, toId) => {
     set(s => ({
@@ -274,7 +286,7 @@ const useAppStore = create((set, get) => ({
         subjectIds: (t.subjectIds ?? []).map(sid => sid === fromId ? toId : sid),
       })),
     }))
-    get().save()
+    debouncedSave()
   },
   migrateScheduleSubject: (teacherId, fromSubjectId, toSubjectId) => {
     set(s => ({
@@ -284,7 +296,7 @@ const useAppStore = create((set, get) => ({
           : x
       ),
     }))
-    get().save()
+    debouncedSave()
   },
   removeSchedulesBySubject: (teacherId, subjectId) => {
     set(s => ({
@@ -292,26 +304,26 @@ const useAppStore = create((set, get) => ({
         x => !(x.teacherId === teacherId && x.subjectId === subjectId)
       ),
     }))
-    get().save()
+    debouncedSave()
   },
 
   // ─── Ausências ───────────────────────────────────────────────────────────────
   createAbsence: (teacherId, rawSlots) => {
     set(s => ({ absences: _createAbsence(teacherId, rawSlots, s.absences) }))
-    get().save()
+    debouncedSave()
   },
   assignSubstitute: (absenceId, slotId, substituteId) => {
     set(s => ({ absences: _assignSubstitute(absenceId, slotId, substituteId, s.absences) }))
-    get().save()
+    debouncedSave()
   },
   deleteAbsenceSlot: (absenceId, slotId) => {
     set(s => ({ absences: _deleteAbsenceSlot(absenceId, slotId, s.absences) }))
-    get().save()
+    debouncedSave()
   },
   deleteAbsence: (id) => {
     set(s => ({ absences: _deleteAbsence(id, s.absences) }))
     deleteDocById('absences', id)
-    get().save()
+    debouncedSave()
   },
   deleteManySlots: (slotIds) => {
     const ids = new Set(slotIds)
@@ -325,11 +337,11 @@ const useAppStore = create((set, get) => ({
       return { absences: updated.filter(ab => ab.slots.length > 0) }
     })
     emptyAbsenceIds.forEach(id => deleteDocById('absences', id))
-    get().save()
+    debouncedSave()
   },
   restoreAbsences: (absencesSnapshot) => {
     set({ absences: absencesSnapshot })
-    get().save()
+    debouncedSave()
   },
 
   // Remove todos os substitutos de um professor em uma data (mantém as faltas)
@@ -345,7 +357,7 @@ const useAppStore = create((set, get) => ({
         return { ...ab, slots, status }
       }),
     }))
-    get().save()
+    debouncedSave()
   },
 
   // Remove todas as faltas (e substitutos) de um professor em uma data
@@ -362,24 +374,32 @@ const useAppStore = create((set, get) => ({
         })
         .filter(Boolean),
     }))
-    get().save()
+    debouncedSave()
   },
 
   // ─── Histórico ────────────────────────────────────────────────────────────────
   addHistory: (entry) => {
     set(s => ({ history: [...s.history, { id: uid(), ...entry, registeredAt: new Date().toISOString() }] }))
-    get().save()
+    debouncedSave()
   },
   deleteHistory: (id) => {
     set(s => ({ history: s.history.filter(h => h.id !== id) }))
-    get().save()
+    debouncedSave()
   },
 
   // ─── Config ───────────────────────────────────────────────────────────────────
   setWorkload: (warn, danger) => {
     set({ workloadWarn: warn, workloadDanger: danger })
-    get().save()
+    debouncedSave()
   },
-}))
+
+  clearSaveTimer: () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
+  },
+  }
+})
 
 export default useAppStore
