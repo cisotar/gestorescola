@@ -1,7 +1,7 @@
 import { db } from './firebase'
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  collection, writeBatch, serverTimestamp, query, where,
+  collection, writeBatch, serverTimestamp, query, where, onSnapshot,
 } from 'firebase/firestore'
 
 const LS_KEY = 'gestao_v7_cache'
@@ -76,6 +76,67 @@ async function _loadConfig() {
 async function _loadCol(name) {
   const snap = await getDocs(collection(db, name))
   return snap.empty ? [] : snap.docs.map(d => d.data())
+}
+
+// ─── Listeners em tempo real ──────────────────────────────────────────────────
+
+export function setupRealtimeListeners(store) {
+  const unsubscribes = []
+
+  // Config listener (meta/config)
+  const unsubConfig = onSnapshot(
+    doc(db, 'meta', 'config'),
+    snap => {
+      if (snap.exists()) {
+        const data = snap.data()
+        store.hydrate({
+          segments: data.segments,
+          periodConfigs: data.periodConfigs,
+          areas: data.areas,
+          subjects: data.subjects,
+          sharedSeries: data.sharedSeries ?? [],
+          workloadWarn: data.workloadWarn,
+          workloadDanger: data.workloadDanger,
+        })
+      }
+    },
+    err => console.warn('[configListener]', err)
+  )
+  unsubscribes.push(unsubConfig)
+
+  // Teachers listener
+  const unsubTeachers = onSnapshot(
+    collection(db, 'teachers'),
+    snap => store.setTeachers(snap.docs.map(d => d.data())),
+    err => console.warn('[teachersListener]', err)
+  )
+  unsubscribes.push(unsubTeachers)
+
+  // Schedules listener
+  const unsubSchedules = onSnapshot(
+    collection(db, 'schedules'),
+    snap => store.setSchedules(snap.docs.map(d => d.data())),
+    err => console.warn('[schedulesListener]', err)
+  )
+  unsubscribes.push(unsubSchedules)
+
+  // Absences listener
+  const unsubAbsences = onSnapshot(
+    collection(db, 'absences'),
+    snap => store.setAbsences(snap.docs.map(d => d.data())),
+    err => console.warn('[absencesListener]', err)
+  )
+  unsubscribes.push(unsubAbsences)
+
+  // History listener
+  const unsubHistory = onSnapshot(
+    collection(db, 'history'),
+    snap => store.setHistory(snap.docs.map(d => d.data())),
+    err => console.warn('[historyListener]', err)
+  )
+  unsubscribes.push(unsubHistory)
+
+  return unsubscribes
 }
 
 // ─── Persistência ─────────────────────────────────────────────────────────────

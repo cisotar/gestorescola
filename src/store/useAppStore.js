@@ -234,6 +234,10 @@ const useAppStore = create((set, get) => {
 
   // ─── Professores ─────────────────────────────────────────────────────────────
   setTeachers: (teachers) => set({ teachers }),
+  setSchedules: (schedules) => set({ schedules }),
+  setAbsences: (absences) => set({ absences }),
+  setHistory: (history) => set({ history }),
+
   addTeacher: (name, opts = {}) => {
     const teacher = { id: uid(), name: name.trim(), subjectIds: opts.subjectIds ?? [],
       email: opts.email ?? '', whatsapp: '', celular: opts.celular ?? '', status: 'approved' }

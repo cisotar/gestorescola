@@ -6,13 +6,13 @@ export default function ToggleRuleButtons({ activeRule, onRuleChange }) {
         className={`btn btn-sm ${activeRule === 'qualitative' ? 'btn-dark' : 'btn-ghost'}`}
         onClick={() => onRuleChange('qualitative')}
       >
-        Qualitativo
+        Qualitativa
       </button>
       <button
         className={`btn btn-sm ${activeRule === 'quantitative' ? 'btn-dark' : 'btn-ghost'}`}
         onClick={() => onRuleChange('quantitative')}
       >
-        Quantitativo
+        Quantitativa
       </button>
     </div>
   )

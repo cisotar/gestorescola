@@ -12,19 +12,11 @@ import { rankCandidates, suggestSubstitutes, monthlyLoad } from '../lib/absences
 import { generateDayHTML, generateSlotCertificateHTML, openPDF } from '../lib/reports'
 import Modal from '../components/ui/Modal'
 import ToggleRuleButtons from '../components/ui/ToggleRuleButtons'
-import SuggestionPills from '../components/ui/SuggestionPills'
 import { toast } from '../hooks/useToast'
 
 // ─── SubPicker (cópia local — usado inline sem o DayModal) ───────────────────
 
-function FullCandidateList({ candidates, curSub, store, onSelect }) {
-  const matchLabel = (c) => {
-    const base = c.match === 'subject' ? '⭐ mesma matéria'
-               : c.match === 'area'    ? '🔵 mesma área'
-               : '⚪ outra área'
-    const seg  = c.sameSeg ? ' · mesmo segmento' : ' · outro segmento'
-    return base + (c.match !== 'other' ? seg : '')
-  }
+function FullCandidateList({ candidates, curSub, store, onSelect, matchLabel }) {
   if (!candidates.length) return (
     <p className="text-center text-t3 py-8 text-sm">Nenhum professor disponível.</p>
   )
@@ -52,9 +44,8 @@ function FullCandidateList({ candidates, curSub, store, onSelect }) {
   )
 }
 
-function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store, compact = false }) {
+function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store, compact = false, ruleType = 'qualitative' }) {
   const [open, setOpen] = useState(false)
-  const [ruleType, setRuleType] = useState('qualitative')
   const [assignedTeacher, setAssignedTeacher] = useState(null)
   const { assignSubstitute } = useAppStore()
 
@@ -98,38 +89,39 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
     openPDF(html)
   }
 
+  const matchLabel = (c) => {
+    const base = c.match === 'subject' ? '⭐ mesma matéria'
+               : c.match === 'area'    ? '🔵 mesma área'
+               : '⚪ outra área'
+    const seg  = c.sameSeg ? ' · mesmo segmento' : ' · outro segmento'
+    return base + (c.match !== 'other' ? seg : '')
+  }
+
   if (compact) {
-    const top3 = candidates.slice(0, 3)
-    if (!top3.length) return <div className="text-[11px] text-t3 mt-1.5 italic">Nenhum disponível</div>
+    // Sugestões empilhadas inline (top-3 pela regra ativa)
+    if (!suggestions.length) return <div className="text-[11px] text-t3 mt-1.5 italic">Nenhum disponível</div>
     return (
       <div className="mt-1.5 space-y-1">
-        <div className="text-[10px] font-bold text-t2 uppercase tracking-wider">Sugestões</div>
-        {top3.map(c => (
-          <div key={c.teacher.id} className="flex items-center gap-2">
+        {suggestions.map(t => (
+          <div key={t.id} className="flex items-center gap-2">
             <button
-              onClick={() => { assignSubstitute(absenceId, slotId, c.teacher.id); toast(`Substituto: ${c.teacher.name}`, 'ok') }}
+              onClick={() => handleAssign(t)}
               className="flex-1 flex items-center gap-1.5 text-left px-2 py-1 rounded-lg bg-surf border border-bdr hover:border-navy hover:bg-surf2 transition-all text-[11px]"
             >
-              <span className="font-bold truncate">{c.teacher.name}</span>
-              <span className="text-t3 shrink-0">{formatMonthlyAulas(c.load)}</span>
+              <span className="font-bold truncate">{t.name}</span>
+              <span className="text-t3 shrink-0">{formatMonthlyAulas(t.monthlyAulas)}</span>
             </button>
-            <span className="text-[9px] text-t3 shrink-0">
-              {c.match === 'subject' ? '⭐' : c.match === 'area' ? '🔵' : '⚪'}
-              {c.sameSeg ? '🏫' : ''}
-            </span>
           </div>
         ))}
-        <button className="text-[11px] text-navy underline underline-offset-2" onClick={() => setOpen(true)}>
-          ver todos ({candidates.length})
-        </button>
+        <button
+          className="text-[11px] text-navy underline underline-offset-2"
+          onClick={() => setOpen(true)}
+        >ver todos ({candidates.length})</button>
+
         <Modal open={open} onClose={() => { setOpen(false); setAssignedTeacher(null) }} title="Selecionar Substituto">
-          <div className="mb-4 space-y-3">
-            <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
-            <SuggestionPills suggestions={suggestions} onSelect={handleAssign} />
-          </div>
           <div className="border-t border-bdr pt-3">
             <FullCandidateList candidates={candidates} curSub={curSub} store={store}
-              onSelect={handleAssign} />
+              onSelect={handleAssign} matchLabel={matchLabel} />
           </div>
           {assignedTeacher && (
             <div className="border-t border-bdr pt-3 mt-3 flex justify-between items-center">
@@ -144,19 +136,16 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
     )
   }
 
+  // Versão modal (botão de troca quando já há substituto)
   return (
     <>
       <button className="text-[11px] text-navy underline underline-offset-2" onClick={() => setOpen(true)}>
         {curSub ? '↺ Trocar' : '+ Escolher substituto'}
       </button>
       <Modal open={open} onClose={() => { setOpen(false); setAssignedTeacher(null) }} title="Selecionar Substituto">
-        <div className="mb-4 space-y-3">
-          <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
-          <SuggestionPills suggestions={suggestions} onSelect={handleAssign} />
-        </div>
         <div className="border-t border-bdr pt-3">
           <FullCandidateList candidates={candidates} curSub={curSub} store={store}
-            onSelect={handleAssign} />
+            onSelect={handleAssign} matchLabel={matchLabel} />
         </div>
         {assignedTeacher && (
           <div className="border-t border-bdr pt-3 mt-3 flex justify-between items-center">
@@ -196,6 +185,7 @@ export default function CalendarDayPage() {
   // Índice inicial: dia atual dentro das datas da semana; fallback 0
   const initialIdx = weekDates.indexOf(todayISO)
   const [activeDayIdx, setActiveDayIdx] = useState(initialIdx >= 0 ? initialIdx : 0)
+  const [ruleType, setRuleType] = useState('qualitative')
 
   const activeDate = weekDates[activeDayIdx]
   const activeDayLabel = dateToDayLabel(activeDate)
@@ -362,6 +352,13 @@ export default function CalendarDayPage() {
         </div>
       )}
 
+      {/* Toggle de regra — aparece quando há faltas sem substituto */}
+      {isAdmin && anyAbsent && !allHasSub && (
+        <div className="mt-4">
+          <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
+        </div>
+      )}
+
       {/* Lista de períodos — agrupados por segmento/turno */}
       <div className="space-y-4 mt-2">
         {segPeriodos.length === 0 && (
@@ -420,6 +417,7 @@ export default function CalendarDayPage() {
                                         absenceId={abs.absenceId} slotId={abs.slotId}
                                         teacherId={teacher.id} date={activeDate} slot={p.slot}
                                         subjectId={sched.subjectId} store={store}
+                                        ruleType={ruleType}
                                         compact
                                       />
                                     )
