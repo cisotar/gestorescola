@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Leitura pública ─────────────────────────────────────────────────────
+    match /meta/{doc}     { allow read: if true; allow write: if isAdmin(); }
+    match /absences/{doc} { allow read: if true; allow write: if isAdmin(); }
+    match /history/{doc}  { allow read: if true; allow write: if isAdmin(); }
+
+    // ── Professores: leitura pública; admin escreve; professor edita próprio perfil ──
+    match /teachers/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+      allow update: if request.auth != null
+        && resource.data.email.lower() == request.auth.token.email.lower()
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['celular', 'whatsapp', 'subjectIds']);
+    }
+
+    // ── Horários: leitura pública; admin escreve; professor gerencia próprios slots ──
+    // ownsProfile cobre professores aprovados (teacherId = teacher.id no Firestore)
+    // request.auth.uid cobre professores pendentes (teacherId = user.uid no PendingPage)
+    match /schedules/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+      allow create: if request.auth != null
+        && (request.resource.data.teacherId == request.auth.uid
+            || ownsProfile(request.resource.data.teacherId));
+      allow update: if request.auth != null
+        && (resource.data.teacherId == request.auth.uid
+            || ownsProfile(resource.data.teacherId));
+      allow delete: if request.auth != null
+        && (resource.data.teacherId == request.auth.uid
+            || ownsProfile(resource.data.teacherId));
+    }
+
+    // ── Pendentes: admin lê/escreve; professor acessa apenas o próprio doc (por UID) ──
+    match /pending_teachers/{docId} {
+      allow read, write: if isAdmin()
+        || (request.auth != null && request.auth.uid == docId);
+    }
+
+    // ── Somente admins ───────────────────────────────────────────────────────
+    match /admins/{doc} { allow read, write: if isAdmin(); }
+
+    // ── Funções auxiliares ───────────────────────────────────────────────────
+    function ownsProfile(teacherId) {
+      let teacherDoc = get(/databases/$(database)/documents/teachers/$(teacherId));
+      return teacherDoc != null && teacherDoc.data.email.lower() == request.auth.token.email.lower();
+    }
+
+    function emailToKey(email) {
+      return email.lower()
+        .replace('.', '_').replace('#', '_').replace('$', '_')
+        .replace('/', '_').replace('[', '_').replace(']', '_');
+    }
+
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == 'contato.tarciso@gmail.com' ||
+        request.auth.token.email == 'tarciso@prof.educacao.sp.gov.br' ||
+        request.auth.token.email == 'fernandamarquesi@prof.educacao.sp.gov.br' ||
+        exists(/databases/$(database)/documents/admins/$(emailToKey(request.auth.token.email)))
+      );
+    }
+  }
+}
