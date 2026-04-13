@@ -196,6 +196,18 @@ export async function deleteDocById(colName, id) {
   try { await deleteDoc(doc(db, colName, id)) } catch (e) { console.error(e) }
 }
 
+// ─── Atualização Granular ──────────────────────────────────────────────────
+// Atualiza apenas campos específicos de um documento (não sobrescreve o inteiro)
+// Usar em ações de UI: editar professor, horário, ausência, etc.
+// Nota: updateDoc() é mais eficiente que setDoc() para edições parciais
+export async function updateDocById(colName, id, changes) {
+  try {
+    await updateDoc(doc(db, colName, id), changes)
+  } catch (e) {
+    console.error(e)
+  }
+}
+
 export async function saveConfig(state) {
   try {
     await setDoc(doc(db, 'meta', 'config'), {

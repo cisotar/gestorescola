@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { uid } from '../lib/helpers'
-import { saveToFirestore, saveDoc, deleteDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener } from '../lib/db'
+import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener } from '../lib/db'
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import {
@@ -258,11 +258,10 @@ const useAppStore = create((set, get) => {
       email: opts.email ?? '', whatsapp: '', celular: opts.celular ?? '', status: 'approved' }
     set(s => ({ teachers: [...s.teachers, teacher] }))
     saveDoc('teachers', teacher)
-    debouncedSave()
   },
   updateTeacher: (id, changes) => {
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
-    debouncedSave()
+    updateDocById('teachers', id, changes)
   },
   updateTeacherProfile: async (id, changes) => {
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
@@ -276,7 +275,6 @@ const useAppStore = create((set, get) => {
     }))
     deleteDocById('teachers', id)
     schedulesToDelete.forEach(s => deleteDocById('schedules', s.id))
-    debouncedSave()
   },
 
   // ─── Horários ────────────────────────────────────────────────────────────────
@@ -284,16 +282,14 @@ const useAppStore = create((set, get) => {
     const item = { id: uid(), ...sched }
     set(s => ({ schedules: [...s.schedules, item] }))
     saveDoc('schedules', item)
-    debouncedSave()
   },
   removeSchedule: (id) => {
     set(s => ({ schedules: s.schedules.filter(x => x.id !== id) }))
     deleteDocById('schedules', id)
-    debouncedSave()
   },
   updateSchedule: (id, changes) => {
     set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...changes } : x) }))
-    debouncedSave()
+    updateDocById('schedules', id, changes)
   },
   migrateMultipleSubjects: (fromId, toId) => {
     set(s => ({
@@ -329,20 +325,26 @@ const useAppStore = create((set, get) => {
   // ─── Ausências ───────────────────────────────────────────────────────────────
   createAbsence: (teacherId, rawSlots) => {
     set(s => ({ absences: _createAbsence(teacherId, rawSlots, s.absences) }))
-    debouncedSave()
+    const newAbsence = get().absences[get().absences.length - 1]
+    saveDoc('absences', newAbsence)
   },
   assignSubstitute: (absenceId, slotId, substituteId) => {
     set(s => ({ absences: _assignSubstitute(absenceId, slotId, substituteId, s.absences) }))
-    debouncedSave()
+    const updated = get().absences.find(a => a.id === absenceId)
+    if (updated) {
+      updateDocById('absences', absenceId, { slots: updated.slots, status: updated.status })
+    }
   },
   deleteAbsenceSlot: (absenceId, slotId) => {
     set(s => ({ absences: _deleteAbsenceSlot(absenceId, slotId, s.absences) }))
-    debouncedSave()
+    const updated = get().absences.find(a => a.id === absenceId)
+    if (updated) {
+      updateDocById('absences', absenceId, { slots: updated.slots, status: updated.status })
+    }
   },
   deleteAbsence: (id) => {
     set(s => ({ absences: _deleteAbsence(id, s.absences) }))
     deleteDocById('absences', id)
-    debouncedSave()
   },
   deleteManySlots: (slotIds) => {
     const ids = new Set(slotIds)
@@ -399,11 +401,12 @@ const useAppStore = create((set, get) => {
   // ─── Histórico ────────────────────────────────────────────────────────────────
   addHistory: (entry) => {
     set(s => ({ history: [...s.history, { id: uid(), ...entry, registeredAt: new Date().toISOString() }] }))
-    debouncedSave()
+    const newEntry = get().history[get().history.length - 1]
+    saveDoc('history', newEntry)
   },
   deleteHistory: (id) => {
     set(s => ({ history: s.history.filter(h => h.id !== id) }))
-    debouncedSave()
+    deleteDocById('history', id)
   },
 
   // ─── Config ───────────────────────────────────────────────────────────────────
