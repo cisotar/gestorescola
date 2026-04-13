@@ -385,87 +385,87 @@ export default function CalendarDayPage() {
                   {s.name} — {turnoLabel}
                 </div>
               )}
-              <div className="card p-0 overflow-hidden">
-                {periodos.map((p, idx) => {
-                  const sched  = dayMine.find(sc => sc.timeSlot === p.slot)
-                  const abs    = sched ? dayAbsMap[p.slot] : null
-                  const sub    = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
-                  const subj   = store.subjects.find(x => x.id === sched?.subjectId)
-                  const isLast = idx === periodos.length - 1
+              <div className="card bg-white border border-bdr overflow-hidden">
+                <div className="divide-y divide-bdr">
+                  {periodos.map((p) => {
+                    const sched  = dayMine.find(sc => sc.timeSlot === p.slot)
+                    const abs    = sched ? dayAbsMap[p.slot] : null
+                    const sub    = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
+                    const subj   = store.subjects.find(x => x.id === sched?.subjectId)
 
-                  return (
-                    <div key={p.slot} className={`flex items-start gap-3 px-3 py-2.5
-                      ${!isLast ? 'border-b' : ''}
-                      ${abs
-                        ? `bg-[#FFF1EE] ${!isLast ? 'border-[#FDB8A8]/50' : ''}`
-                        : `${!isLast ? 'border-bdr/50' : ''} ${!sched ? 'opacity-50' : ''}`
-                      }`}
-                    >
-                      {/* Horário ancorado */}
-                      <div className="text-center min-w-[56px] shrink-0 bg-surf2 rounded-lg py-1.5 px-1">
-                        <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
-                        <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
-                      </div>
+                    return (
+                      <div key={p.slot} className={`flex items-start gap-3 px-4 py-3
+                        ${abs
+                          ? 'bg-[#FFF1EE]'
+                          : `${!sched ? 'opacity-60' : ''}`
+                        }`}
+                      >
+                        {/* Horário ancorado */}
+                        <div className="text-center min-w-[56px] shrink-0 bg-surf2 rounded-lg py-1.5 px-1 flex-shrink-0">
+                          <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
+                          <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
+                        </div>
 
-                      {/* Conteúdo */}
-                      <div className="flex-1 min-w-0">
-                        {sched ? (
-                          <>
-                            <div className={`font-bold text-sm ${abs ? 'text-[#7F1A06]' : ''}`}>{sched.turma}</div>
-                            <div className={`text-xs ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
-                            {abs && (
-                              <div className="mt-1.5">
-                                {sub ? (
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
-                                    {isAdmin && (
+                        {/* Conteúdo */}
+                        <div className="flex-1 min-w-0">
+                          {sched ? (
+                            <>
+                              <div className={`font-bold text-sm ${abs ? 'text-[#7F1A06]' : ''}`}>{sched.turma}</div>
+                              <div className={`text-xs ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
+                              {abs && (
+                                <div className="mt-1.5">
+                                  {sub ? (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
+                                      {isAdmin && (
+                                        <SubPicker
+                                          absenceId={abs.absenceId} slotId={abs.slotId}
+                                          teacherId={teacher.id} date={activeDate} slot={p.slot}
+                                          subjectId={sched.subjectId} store={store}
+                                          ruleType={ruleType}
+                                        />
+                                      )}
+                                    </div>
+                                  ) : (
+                                    isAdmin && (
                                       <SubPicker
                                         absenceId={abs.absenceId} slotId={abs.slotId}
                                         teacherId={teacher.id} date={activeDate} slot={p.slot}
                                         subjectId={sched.subjectId} store={store}
                                         ruleType={ruleType}
+                                        compact
                                       />
-                                    )}
-                                  </div>
-                                ) : (
-                                  isAdmin && (
-                                    <SubPicker
-                                      absenceId={abs.absenceId} slotId={abs.slotId}
-                                      teacherId={teacher.id} date={activeDate} slot={p.slot}
-                                      subjectId={sched.subjectId} store={store}
-                                      ruleType={ruleType}
-                                      compact
-                                    />
-                                  )
-                                )}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-xs text-t3 italic">Hora de estudo</span>
-                        )}
-                      </div>
-
-                      {/* Ações */}
-                      {isAdmin && sched && (
-                        <div className="shrink-0">
-                          {abs ? (
-                            <button
-                              className="px-2.5 py-1 rounded-full text-[11px] font-semibold border border-[#FDB8A8] text-err bg-white hover:bg-[#FDB8A8]/30 transition-colors"
-                              onClick={() => { deleteAbsenceSlot(abs.absenceId, abs.slotId); toast('Falta removida', 'ok') }}
-                            >
-                              Desfazer
-                            </button>
+                                    )
+                                  )}
+                                </div>
+                              )}
+                            </>
                           ) : (
-                            <button className="btn btn-dark btn-xs" onClick={() => handleMarkAbsent(p, sched)}>
-                              Marcar falta
-                            </button>
+                            <span className="text-xs text-t3 italic">Hora de estudo</span>
                           )}
                         </div>
-                      )}
-                    </div>
-                  )
-                })}
+
+                        {/* Ações */}
+                        {isAdmin && sched && (
+                          <div className="shrink-0 flex-shrink-0">
+                            {abs ? (
+                              <button
+                                className="px-2.5 py-1 rounded-full text-[11px] font-semibold border border-[#FDB8A8] text-err bg-white hover:bg-[#FDB8A8]/30 transition-colors"
+                                onClick={() => { deleteAbsenceSlot(abs.absenceId, abs.slotId); toast('Falta removida', 'ok') }}
+                              >
+                                Desfazer
+                              </button>
+                            ) : (
+                              <button className="btn btn-dark btn-xs" onClick={() => handleMarkAbsent(p, sched)}>
+                                Marcar falta
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           )
