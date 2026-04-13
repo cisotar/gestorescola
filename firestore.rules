@@ -4,7 +4,7 @@ service cloud.firestore {
 
     // ── Leitura pública ─────────────────────────────────────────────────────
     match /meta/{doc}     { allow read: if true; allow write: if isAdmin(); }
-    match /absences/{doc} { allow read: if true; allow write: if isAdmin(); }
+    match /absences/{doc} { allow read: if true; allow write: if isAdmin() || isCoordinator(); }
     match /history/{doc}  { allow read: if true; allow write: if isAdmin(); }
 
     // ── Professores: leitura pública; admin escreve; professor edita próprio perfil ──
@@ -40,10 +40,28 @@ service cloud.firestore {
         || (request.auth != null && request.auth.uid == docId);
     }
 
+    // ── Ações pendentes: coordenadores criam, admins aprovam/rejeitam ───────
+    match /pending_actions/{id} {
+      allow read: if isAdmin() || isCoordinator();
+      allow create: if isCoordinator();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     // ── Somente admins ───────────────────────────────────────────────────────
     match /admins/{doc} { allow read, write: if isAdmin(); }
 
     // ── Funções auxiliares ───────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isCoordinator() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/teachers/$(emailToKey(request.auth.token.email))) &&
+        get(/databases/$(database)/documents/teachers/$(emailToKey(request.auth.token.email))).data.profile in ['coordinator', 'teacher-coordinator'];
+    }
+
     function ownsProfile(teacherId) {
       let teacherDoc = get(/databases/$(database)/documents/teachers/$(teacherId));
       return teacherDoc != null && teacherDoc.data.email.lower() == request.auth.token.email.lower();
