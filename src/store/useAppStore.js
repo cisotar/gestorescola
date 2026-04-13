@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { uid } from '../lib/helpers'
-import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener } from '../lib/db'
+import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener, saveConfig } from '../lib/db'
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import {
@@ -98,14 +98,14 @@ const useAppStore = create((set, get) => {
       segments: [...s.segments, seg],
       periodConfigs: { ...s.periodConfigs, [seg.id]: { [turno]: defaultCfg(turno) } },
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   removeSegment: (id) => {
     set(s => {
       const { [id]: _, ...rest } = s.periodConfigs
       return { segments: s.segments.filter(x => x.id !== id), periodConfigs: rest }
     })
-    debouncedSave()
+    saveConfig(get())
   },
   setSegmentTurno: (segId, turno) => {
     set(s => ({
@@ -118,7 +118,7 @@ const useAppStore = create((set, get) => {
         [segId]: { ...(s.periodConfigs[segId] || {}), [turno]: s.periodConfigs[segId]?.[turno] ?? defaultCfg(turno) },
       },
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   addGrade: (segId, gradeName) => {
     set(s => ({
@@ -128,7 +128,7 @@ const useAppStore = create((set, get) => {
           : { ...seg, grades: [...seg.grades, { name: gradeName.trim(), classes: [] }] }
       ),
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   removeGrade: (segId, gradeName) => {
     set(s => ({
@@ -136,7 +136,7 @@ const useAppStore = create((set, get) => {
         seg.id !== segId ? seg : { ...seg, grades: seg.grades.filter(g => g.name !== gradeName) }
       ),
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   addClassToGrade: (segId, gradeName, letter) => {
     const up = letter.trim().toUpperCase()
@@ -154,7 +154,7 @@ const useAppStore = create((set, get) => {
         }
       }),
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   removeClassFromGrade: (segId, gradeName, letter) => {
     set(s => ({
@@ -167,7 +167,7 @@ const useAppStore = create((set, get) => {
         }
       ),
     }))
-    debouncedSave()
+    saveConfig(get())
   },
 
   // ─── Períodos ───────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ const useAppStore = create((set, get) => {
         [segId]: { ...(s.periodConfigs[segId] || {}), [turno]: cfg },
       },
     }))
-    debouncedSave()
+    saveConfig(get())
   },
 
   // ─── Áreas ──────────────────────────────────────────────────────────────────
@@ -186,11 +186,11 @@ const useAppStore = create((set, get) => {
     set(s => ({
       areas: [...s.areas, { id: uid(), name: name.trim(), colorIdx, segmentIds, shared }],
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   updateArea: (id, changes) => {
     set(s => ({ areas: s.areas.map(a => a.id === id ? { ...a, ...changes } : a) }))
-    debouncedSave()
+    saveConfig(get())
   },
   removeArea: (id) => {
     set(s => {
@@ -201,20 +201,20 @@ const useAppStore = create((set, get) => {
         teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => !removedSubjIds.has(sid)) })),
       }
     })
-    debouncedSave()
+    saveConfig(get())
   },
 
   // ─── Matérias ────────────────────────────────────────────────────────────────
   addSubject: (name, areaId) => {
     set(s => ({ subjects: [...s.subjects, { id: uid(), name: name.trim(), areaId }] }))
-    debouncedSave()
+    saveConfig(get())
   },
   removeSubject: (id) => {
     set(s => ({
       subjects: s.subjects.filter(x => x.id !== id),
       teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => sid !== id) })),
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   saveAreaWithSubjects: (areaId, name, subjectNames) => {
     set(s => {
@@ -230,21 +230,21 @@ const useAppStore = create((set, get) => {
         teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => !removedSet.has(sid)) })),
       }
     })
-    debouncedSave()
+    saveConfig(get())
   },
 
   // ─── Turmas compartilhadas ──────────────────────────────────────────────────
   addSharedSeries: (series) => {
     set(s => ({ sharedSeries: [...s.sharedSeries, series] }))
-    debouncedSave()
+    saveConfig(get())
   },
   updateSharedSeries: (id, changes) => {
     set(s => ({ sharedSeries: s.sharedSeries.map(ss => ss.id === id ? { ...ss, ...changes } : ss) }))
-    debouncedSave()
+    saveConfig(get())
   },
   removeSharedSeries: (id) => {
     set(s => ({ sharedSeries: s.sharedSeries.filter(ss => ss.id !== id) }))
-    debouncedSave()
+    saveConfig(get())
   },
 
   // ─── Professores ─────────────────────────────────────────────────────────────
@@ -301,7 +301,7 @@ const useAppStore = create((set, get) => {
         subjectIds: (t.subjectIds ?? []).map(sid => sid === fromId ? toId : sid),
       })),
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   migrateScheduleSubject: (teacherId, fromSubjectId, toSubjectId) => {
     set(s => ({
@@ -311,7 +311,7 @@ const useAppStore = create((set, get) => {
           : x
       ),
     }))
-    debouncedSave()
+    saveConfig(get())
   },
   removeSchedulesBySubject: (teacherId, subjectId) => {
     set(s => ({
@@ -319,7 +319,7 @@ const useAppStore = create((set, get) => {
         x => !(x.teacherId === teacherId && x.subjectId === subjectId)
       ),
     }))
-    debouncedSave()
+    saveConfig(get())
   },
 
   // ─── Ausências ───────────────────────────────────────────────────────────────
@@ -328,6 +328,7 @@ const useAppStore = create((set, get) => {
     const newAbsence = get().absences[get().absences.length - 1]
     saveDoc('absences', newAbsence)
   },
+
   assignSubstitute: (absenceId, slotId, substituteId) => {
     set(s => ({ absences: _assignSubstitute(absenceId, slotId, substituteId, s.absences) }))
     const updated = get().absences.find(a => a.id === absenceId)
@@ -346,6 +347,7 @@ const useAppStore = create((set, get) => {
     set(s => ({ absences: _deleteAbsence(id, s.absences) }))
     deleteDocById('absences', id)
   },
+
   deleteManySlots: (slotIds) => {
     const ids = new Set(slotIds)
     let emptyAbsenceIds = []
@@ -358,11 +360,9 @@ const useAppStore = create((set, get) => {
       return { absences: updated.filter(ab => ab.slots.length > 0) }
     })
     emptyAbsenceIds.forEach(id => deleteDocById('absences', id))
-    debouncedSave()
   },
   restoreAbsences: (absencesSnapshot) => {
     set({ absences: absencesSnapshot })
-    debouncedSave()
   },
 
   // Remove todos os substitutos de um professor em uma data (mantém as faltas)
@@ -378,11 +378,20 @@ const useAppStore = create((set, get) => {
         return { ...ab, slots, status }
       }),
     }))
-    debouncedSave()
+    get().absences.forEach(ab => {
+      if (ab.teacherId === teacherId) {
+        const slots = ab.slots.filter(sl => sl.date === date)
+        if (slots.length > 0) {
+          const updated = get().absences.find(a => a.id === ab.id)
+          if (updated) updateDocById('absences', ab.id, { slots: updated.slots, status: updated.status })
+        }
+      }
+    })
   },
 
   // Remove todas as faltas (e substitutos) de um professor em uma data
   clearDayAbsences: (teacherId, date) => {
+    const beforeAbsences = get().absences
     set(s => ({
       absences: s.absences
         .map(ab => {
@@ -395,7 +404,15 @@ const useAppStore = create((set, get) => {
         })
         .filter(Boolean),
     }))
-    debouncedSave()
+    const afterAbsences = get().absences
+    const deletedIds = beforeAbsences
+      .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
+      .filter(ab => !afterAbsences.find(a => a.id === ab.id))
+      .map(ab => ab.id)
+    deletedIds.forEach(id => deleteDocById('absences', id))
+    afterAbsences
+      .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
+      .forEach(ab => updateDocById('absences', ab.id, { slots: ab.slots, status: ab.status }))
   },
 
   // ─── Histórico ────────────────────────────────────────────────────────────────
@@ -404,15 +421,17 @@ const useAppStore = create((set, get) => {
     const newEntry = get().history[get().history.length - 1]
     saveDoc('history', newEntry)
   },
+
   deleteHistory: (id) => {
     set(s => ({ history: s.history.filter(h => h.id !== id) }))
     deleteDocById('history', id)
   },
 
+
   // ─── Config ───────────────────────────────────────────────────────────────────
   setWorkload: (warn, danger) => {
     set({ workloadWarn: warn, workloadDanger: danger })
-    debouncedSave()
+    saveConfig(get())
   },
 
   // ─── Lazy loading ──────────────────────────────────────────────────────────────
