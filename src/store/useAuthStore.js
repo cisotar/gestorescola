@@ -73,6 +73,7 @@ const useAuthStore = create((set, get) => ({
     get()._unsubPending?.()
     get()._unsubApproval?.()
     set({ _unsubPending: null, _unsubApproval: null })
+    useAppStore.getState().cleanupLazyListeners()
     return signOut(auth)
   },
 

@@ -476,6 +476,13 @@ const useAppStore = create((set, get) => {
       saveTimer = null
     }
   },
+
+  cleanupLazyListeners: () => {
+    absencesUnsubscribe?.()
+    absencesUnsubscribe = null
+    historyUnsubscribe?.()
+    historyUnsubscribe = null
+  },
   }
 })
 

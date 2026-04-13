@@ -26,12 +26,17 @@ export default function App() {
 
   // 1. Carrega Firestore e inicia listeners em tempo real
   useEffect(() => {
+    let active = true
     let unsubscribes = []
     loadFromFirestore().then(data => {
+      if (!active) return
       hydrate(data)
       unsubscribes = setupRealtimeListeners(useAppStore.getState())
     })
-    return () => unsubscribes.forEach(unsub => unsub?.())
+    return () => {
+      active = false
+      unsubscribes.forEach(unsub => unsub?.())
+    }
   }, [])
 
   // 2. Inicia auth depois que teachers carregou
