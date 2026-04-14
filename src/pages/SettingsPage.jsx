@@ -29,7 +29,6 @@ export default function SettingsPage() {
     { id: 'teachers',    label: '👩‍🏫 Professores' },
     { id: 'periods',     label: '⏰ Períodos' },
     { id: 'schedules',   label: '🗓 Horários' },
-    { id: 'admin',       label: '✅ Aprovação' },
     { id: 'approvals',   label: '🔔 Aprovações', badge: true },
   ]
 
@@ -83,7 +82,6 @@ export default function SettingsPage() {
       {tab === 'teachers'     && <TabTeachers />}
       {tab === 'periods'      && <TabPeriods />}
       {tab === 'schedules'    && <TabSchedules />}
-      {tab === 'admin'        && <TabAdmin />}
       {tab === 'approvals'    && <TabApprovals adminEmail={user?.email} />}
       {tab === 'profile'      && <TabProfile teacher={myTeacher} />}
       {tab === 'my-schedules' && <TabMySchedules />}
@@ -991,10 +989,58 @@ function SubjectSelector({ store, selectedIds, onChange }) {
   )
 }
 
+// ─── Perfis de professor ──────────────────────────────────────────────────────
+
+const PROFILE_OPTIONS = [
+  { value: 'teacher',             label: 'Professor',    pill: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { value: 'coordinator',         label: 'Coord. Geral', pill: 'bg-purple-100 text-purple-700 border-purple-200' },
+  { value: 'teacher-coordinator', label: 'Prof. Coord.', pill: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+  { value: 'admin',               label: 'Admin',        pill: 'bg-red-100 text-red-700 border-red-200' },
+]
+const PROFILE_OPTIONS_NO_ADMIN = PROFILE_OPTIONS.filter(o => o.value !== 'admin')
+
+function ProfilePillDropdown({ value, onChange, options = PROFILE_OPTIONS, disabled, placeholder = 'Selecionar perfil ▾' }) {
+  const [open, setOpen] = useState(false)
+  const opt = options.find(o => o.value === value)
+
+  if (disabled) return opt
+    ? <span className={`badge border text-[10px] ${opt.pill}`}>{opt.label}</span>
+    : <span className="badge border text-[10px] bg-gray-100 text-gray-400 border-gray-200">{placeholder}</span>
+
+  return (
+    <div className="relative inline-block">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={opt
+          ? `badge border text-[10px] cursor-pointer hover:opacity-80 ${opt.pill}`
+          : 'badge border text-[10px] cursor-pointer bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+        }
+      >{opt ? `${opt.label} ▾` : placeholder}</button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 z-20 bg-bg border border-bdr rounded-lg shadow-lg py-1 min-w-[140px]">
+            {options.map(o => (
+              <button key={o.value}
+                onClick={() => { setOpen(false); onChange(o.value) }}
+                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-surf2 flex items-center gap-2 ${o.value === value ? 'font-bold' : ''}`}
+              >
+                <span className={`badge border text-[10px] ${o.pill}`}>{o.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Tab: Professores ──────────────────────────────────────────────────────────
 
 function TabTeachers() {
   const store = useAppStore()
+  const { role } = useAuthStore()
+  const isAdminUser = role === 'admin'
   const navigate = useNavigate()
   const [modal,        setModal]        = useState(false)
   const [schedModal,      setSchedModal]      = useState(false)
@@ -1006,6 +1052,9 @@ function TabTeachers() {
   const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
   const [pending,          setPending]          = useState([])
   const [pendLoaded,       setPendLoaded]       = useState(false)
+  const [showPendingPanel,   setShowPendingPanel]   = useState(false)
+  const [showNoSegmentPanel, setShowNoSegmentPanel] = useState(false)
+  const [pendingProfiles,    setPendingProfiles]    = useState({}) // { [teacherId]: profile }
 
   // Carrega lista de admins e professores pendentes ao montar
   const [admins, setAdmins] = useState([])
@@ -1029,28 +1078,39 @@ function TabTeachers() {
     toast(`${p.name} recusado`, 'warn')
   }
 
-  const handleStatusChange = async (t, newRole) => {
-    if (newRole === 'admin') {
-      await addAdmin(t.email, t.name)
-      setAdmins(a => [...a, t.email.toLowerCase()])
-      toast(`${t.name} agora é Admin`, 'ok')
-    } else {
-      await removeAdmin(t.email)
-      setAdmins(a => a.filter(x => x !== t.email.toLowerCase()))
-      toast(`${t.name} agora é Professor`, 'ok')
+  const handleProfileChange = async (t, newProfile) => {
+    const oldProfile = currentProfile(t)
+    if (newProfile === oldProfile) return
+
+    if (newProfile === 'admin') {
+      if (!confirm(`Promover ${t.name} a Admin dará acesso total ao sistema. Confirmar?`)) return
+    } else if (oldProfile === 'admin') {
+      if (!confirm(`Remover privilégios de Admin de ${t.name}? Confirmar?`)) return
+    }
+
+    try {
+      if (newProfile === 'admin') {
+        await addAdmin(t.email, t.name)
+        setAdmins(a => [...a, (t.email ?? '').toLowerCase()])
+      } else {
+        if (oldProfile === 'admin') {
+          await removeAdmin(t.email)
+          setAdmins(a => a.filter(x => x !== (t.email ?? '').toLowerCase()))
+        }
+        store.updateTeacher(t.id, { profile: newProfile })
+      }
+      const LABELS = { teacher: 'Professor', coordinator: 'Coord. Geral', 'teacher-coordinator': 'Prof. Coord.', admin: 'Admin' }
+      toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')
+    } catch (e) {
+      console.error(e)
+      toast('Erro ao atualizar perfil', 'err')
     }
   }
 
-  const StatusSelect = ({ t }) => (
-    <select
-      value={isTeacherAdmin(t) ? 'admin' : 'teacher'}
-      onChange={e => handleStatusChange(t, e.target.value)}
-      className="inp !py-0.5 !px-1.5 text-xs !w-auto"
-    >
-      <option value="teacher">Professor</option>
-      <option value="admin">Admin</option>
-    </select>
-  )
+  const currentProfile = (t) => {
+    if (isTeacherAdmin(t)) return 'admin'
+    return t.profile ?? 'teacher'
+  }
 
   const teacherSegmentNames = (t) =>
     store.segments
@@ -1108,10 +1168,33 @@ function TabTeachers() {
     setModal(false)
   }
 
+  const unassigned = store.teachers.filter(t =>
+    teacherSegmentIds(t, store.subjects, store.areas).length === 0
+  ).sort((a, b) => a.name.localeCompare(b.name))
+
   return (
     <div>
       <div className="flex gap-2 mb-5 flex-wrap">
         <button className="btn btn-dark" onClick={openAdd}>+ Novo Professor</button>
+
+        {pendLoaded && pending.length > 0 && (
+          <button
+            className="btn btn-ghost btn-sm border border-amber-400 text-amber-700 hover:bg-amber-50"
+            onClick={() => setShowPendingPanel(true)}
+          >
+            Aguardando Aprovação ({pending.length})
+          </button>
+        )}
+
+        {unassigned.length > 0 && (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setShowNoSegmentPanel(true)}
+          >
+            Sem Segmento ({unassigned.length})
+          </button>
+        )}
+
         <div className="flex rounded-lg border border-bdr overflow-hidden ml-auto">
           <button onClick={() => setView('cards')} className={view === 'cards' ? 'btn btn-dark btn-sm rounded-none' : 'btn btn-ghost btn-sm rounded-none'}>⊞ Cards</button>
           <button onClick={() => setView('table')} className={view === 'table' ? 'btn btn-dark btn-sm rounded-none' : 'btn btn-ghost btn-sm rounded-none'}>☰ Tabela</button>
@@ -1148,7 +1231,7 @@ function TabTeachers() {
                   <td className="px-3 py-2.5">
                     {t._isPending
                       ? <span className="badge bg-warn/10 text-warn border border-warn/30">Pendente</span>
-                      : <StatusSelect t={t} />
+                      : <ProfilePillDropdown value={currentProfile(t)} onChange={p => handleProfileChange(t, p)} disabled={!isAdminUser} />
                     }
                   </td>
                   <td className="px-3 py-2.5">
@@ -1198,7 +1281,7 @@ function TabTeachers() {
                           {t.email   && <div className="text-xs text-t1 truncate">✉ {t.email}</div>}
                           {t.apelido && <div className="text-xs text-t3 italic">"{t.apelido}"</div>}
                           {t.celular && <div className="text-xs text-t1 truncate">📱 {t.celular}</div>}
-                          <div className="mt-1.5"><StatusSelect t={t} /></div>
+                          <div className="mt-1.5"><ProfilePillDropdown value={currentProfile(t)} onChange={p => handleProfileChange(t, p)} disabled={!isAdminUser} /></div>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <span className="text-xs text-t2">{ct} aulas</span>
@@ -1217,84 +1300,6 @@ function TabTeachers() {
             )
           })}
 
-          {/* Professores sem segmento + pendentes */}
-          {(() => {
-            const unassigned = store.teachers.filter(t =>
-              teacherSegmentIds(t, store.subjects, store.areas).length === 0
-            ).sort((a, b) => a.name.localeCompare(b.name))
-            const hasPending    = pending.length > 0
-            const hasUnassigned = unassigned.length > 0
-            if (!hasPending && !hasUnassigned) return null
-            const total = pending.length + unassigned.length
-            return (
-              <div className="card border-dashed border-warn/50 bg-amber-50/30">
-                <div className="font-bold text-sm mb-3 pb-2 border-b border-bdr text-amber-700">
-                  ⚠ Sem segmento definido <span className="text-xs font-normal text-t3 ml-1">{total} prof.</span>
-                </div>
-                <div className="space-y-2">
-                  {/* Pendentes */}
-                  {pending.map(p => {
-                    const scheduleCount = store.schedules.filter(s => s.teacherId === p.id).length
-                    const syntheticTeacher = { id: p.id, name: p.name, subjectIds: p.subjectIds ?? [] }
-                    return (
-                      <div key={p.id} className="flex items-start gap-2 p-2 rounded-xl border border-warn/30 bg-amber-50/60">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 bg-amber-100 text-amber-700">
-                          {p.name.charAt(0)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-sm truncate">{p.name}</div>
-                          <span className="badge bg-warn/10 text-warn border border-warn/30 text-[10px] mb-1">Pendente</span>
-                          <div className="text-xs text-t1 truncate">✉ {p.email}</div>
-                          {p.apelido && <div className="text-xs text-t3 mt-0.5">Apelido: <span className="text-t1 font-semibold">{p.apelido}</span></div>}
-                          {p.celular && <div className="text-xs text-t1 truncate">📱 {p.celular}</div>}
-                          {scheduleCount > 0 && (
-                            <div className="text-xs text-ok font-semibold mt-0.5">✅ {scheduleCount} horário{scheduleCount !== 1 ? 's' : ''} sugerido{scheduleCount !== 1 ? 's' : ''}</div>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          {scheduleCount > 0 && (
-                            <>
-                              <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: true })}>👁 Ver</button>
-                              <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: false })}>✏️ Grade</button>
-                            </>
-                          )}
-                          <button className="btn btn-dark btn-xs" onClick={() => handleApprove(p)}>Aprovar</button>
-                          <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(p)}>Recusar</button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {/* Aprovados sem segmento */}
-                  {unassigned.map(t => {
-                    const ct = store.schedules.filter(s => s.teacherId === t.id).length
-                    return (
-                      <div key={t.id} className="flex items-start gap-2 p-2 rounded-xl border border-bdr hover:border-t3 transition-colors bg-surf">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 bg-amber-100 text-amber-700">
-                          {t.name.charAt(0)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-sm truncate">{t.name}</div>
-                          <div className="text-[11px] text-amber-600 truncate">Sem matéria associada — clique em ✏️ para configurar</div>
-                          {t.email   && <div className="text-xs text-t1 truncate">✉ {t.email}</div>}
-                          {t.apelido && <div className="text-xs text-t3 italic">"{t.apelido}"</div>}
-                          {t.celular && <div className="text-xs text-t1 truncate">📱 {t.celular}</div>}
-                          <div className="mt-1.5"><StatusSelect t={t} /></div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1 shrink-0">
-                          <span className="text-xs text-t2">{ct} aulas</span>
-                          <button className="btn btn-ghost btn-xs" title="Ver Grade" onClick={() => navigate(`/schedule?teacherId=${t.id}`)}>📅</button>
-                          <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
-                          <button className="btn btn-ghost btn-xs text-err" onClick={() => {
-                            if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
-                          }}>✕</button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
         </div>
       )}
 
@@ -1361,6 +1366,95 @@ function TabTeachers() {
         readOnly={viewingSchedule?.readOnly ?? false}
       />
       <SubjectChangeModal ctx={subjectChangeCtx} />
+
+      {/* Painel: Aguardando Aprovação */}
+      <Modal open={showPendingPanel} onClose={() => setShowPendingPanel(false)} title={`Aguardando Aprovação (${pending.length})`} size="lg">
+        {pending.length === 0 ? (
+          <div className="text-center py-8 text-t3">✅ Nenhum professor aguardando aprovação.</div>
+        ) : (
+          <div className="space-y-3">
+            {pending.map(p => (
+              <div key={p.id} className="flex flex-col gap-3 p-3 rounded-xl border border-bdr">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-sm font-bold shrink-0">
+                    {p.name.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm truncate">{p.name}</div>
+                    <div className="text-xs text-t2 truncate">{p.email}</div>
+                    {p.celular && <div className="text-xs text-t1">📱 {p.celular}</div>}
+                    {p.apelido && <div className="text-xs text-t3 italic">"{p.apelido}"</div>}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-bdr">
+                  <ProfilePillDropdown
+                    value={pendingProfiles[p.id]}
+                    options={PROFILE_OPTIONS_NO_ADMIN}
+                    onChange={profile => setPendingProfiles(prev => ({ ...prev, [p.id]: profile }))}
+                    placeholder="Selecionar perfil ▾"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      className="btn btn-dark btn-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={!pendingProfiles[p.id]}
+                      onClick={async () => {
+                        const profile = pendingProfiles[p.id]
+                        try {
+                          await approveTeacher(p.id, store, useAppStore.setState, profile)
+                          setPending(prev => prev.filter(x => x.id !== p.id))
+                          setPendingProfiles(prev => { const n = { ...prev }; delete n[p.id]; return n })
+                          const label = PROFILE_OPTIONS_NO_ADMIN.find(o => o.value === profile)?.label ?? profile
+                          toast(`${p.name} aprovado como ${label}`, 'ok')
+                        } catch (e) {
+                          console.error(e)
+                          toast('Erro ao aprovar professor', 'err')
+                        }
+                      }}
+                    >Aprovar</button>
+                    <button
+                      className="btn btn-ghost btn-sm text-err"
+                      onClick={() => handleReject(p)}
+                    >Rejeitar</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      {/* Painel: Sem Segmento */}
+      <Modal open={showNoSegmentPanel} onClose={() => setShowNoSegmentPanel(false)} title={`Sem Segmento (${unassigned.length})`} size="lg">
+        {unassigned.length === 0 ? (
+          <div className="text-center py-8 text-t3">Todos os professores têm segmento definido.</div>
+        ) : (
+          <div className="space-y-2">
+            {unassigned.map(t => {
+              const cv = colorOfTeacher(t, store)
+              return (
+                <div key={t.id} className="flex items-center gap-3 p-3 rounded-xl border border-bdr">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+                    style={{ background: cv.tg, color: cv.tx }}>{t.name.charAt(0)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-sm truncate">{t.name}</div>
+                    {t.email && <div className="text-xs text-t2 truncate">{t.email}</div>}
+                  </div>
+                  <ProfilePillDropdown
+                    value={currentProfile(t)}
+                    onChange={p => handleProfileChange(t, p)}
+                    disabled={!isAdminUser}
+                  />
+                  <button className="btn btn-ghost btn-xs" onClick={() => { openEdit(t); setShowNoSegmentPanel(false) }}>✏️</button>
+                  <button className="btn btn-ghost btn-xs text-err" onClick={() => {
+                    if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
+                  }}>✕</button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Modal>
+
     </div>
   )
 }
@@ -1941,181 +2035,6 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
         </div>
       </div>
-    </Modal>
-  )
-}
-
-// ─── Tab: Administração ────────────────────────────────────────────────────────
-
-function TabAdmin() {
-  const [pendingModal, setPendingModal] = useState(false)
-  const [adminsModal,  setAdminsModal]  = useState(false)
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-2xl">
-      <div className="card">
-        <div className="font-bold text-sm mb-2">👩‍🏫 Aprovar Professores</div>
-        <p className="text-xs text-t2 mb-4 leading-relaxed">Professores que solicitaram acesso aguardando aprovação.</p>
-        <button className="btn btn-dark" onClick={() => setPendingModal(true)}>Gerenciar solicitações</button>
-      </div>
-      <div className="card">
-        <div className="font-bold text-sm mb-2">⚙️ Administradores</div>
-        <p className="text-xs text-t2 mb-4 leading-relaxed">Adicione ou remova administradores do sistema.</p>
-        <button className="btn btn-dark" onClick={() => setAdminsModal(true)}>Gerenciar administradores</button>
-      </div>
-      <PendingModal open={pendingModal} onClose={() => setPendingModal(false)} />
-      <AdminsModal  open={adminsModal}  onClose={() => setAdminsModal(false)} />
-    </div>
-  )
-}
-
-function PendingModal({ open, onClose }) {
-  const store = useAppStore()
-  const [pending,            setPending]            = useState([])
-  const [loaded,             setLoaded]             = useState(false)
-  const [viewingSchedule,    setViewingSchedule]    = useState(null)
-  const [selectedProfiles,   setSelectedProfiles]   = useState({})
-
-  const load = async () => { setPending(await listPendingTeachers()); setLoaded(true) }
-
-  const getProfileDesc = (profile) => {
-    const profiles = {
-      'teacher': 'Acesso ao próprio perfil e grade horária',
-      'coordinator': 'Visão total do sistema, sem aulas regulares, fora do cômputo de substituições',
-      'teacher-coordinator': 'Visão total do sistema, com aulas atribuídas, dentro do cômputo de substituições',
-    }
-    return profiles[profile] || ''
-  }
-
-  return (
-    <>
-      <Modal open={open} onClose={onClose} title="Professores Pendentes">
-        {!loaded ? (
-          <div className="text-center py-8"><button className="btn btn-dark" onClick={load}>Carregar</button></div>
-        ) : pending.length === 0 ? (
-          <div className="text-center py-8 text-t3">✅ Nenhum professor aguardando aprovação.</div>
-        ) : (
-          <div className="space-y-3">
-            {pending.map(p => {
-              const scheduleCount = store.schedules.filter(s => s.teacherId === p.id).length
-              const syntheticTeacher = { id: p.id, name: p.name, subjectIds: p.subjectIds ?? [] }
-              return (
-                <div key={p.id} className="flex flex-col gap-3 p-3 rounded-xl border border-bdr">
-                  <div>
-                    <div className="font-bold text-sm truncate">{p.name}</div>
-                    <div className="text-xs text-t2 truncate">{p.email}</div>
-                    {p.apelido && <div className="text-xs text-t3 mt-0.5">Apelido: <span className="text-t1 font-semibold">{p.apelido}</span></div>}
-                    {scheduleCount > 0 && (
-                      <div className="text-xs text-ok font-semibold mt-0.5">✅ {scheduleCount} horário{scheduleCount !== 1 ? 's' : ''} sugerido{scheduleCount !== 1 ? 's' : ''}</div>
-                    )}
-                  </div>
-                  <div className="space-y-2 py-2 border-t border-bdr">
-                    <div className="text-xs font-semibold text-t1">Tipo de Perfil:</div>
-                    <div className="space-y-1">
-                      {['teacher', 'coordinator', 'teacher-coordinator'].map(profile => (
-                        <label key={profile} className="flex items-start gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name={`profile-${p.id}`}
-                            value={profile}
-                            checked={selectedProfiles[p.id] === profile}
-                            onChange={() => setSelectedProfiles(prev => ({ ...prev, [p.id]: profile }))}
-                            className="mt-0.5"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold">
-                              {profile === 'teacher' && 'Professor'}
-                              {profile === 'coordinator' && 'Coordenador Geral'}
-                              {profile === 'teacher-coordinator' && 'Professor Coordenador'}
-                            </div>
-                            <div className="text-xs text-t3">{getProfileDesc(profile)}</div>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3 pt-2">
-                    <div className="flex-1" />
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      {scheduleCount > 0 && (
-                        <>
-                          <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: true })}>👁 Ver</button>
-                          <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: false })}>✏️ Grade</button>
-                        </>
-                      )}
-                      <button className="btn btn-dark btn-sm" onClick={async () => {
-                        const profile = selectedProfiles[p.id] || 'teacher'
-                        await approveTeacher(p.id, store, useAppStore.setState, profile)
-                        setPending(prev => prev.filter(x => x.id !== p.id))
-                        toast(`${p.name} aprovado`, 'ok')
-                      }}>Aprovar</button>
-                      <button className="btn btn-ghost btn-sm text-err" onClick={async () => {
-                        if (!confirm('Recusar?')) return
-                        await rejectTeacher(p.id, useAppStore.setState)
-                        setPending(prev => prev.filter(x => x.id !== p.id))
-                      }}>Recusar</button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Modal>
-      <ScheduleGridModal
-        open={!!viewingSchedule}
-        onClose={() => setViewingSchedule(null)}
-        teacher={viewingSchedule?.teacher}
-        store={store}
-        readOnly={viewingSchedule?.readOnly ?? false}
-      />
-    </>
-  )
-}
-
-function AdminsModal({ open, onClose }) {
-  const [admins, setAdmins] = useState([])
-  const [email,  setEmail]  = useState('')
-  const [loaded, setLoaded] = useState(false)
-
-  const load = async () => { setAdmins(await listAdmins()); setLoaded(true) }
-
-  return (
-    <Modal open={open} onClose={onClose} title="Administradores">
-      {!loaded ? (
-        <div className="text-center py-8"><button className="btn btn-dark" onClick={load}>Carregar</button></div>
-      ) : (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            {admins.map(a => (
-              <div key={a.email} className="flex items-center gap-3 p-2.5 rounded-xl border border-bdr">
-                <div className="flex-1 text-sm font-semibold">{a.name || a.email}</div>
-                <div className="text-xs text-t2">{a.email}</div>
-                <button className="btn btn-ghost btn-xs text-err" onClick={async () => {
-                  if (!confirm(`Remover ${a.email}?`)) return
-                  await removeAdmin(a.email)
-                  setAdmins(prev => prev.filter(x => x.email !== a.email))
-                }}>✕</button>
-              </div>
-            ))}
-            {admins.length === 0 && <p className="text-xs text-t3">Nenhum admin adicional.</p>}
-          </div>
-          <div>
-            <label className="lbl">Adicionar por e-mail</label>
-            <div className="flex gap-2">
-              <input className="inp" type="email" placeholder="email@escola.com" value={email}
-                onChange={e => setEmail(e.target.value)} />
-              <button className="btn btn-dark" onClick={async () => {
-                if (!email.trim()) return
-                await addAdmin(email.trim())
-                setAdmins(prev => [...prev, { email: email.trim(), name: '' }])
-                setEmail('')
-                toast('Administrador adicionado', 'ok')
-              }}>Adicionar</button>
-            </div>
-          </div>
-        </div>
-      )}
     </Modal>
   )
 }
