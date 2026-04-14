@@ -420,12 +420,12 @@ export async function migrateSharedSeriesActivities(idMap = {}) {
 export function _saveToLS(state) {
   try {
     const { segments, periodConfigs, areas, subjects, teachers,
-            schedules, subs, absences, history, sharedSeries, workloadWarn, workloadDanger } = state
+            schedules, absences, history, sharedSeries, workloadWarn, workloadDanger } = state
     localStorage.setItem(LS_KEY, JSON.stringify({
       data: {
         segments, periodConfigs, areas, subjects, teachers,
         sharedSeries: sharedSeries ?? [],
-        schedules, subs: subs ?? {}, absences: absences ?? [],
+        schedules, absences: absences ?? [],
         history: history ?? [], workloadWarn, workloadDanger,
       },
       timestamp: Date.now()

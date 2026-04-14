@@ -50,7 +50,7 @@ const INITIAL_STATE = {
   schedules:     [],
   absences:      [],
   history:       [],
-  subs:          {},
+
   workloadWarn:  20,
   workloadDanger:26,
   loaded:        false,
