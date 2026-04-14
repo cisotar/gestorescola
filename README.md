@@ -1,21 +1,17 @@
-# gestorescola**Commit:**
-```
-feat: initial commit — React migration of Gestor de Substituições
-```
+# GestãoEscolar
+
+Sistema de gestão escolar para coordenação de grade horária, ausências e substituições de professores.
+
+**Produção:** https://gestordesubstituicoes-react.web.app
 
 ---
 
-**README.md:**
+## Stack
 
-```markdown
-# Gestor de Substituições — React
-
-Versão React do Gestor de Substituições, migrada a partir da versão original em JavaScript vanilla.
-
-## Tecnologias
-
-- React + Vite
-- Firebase (Firestore + Hosting + Authentication)
+- **React 18** + Vite + React Router 6
+- **Firebase** — Firestore, Authentication (Google OAuth), Hosting
+- **Zustand** — estado global
+- **Tailwind CSS** — design system com tokens customizados
 
 ## Instalação
 
@@ -23,20 +19,29 @@ Versão React do Gestor de Substituições, migrada a partir da versão original
 npm install
 ```
 
-## Desenvolvimento
+Configure o Firebase criando `src/lib/firebase.js` com as credenciais do projeto `gestordesubstituicoes`.
+
+## Scripts
 
 ```bash
-npm run dev
+npm run dev      # dev server (http://localhost:5173)
+npm run build    # build de produção → dist/
+npm run preview  # preview local do build
+firebase deploy  # deploy para Firebase Hosting
 ```
 
-## Deploy
+## Estrutura
 
-```bash
-npm run build
-firebase deploy --only hosting:gestordesubstituicoes-react --project gestordesubstituicoes
+```
+src/
+├── pages/       # uma página por rota
+├── components/  # layout/ e ui/ reutilizáveis
+├── store/       # useAppStore (dados) + useAuthStore (auth/role)
+├── lib/         # lógica pura: db.js, absences.js, reports.js, periods.js
+└── hooks/       # useToast.js
 ```
 
-## Produção
+## Documentação técnica
 
-https://gestordesubstituicoes-react.web.app
-```
+- [Arquitetura do sistema](references/architecture.md) — modelo de dados, RBAC, fluxos críticos, convenções
+- [Design system](references/design-system.md) — tokens, componentes, padrões de UI
