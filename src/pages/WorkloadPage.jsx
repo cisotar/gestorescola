@@ -44,7 +44,16 @@ export default function WorkloadPage() {
                 const barColor = pct >= 100 ? '#C8290A' : pct >= 77 ? '#D97706' : '#16A34A'
                 return (
                   <tr key={t.id} className="border-b border-bdr/50 hover:bg-surf2 transition-colors">
-                    <td className="px-4 py-3 font-semibold text-sm">{t.name}</td>
+                    <td className="px-4 py-3 font-semibold text-sm">
+                      <div className="flex items-center gap-2">
+                        {t.name}
+                        {t.profile === 'coordinator' && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-surf2 text-t3 border border-bdr whitespace-nowrap">
+                            fora do cômputo
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <div className="font-bold">{sc}</div>
                       <div className="w-full bg-surf2 rounded-full h-1 mt-1">

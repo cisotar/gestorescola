@@ -7,7 +7,7 @@ import useAppStore from './useAppStore'
 
 const useAuthStore = create((set, get) => ({
   user:          null,
-  role:          null,   // 'admin' | 'teacher' | 'pending' | null
+  role:          null,   // 'admin' | 'coordinator' | 'teacher-coordinator' | 'teacher' | 'pending' | null
   teacher:       null,
   loading:       true,
   pendingCt:     0,
@@ -40,7 +40,11 @@ const useAuthStore = create((set, get) => ({
     try {
       const teacher = await getTeacherByEmail(user.email, teachers)
       if (teacher?.status === 'approved') {
-        set({ role: 'teacher', teacher })
+        const profile = teacher.profile ?? 'teacher'
+        const role = profile === 'coordinator' ? 'coordinator'
+          : profile === 'teacher-coordinator' ? 'teacher-coordinator'
+          : 'teacher'
+        set({ role, teacher })
         return
       }
     } catch (e) { console.warn('[auth]', e) }
@@ -55,7 +59,11 @@ const useAuthStore = create((set, get) => ({
           const teachers = useAppStore.getState().teachers
           const teacher = await getTeacherByEmail(user.email, teachers)
           if (teacher?.status === 'approved') {
-            set({ role: 'teacher', teacher })
+            const profile = teacher.profile ?? 'teacher'
+            const role = profile === 'coordinator' ? 'coordinator'
+              : profile === 'teacher-coordinator' ? 'teacher-coordinator'
+              : 'teacher'
+            set({ role, teacher })
           }
         }
       },
@@ -77,9 +85,12 @@ const useAuthStore = create((set, get) => ({
     return signOut(auth)
   },
 
-  isAdmin:   () => get().role === 'admin',
-  isTeacher: () => get().role === 'teacher',
-  isPending: () => get().role === 'pending',
+  isAdmin:              () => get().role === 'admin',
+  isTeacher:            () => get().role === 'teacher',
+  isPending:            () => get().role === 'pending',
+  isCoordinator:        () => ['coordinator', 'teacher-coordinator'].includes(get().role),
+  isGeneralCoordinator: () => get().role === 'coordinator',
+  isTeacherCoordinator: () => get().role === 'teacher-coordinator',
 }))
 
 export default useAuthStore

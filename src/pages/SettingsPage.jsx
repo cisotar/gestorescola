@@ -7,14 +7,20 @@ import { getCfg, gerarPeriodos, defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
-import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin, deleteDocById } from '../lib/db'
+import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin, deleteDocById, subscribePendingActionsCount, getPendingActions, approvePendingAction, rejectPendingAction } from '../lib/db'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { role, teacher: myTeacher } = useAuthStore()
+  const { role, user, teacher: myTeacher } = useAuthStore()
   const isAdmin = role === 'admin'
   const location = useLocation()
+
+  const [pendingActionsCt, setPendingActionsCt] = useState(0)
+  useEffect(() => {
+    if (!isAdmin) return
+    return subscribePendingActionsCount(setPendingActionsCt)
+  }, [isAdmin])
 
   const ADMIN_TABS = [
     { id: 'segments',    label: '🏫 Segmentos' },
@@ -24,6 +30,7 @@ export default function SettingsPage() {
     { id: 'periods',     label: '⏰ Períodos' },
     { id: 'schedules',   label: '🗓 Horários' },
     { id: 'admin',       label: '✅ Aprovação' },
+    { id: 'approvals',   label: '🔔 Aprovações', badge: true },
   ]
 
   const initialTab = (() => {
@@ -48,7 +55,16 @@ export default function SettingsPage() {
 
       <div className="flex gap-1.5 flex-wrap mb-6">
         {isAdmin
-          ? ADMIN_TABS.map(t => <button key={t.id} className={tabClass(t.id)} onClick={() => setTab(t.id)}>{t.label}</button>)
+          ? ADMIN_TABS.map(t => (
+              <button key={t.id} className={`relative ${tabClass(t.id)}`} onClick={() => setTab(t.id)}>
+                {t.label}
+                {t.badge && pendingActionsCt > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    {pendingActionsCt > 9 ? '9+' : pendingActionsCt}
+                  </span>
+                )}
+              </button>
+            ))
           : <button className={tabClass('profile')} onClick={() => setTab('profile')}>👤 Meu Perfil</button>}
       </div>
 
@@ -59,6 +75,7 @@ export default function SettingsPage() {
       {tab === 'periods'     && <TabPeriods />}
       {tab === 'schedules'   && <TabSchedules />}
       {tab === 'admin'       && <TabAdmin />}
+      {tab === 'approvals'   && <TabApprovals adminEmail={user?.email} />}
       {tab === 'profile'     && <TabProfile teacher={myTeacher} />}
     </div>
   )
@@ -1927,11 +1944,21 @@ function TabAdmin() {
 
 function PendingModal({ open, onClose }) {
   const store = useAppStore()
-  const [pending,         setPending]         = useState([])
-  const [loaded,          setLoaded]          = useState(false)
-  const [viewingSchedule, setViewingSchedule] = useState(null)
+  const [pending,            setPending]            = useState([])
+  const [loaded,             setLoaded]             = useState(false)
+  const [viewingSchedule,    setViewingSchedule]    = useState(null)
+  const [selectedProfiles,   setSelectedProfiles]   = useState({})
 
   const load = async () => { setPending(await listPendingTeachers()); setLoaded(true) }
+
+  const getProfileDesc = (profile) => {
+    const profiles = {
+      'teacher': 'Acesso ao próprio perfil e grade horária',
+      'coordinator': 'Visão total do sistema, sem aulas regulares, fora do cômputo de substituições',
+      'teacher-coordinator': 'Visão total do sistema, com aulas atribuídas, dentro do cômputo de substituições',
+    }
+    return profiles[profile] || ''
+  }
 
   return (
     <>
@@ -1946,8 +1973,8 @@ function PendingModal({ open, onClose }) {
               const scheduleCount = store.schedules.filter(s => s.teacherId === p.id).length
               const syntheticTeacher = { id: p.id, name: p.name, subjectIds: p.subjectIds ?? [] }
               return (
-                <div key={p.id} className="flex items-start gap-3 p-3 rounded-xl border border-bdr">
-                  <div className="flex-1 min-w-0">
+                <div key={p.id} className="flex flex-col gap-3 p-3 rounded-xl border border-bdr">
+                  <div>
                     <div className="font-bold text-sm truncate">{p.name}</div>
                     <div className="text-xs text-t2 truncate">{p.email}</div>
                     {p.apelido && <div className="text-xs text-t3 mt-0.5">Apelido: <span className="text-t1 font-semibold">{p.apelido}</span></div>}
@@ -1955,23 +1982,52 @@ function PendingModal({ open, onClose }) {
                       <div className="text-xs text-ok font-semibold mt-0.5">✅ {scheduleCount} horário{scheduleCount !== 1 ? 's' : ''} sugerido{scheduleCount !== 1 ? 's' : ''}</div>
                     )}
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    {scheduleCount > 0 && (
-                      <>
-                        <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: true })}>👁 Ver</button>
-                        <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: false })}>✏️ Grade</button>
-                      </>
-                    )}
-                    <button className="btn btn-dark btn-sm" onClick={async () => {
-                      await approveTeacher(p.id, store, useAppStore.setState)
-                      setPending(prev => prev.filter(x => x.id !== p.id))
-                      toast(`${p.name} aprovado`, 'ok')
-                    }}>Aprovar</button>
-                    <button className="btn btn-ghost btn-sm text-err" onClick={async () => {
-                      if (!confirm('Recusar?')) return
-                      await rejectTeacher(p.id, useAppStore.setState)
-                      setPending(prev => prev.filter(x => x.id !== p.id))
-                    }}>Recusar</button>
+                  <div className="space-y-2 py-2 border-t border-bdr">
+                    <div className="text-xs font-semibold text-t1">Tipo de Perfil:</div>
+                    <div className="space-y-1">
+                      {['teacher', 'coordinator', 'teacher-coordinator'].map(profile => (
+                        <label key={profile} className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name={`profile-${p.id}`}
+                            value={profile}
+                            checked={selectedProfiles[p.id] === profile}
+                            onChange={() => setSelectedProfiles(prev => ({ ...prev, [p.id]: profile }))}
+                            className="mt-0.5"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-semibold">
+                              {profile === 'teacher' && 'Professor'}
+                              {profile === 'coordinator' && 'Coordenador Geral'}
+                              {profile === 'teacher-coordinator' && 'Professor Coordenador'}
+                            </div>
+                            <div className="text-xs text-t3">{getProfileDesc(profile)}</div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 pt-2">
+                    <div className="flex-1" />
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      {scheduleCount > 0 && (
+                        <>
+                          <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: true })}>👁 Ver</button>
+                          <button className="btn btn-ghost btn-xs" onClick={() => setViewingSchedule({ teacher: syntheticTeacher, readOnly: false })}>✏️ Grade</button>
+                        </>
+                      )}
+                      <button className="btn btn-dark btn-sm" onClick={async () => {
+                        const profile = selectedProfiles[p.id] || 'teacher'
+                        await approveTeacher(p.id, store, useAppStore.setState, profile)
+                        setPending(prev => prev.filter(x => x.id !== p.id))
+                        toast(`${p.name} aprovado`, 'ok')
+                      }}>Aprovar</button>
+                      <button className="btn btn-ghost btn-sm text-err" onClick={async () => {
+                        if (!confirm('Recusar?')) return
+                        await rejectTeacher(p.id, useAppStore.setState)
+                        setPending(prev => prev.filter(x => x.id !== p.id))
+                      }}>Recusar</button>
+                    </div>
                   </div>
                 </div>
               )
@@ -2140,6 +2196,205 @@ function TabProfile({ teacher }) {
         store={store}
       />
       <SubjectChangeModal ctx={subjectChangeCtx} />
+    </div>
+  )
+}
+
+// ─── Aprovações Pendentes ─────────────────────────────────────────────────────
+
+function timeAgo(ts) {
+  const ms = Date.now() - (ts?.toDate?.() ?? new Date(ts)).getTime()
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1) return 'agora mesmo'
+  if (mins < 60) return `há ${mins} min`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `há ${hrs}h`
+  const days = Math.floor(hrs / 24)
+  return `há ${days} dia${days !== 1 ? 's' : ''}`
+}
+
+function RejectModal({ open, onClose, onConfirm }) {
+  const [reason, setReason] = useState('')
+  const handleConfirm = () => { onConfirm(reason.trim() || null); setReason('') }
+  const handleClose   = () => { setReason(''); onClose() }
+  return (
+    <Modal open={open} onClose={handleClose} title="Rejeitar Ação" size="sm">
+      <div className="space-y-4">
+        <p className="text-sm text-t2">Informe um motivo para a rejeição (opcional):</p>
+        <textarea
+          className="inp w-full text-sm resize-none"
+          rows={3}
+          placeholder="Motivo da rejeição…"
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+        />
+        <div className="flex gap-2 justify-end">
+          <button className="btn" onClick={handleClose}>Cancelar</button>
+          <button className="btn bg-red-600 text-white hover:bg-red-700 border-red-600" onClick={handleConfirm}>
+            Confirmar Rejeição
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function PendingActionCard({ action, onApprove, onReject }) {
+  const [expanded, setExpanded] = useState(false)
+  const [rejectOpen, setRejectOpen] = useState(false)
+  const [approving, setApproving]   = useState(false)
+
+  const handleApprove = async () => {
+    setApproving(true)
+    await onApprove(action)
+    setApproving(false)
+  }
+
+  return (
+    <div className="rounded-xl border border-bdr p-4 space-y-3 bg-surf">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-t1 truncate">{action.summary}</div>
+          <div className="text-xs text-t2 mt-0.5">
+            <span className="font-semibold">{action.coordinatorName}</span>
+            {' · '}
+            <span>{timeAgo(action.createdAt)}</span>
+          </div>
+        </div>
+        <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-warn/10 text-warn border border-warn/20 uppercase tracking-wide">
+          Pendente
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          className="btn btn-dark text-xs py-1 px-3"
+          onClick={handleApprove}
+          disabled={approving}
+        >
+          {approving ? '…' : '✅ Aprovar'}
+        </button>
+        <button
+          className="btn text-xs py-1 px-3 bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+          onClick={() => setRejectOpen(true)}
+        >
+          ❌ Rejeitar
+        </button>
+        <button
+          className="btn text-xs py-1 px-3"
+          onClick={() => setExpanded(v => !v)}
+        >
+          {expanded ? '▲ Ocultar' : '▼ Ver detalhes'}
+        </button>
+      </div>
+
+      {expanded && (
+        <pre className="text-[11px] bg-surf2 rounded-lg p-3 overflow-x-auto text-t2 leading-relaxed border border-bdr">
+          {JSON.stringify(action.payload, null, 2)}
+        </pre>
+      )}
+
+      <RejectModal
+        open={rejectOpen}
+        onClose={() => setRejectOpen(false)}
+        onConfirm={(reason) => { setRejectOpen(false); onReject(action, reason) }}
+      />
+    </div>
+  )
+}
+
+function TabApprovals({ adminEmail }) {
+  const store = useAppStore()
+  const [actions, setActions] = useState([])
+  const [loaded,  setLoaded]  = useState(false)
+  const [error,   setError]   = useState(false)
+
+  const ACTION_MAP = {
+    addTeacher:           (p) => store.addTeacher(p.name, p.opts),
+    updateTeacher:        (p) => store.updateTeacher(p.id, p.changes),
+    removeTeacher:        (p) => store.removeTeacher(p.id),
+    addSchedule:          (p) => store.addSchedule(p.sched),
+    removeSchedule:       (p) => store.removeSchedule(p.id),
+    updateSchedule:       (p) => store.updateSchedule(p.id, p.changes),
+    addSegment:           (p) => store.addSegment(p.name, p.turno),
+    removeSegment:        (p) => store.removeSegment(p.id),
+    addGrade:             (p) => store.addGrade(p.segId, p.gradeName),
+    removeGrade:          (p) => store.removeGrade(p.segId, p.gradeName),
+    addClassToGrade:      (p) => store.addClassToGrade(p.segId, p.gradeName, p.letter),
+    removeClassFromGrade: (p) => store.removeClassFromGrade(p.segId, p.gradeName, p.letter),
+    savePeriodCfg:        (p) => store.savePeriodCfg(p.segId, p.turno, p.cfg),
+    addArea:              (p) => store.addArea(p.name, p.colorIdx, p.segmentIds, p.shared),
+    updateArea:           (p) => store.updateArea(p.id, p.changes),
+    removeArea:           (p) => store.removeArea(p.id),
+    addSubject:           (p) => store.addSubject(p.name, p.areaId),
+    removeSubject:        (p) => store.removeSubject(p.id),
+    saveAreaWithSubjects: (p) => store.saveAreaWithSubjects(p.areaId, p.name, p.subjectNames),
+    setWorkload:          (p) => store.setWorkload(p.warn, p.danger),
+  }
+
+  const load = async () => {
+    setError(false)
+    try { setActions(await getPendingActions()); setLoaded(true) }
+    catch { setError(true); setLoaded(true) }
+  }
+  useEffect(() => { load() }, [])
+
+  const handleApprove = async (action) => {
+    const executor = ACTION_MAP[action.action]
+    if (!executor) {
+      toast(`Ação desconhecida: ${action.action}`, 'error')
+      return
+    }
+    try {
+      await executor(action.payload)
+    } catch (e) {
+      console.error('[approve] store action failed:', e)
+      toast('Erro ao executar ação', 'error')
+      return
+    }
+    try {
+      await approvePendingAction(action.id, adminEmail)
+    } catch (e) {
+      console.error('[approve] failed to mark as approved:', e)
+      toast('Erro ao registrar aprovação', 'error')
+      return
+    }
+    setActions(prev => prev.filter(a => a.id !== action.id))
+    toast('Ação aprovada e executada', 'ok')
+  }
+
+  const handleReject = async (action, reason) => {
+    try {
+      await rejectPendingAction(action.id, adminEmail, reason)
+      setActions(prev => prev.filter(a => a.id !== action.id))
+      toast('Ação rejeitada', 'warn')
+    } catch { toast('Erro ao rejeitar', 'error') }
+  }
+
+  if (!loaded) return <div className="text-center py-12 text-t3 text-sm">Carregando…</div>
+
+  if (error) return (
+    <div className="text-center py-12 space-y-3">
+      <div className="text-t3 text-sm">Erro ao carregar aprovações pendentes.</div>
+      <button className="btn btn-dark" onClick={load}>Tentar novamente</button>
+    </div>
+  )
+
+  if (actions.length === 0) return (
+    <div className="text-center py-12 text-t3 text-sm">✅ Nenhuma aprovação pendente.</div>
+  )
+
+  return (
+    <div className="space-y-3 max-w-2xl">
+      <div className="text-xs text-t3 mb-1">{actions.length} ação{actions.length !== 1 ? 'ões' : ''} aguardando aprovação</div>
+      {actions.map(a => (
+        <PendingActionCard
+          key={a.id}
+          action={a}
+          onApprove={handleApprove}
+          onReject={handleReject}
+        />
+      ))}
     </div>
   )
 }

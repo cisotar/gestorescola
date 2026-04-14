@@ -20,8 +20,9 @@ import Toast from './components/ui/Toast'
 import Spinner from './components/ui/Spinner'
 
 export default function App() {
-  const { loading, role, init } = useAuthStore()
-  const isAdmin = role === 'admin'
+  const { loading, role, init, isCoordinator } = useAuthStore()
+  const isAdmin        = role === 'admin'
+  const canAccessAdmin = isAdmin || isCoordinator()
   const { hydrate, setTeachers, teachers, loaded } = useAppStore()
 
   // 1. Carrega Firestore e inicia listeners em tempo real
@@ -79,7 +80,7 @@ export default function App() {
     <>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<Navigate to={isAdmin ? '/dashboard' : '/home'} replace />} />
+          <Route index element={<Navigate to={canAccessAdmin ? '/dashboard' : '/home'} replace />} />
           <Route path="/home"      element={<HomePage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/calendar"      element={<CalendarPage />} />
@@ -90,7 +91,7 @@ export default function App() {
           <Route path="/workload"  element={<WorkloadPage />} />
           <Route path="/schedule"  element={<SchedulePage />} />
           <Route path="/school-schedule" element={<SchoolSchedulePage />} />
-          <Route path="*"          element={<Navigate to={isAdmin ? '/dashboard' : '/home'} replace />} />
+          <Route path="*"          element={<Navigate to={canAccessAdmin ? '/dashboard' : '/home'} replace />} />
         </Route>
       </Routes>
       <Toast />

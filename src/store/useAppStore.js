@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { uid } from '../lib/helpers'
-import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener, saveConfig } from '../lib/db'
+import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener, saveConfig, submitPendingAction } from '../lib/db'
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import {
@@ -9,6 +9,8 @@ import {
   deleteAbsenceSlot as _deleteAbsenceSlot,
   deleteAbsence as _deleteAbsence,
 } from '../lib/absences'
+import { toast } from '../hooks/useToast'
+import useAuthStore from './useAuthStore'
 
 // ─── Debounce Timer ─────────────────────────────────────────────────────────
 let saveTimer = null
@@ -67,6 +69,23 @@ const useAppStore = create((set, get) => {
     }, 2000)
   }
 
+  // ─── Approval helpers (coordenador workflow) ─────────────────────────────
+  const _isCoordinator = () => {
+    try { return useAuthStore.getState().isCoordinator() } catch { return false }
+  }
+  const _coordinatorCtx = () => {
+    const auth = useAuthStore.getState()
+    return { coordinatorId: auth.teacher?.id ?? '', coordinatorName: auth.teacher?.name ?? '' }
+  }
+  const _submitApproval = async (action, payload, summary) => {
+    try {
+      await submitPendingAction({ ..._coordinatorCtx(), action, payload, summary })
+      toast('Solicitação enviada para aprovação do ADM', 'warn')
+    } catch {
+      toast('Erro ao enviar solicitação', 'error')
+    }
+  }
+
   return {
     ...INITIAL_STATE,
 
@@ -92,7 +111,8 @@ const useAppStore = create((set, get) => {
     },
 
   // ─── Segmentos ──────────────────────────────────────────────────────────────
-  addSegment: (name, turno = 'manha') => {
+  addSegment: async (name, turno = 'manha') => {
+    if (_isCoordinator()) return _submitApproval('addSegment', { name, turno }, `Adicionar segmento ${name.trim()}`)
     const seg = { id: uid(), name: name.trim(), turno, grades: [] }
     set(s => ({
       segments: [...s.segments, seg],
@@ -100,7 +120,9 @@ const useAppStore = create((set, get) => {
     }))
     saveConfig(get())
   },
-  removeSegment: (id) => {
+  removeSegment: async (id) => {
+    const seg = get().segments.find(s => s.id === id)
+    if (_isCoordinator()) return _submitApproval('removeSegment', { id }, `Remover segmento ${seg?.name ?? id}`)
     set(s => {
       const { [id]: _, ...rest } = s.periodConfigs
       return { segments: s.segments.filter(x => x.id !== id), periodConfigs: rest }
@@ -120,7 +142,8 @@ const useAppStore = create((set, get) => {
     }))
     saveConfig(get())
   },
-  addGrade: (segId, gradeName) => {
+  addGrade: async (segId, gradeName) => {
+    if (_isCoordinator()) return _submitApproval('addGrade', { segId, gradeName }, `Adicionar série ${gradeName.trim()}`)
     set(s => ({
       segments: s.segments.map(seg =>
         seg.id !== segId || seg.grades.find(g => g.name === gradeName.trim())
@@ -130,7 +153,8 @@ const useAppStore = create((set, get) => {
     }))
     saveConfig(get())
   },
-  removeGrade: (segId, gradeName) => {
+  removeGrade: async (segId, gradeName) => {
+    if (_isCoordinator()) return _submitApproval('removeGrade', { segId, gradeName }, `Remover série ${gradeName}`)
     set(s => ({
       segments: s.segments.map(seg =>
         seg.id !== segId ? seg : { ...seg, grades: seg.grades.filter(g => g.name !== gradeName) }
@@ -138,8 +162,9 @@ const useAppStore = create((set, get) => {
     }))
     saveConfig(get())
   },
-  addClassToGrade: (segId, gradeName, letter) => {
+  addClassToGrade: async (segId, gradeName, letter) => {
     const up = letter.trim().toUpperCase()
+    if (_isCoordinator()) return _submitApproval('addClassToGrade', { segId, gradeName, letter: up }, `Adicionar turma ${gradeName}${up}`)
     set(s => ({
       segments: s.segments.map(seg => {
         if (seg.id !== segId) return seg
@@ -156,7 +181,8 @@ const useAppStore = create((set, get) => {
     }))
     saveConfig(get())
   },
-  removeClassFromGrade: (segId, gradeName, letter) => {
+  removeClassFromGrade: async (segId, gradeName, letter) => {
+    if (_isCoordinator()) return _submitApproval('removeClassFromGrade', { segId, gradeName, letter }, `Remover turma ${gradeName}${letter}`)
     set(s => ({
       segments: s.segments.map(seg =>
         seg.id !== segId ? seg : {
@@ -171,7 +197,8 @@ const useAppStore = create((set, get) => {
   },
 
   // ─── Períodos ───────────────────────────────────────────────────────────────
-  savePeriodCfg: (segId, turno, cfg) => {
+  savePeriodCfg: async (segId, turno, cfg) => {
+    if (_isCoordinator()) return _submitApproval('savePeriodCfg', { segId, turno, cfg }, 'Atualizar períodos do segmento')
     set(s => ({
       periodConfigs: {
         ...s.periodConfigs,
@@ -182,17 +209,22 @@ const useAppStore = create((set, get) => {
   },
 
   // ─── Áreas ──────────────────────────────────────────────────────────────────
-  addArea: (name, colorIdx, segmentIds = [], shared = false) => {
+  addArea: async (name, colorIdx, segmentIds = [], shared = false) => {
+    if (_isCoordinator()) return _submitApproval('addArea', { name, colorIdx, segmentIds, shared }, `Adicionar área ${name.trim()}`)
     set(s => ({
       areas: [...s.areas, { id: uid(), name: name.trim(), colorIdx, segmentIds, shared }],
     }))
     saveConfig(get())
   },
-  updateArea: (id, changes) => {
+  updateArea: async (id, changes) => {
+    const area = get().areas.find(a => a.id === id)
+    if (_isCoordinator()) return _submitApproval('updateArea', { id, changes }, `Editar área ${area?.name ?? id}`)
     set(s => ({ areas: s.areas.map(a => a.id === id ? { ...a, ...changes } : a) }))
     saveConfig(get())
   },
-  removeArea: (id) => {
+  removeArea: async (id) => {
+    const area = get().areas.find(a => a.id === id)
+    if (_isCoordinator()) return _submitApproval('removeArea', { id }, `Remover área ${area?.name ?? id}`)
     set(s => {
       const removedSubjIds = new Set(s.subjects.filter(x => x.areaId === id).map(x => x.id))
       return {
@@ -205,18 +237,22 @@ const useAppStore = create((set, get) => {
   },
 
   // ─── Matérias ────────────────────────────────────────────────────────────────
-  addSubject: (name, areaId) => {
+  addSubject: async (name, areaId) => {
+    if (_isCoordinator()) return _submitApproval('addSubject', { name, areaId }, `Adicionar disciplina ${name.trim()}`)
     set(s => ({ subjects: [...s.subjects, { id: uid(), name: name.trim(), areaId }] }))
     saveConfig(get())
   },
-  removeSubject: (id) => {
+  removeSubject: async (id) => {
+    const subj = get().subjects.find(x => x.id === id)
+    if (_isCoordinator()) return _submitApproval('removeSubject', { id }, `Remover disciplina ${subj?.name ?? id}`)
     set(s => ({
       subjects: s.subjects.filter(x => x.id !== id),
       teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => sid !== id) })),
     }))
     saveConfig(get())
   },
-  saveAreaWithSubjects: (areaId, name, subjectNames) => {
+  saveAreaWithSubjects: async (areaId, name, subjectNames) => {
+    if (_isCoordinator()) return _submitApproval('saveAreaWithSubjects', { areaId, name, subjectNames }, `Atualizar área ${name} e disciplinas`)
     set(s => {
       const existing = s.subjects.filter(x => x.areaId === areaId)
       const toRemove = existing.filter(x => !subjectNames.includes(x.name)).map(x => x.id)
@@ -253,13 +289,16 @@ const useAppStore = create((set, get) => {
   setAbsences: (absences) => set({ absences }),
   setHistory: (history) => set({ history }),
 
-  addTeacher: (name, opts = {}) => {
+  addTeacher: async (name, opts = {}) => {
+    if (_isCoordinator()) return _submitApproval('addTeacher', { name, opts }, `Adicionar professor ${name.trim()}`)
     const teacher = { id: uid(), name: name.trim(), subjectIds: opts.subjectIds ?? [],
       email: opts.email ?? '', whatsapp: '', celular: opts.celular ?? '', status: 'approved' }
     set(s => ({ teachers: [...s.teachers, teacher] }))
     saveDoc('teachers', teacher)
   },
-  updateTeacher: (id, changes) => {
+  updateTeacher: async (id, changes) => {
+    const teacher = get().teachers.find(t => t.id === id)
+    if (_isCoordinator()) return _submitApproval('updateTeacher', { id, changes }, `Editar professor ${teacher?.name ?? id}`)
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
     updateDocById('teachers', id, changes)
   },
@@ -267,7 +306,9 @@ const useAppStore = create((set, get) => {
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
     await patchTeacherSelf(id, changes)
   },
-  removeTeacher: (id) => {
+  removeTeacher: async (id) => {
+    const teacher = get().teachers.find(t => t.id === id)
+    if (_isCoordinator()) return _submitApproval('removeTeacher', { id }, `Remover professor ${teacher?.name ?? id}`)
     const schedulesToDelete = get().schedules.filter(x => x.teacherId === id)
     set(s => ({
       teachers:  s.teachers.filter(t => t.id !== id),
@@ -278,16 +319,20 @@ const useAppStore = create((set, get) => {
   },
 
   // ─── Horários ────────────────────────────────────────────────────────────────
-  addSchedule: (sched) => {
+  addSchedule: async (sched) => {
+    if (_isCoordinator()) return _submitApproval('addSchedule', { sched }, `Adicionar aula ${sched.turma ?? ''}`)
     const item = { id: uid(), ...sched }
     set(s => ({ schedules: [...s.schedules, item] }))
     saveDoc('schedules', item)
   },
-  removeSchedule: (id) => {
+  removeSchedule: async (id) => {
+    const sched = get().schedules.find(x => x.id === id)
+    if (_isCoordinator()) return _submitApproval('removeSchedule', { id }, `Remover aula ${sched?.turma ?? id}`)
     set(s => ({ schedules: s.schedules.filter(x => x.id !== id) }))
     deleteDocById('schedules', id)
   },
-  updateSchedule: (id, changes) => {
+  updateSchedule: async (id, changes) => {
+    if (_isCoordinator()) return _submitApproval('updateSchedule', { id, changes }, 'Atualizar horário')
     set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...changes } : x) }))
     updateDocById('schedules', id, changes)
   },
@@ -429,7 +474,8 @@ const useAppStore = create((set, get) => {
 
 
   // ─── Config ───────────────────────────────────────────────────────────────────
-  setWorkload: (warn, danger) => {
+  setWorkload: async (warn, danger) => {
+    if (_isCoordinator()) return _submitApproval('setWorkload', { warn, danger }, 'Atualizar limites de carga horária')
     set({ workloadWarn: warn, workloadDanger: danger })
     saveConfig(get())
   },

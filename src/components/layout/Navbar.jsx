@@ -18,9 +18,10 @@ function MobileMenuLink({ to, onClick, children }) {
 }
 
 export default function Navbar() {
-  const { user, role, logout, pendingCt } = useAuthStore()
-  const navigate = useNavigate()
-  const isAdmin   = role === 'admin'
+  const { user, role, logout, pendingCt, isCoordinator } = useAuthStore()
+  const navigate       = useNavigate()
+  const isAdmin        = role === 'admin'
+  const canAccessAdmin = isAdmin || isCoordinator()
   const firstName = user?.displayName?.split(' ')[0] ?? 'Usuário'
   const photo     = user?.photoURL
 
@@ -40,7 +41,7 @@ export default function Navbar() {
 
         {/* Logo — sempre visível */}
         <NavLink
-          to={isAdmin ? '/dashboard' : '/home'}
+          to={canAccessAdmin ? '/dashboard' : '/home'}
           className="font-extrabold text-lg tracking-tight text-white shrink-0"
         >
           <span className="text-accent">Gestão</span>Escolar
@@ -48,9 +49,16 @@ export default function Navbar() {
 
         {/* Tabs — só desktop */}
         <div className="hidden md:flex items-center gap-1 flex-1">
-          <NavLink to={isAdmin ? '/dashboard' : '/home'} className={linkClass}>🏠 Início</NavLink>
-          <NavLink to="/absences" className={linkClass}>📋 Relatório de Ausências</NavLink>
+          <NavLink to={canAccessAdmin ? '/dashboard' : '/home'} className={linkClass}>🏠 Início</NavLink>
+          <NavLink to="/absences" className={linkClass}>📋 Ausências</NavLink>
           <NavLink to="/substitutions" className={linkClass}>🔄 Substituições</NavLink>
+          {canAccessAdmin && (
+            <>
+              <NavLink to="/calendar" className={linkClass}>📅 Calendário</NavLink>
+              <NavLink to="/workload" className={linkClass}>⚖️ Carga</NavLink>
+              <NavLink to="/school-schedule" className={linkClass}>🏫 Grade Escolar</NavLink>
+            </>
+          )}
         </div>
 
         {/* Auth bar — só desktop */}
@@ -73,7 +81,7 @@ export default function Navbar() {
           <NavLink
             to="/settings"
             className="relative w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors text-base"
-            title={isAdmin ? 'Configurações' : 'Meu Perfil'}
+            title={canAccessAdmin ? 'Configurações' : 'Meu Perfil'}
           >
             ⚙️
             {isAdmin && pendingCt > 0 && (
@@ -142,11 +150,18 @@ export default function Navbar() {
 
             {/* Links de navegação */}
             <div className="py-1">
-              <MobileMenuLink to={isAdmin ? '/dashboard' : '/home'} onClick={closeMenu}>🏠 Início</MobileMenuLink>
-              <MobileMenuLink to="/absences" onClick={closeMenu}>📋 Relatório de Ausências</MobileMenuLink>
+              <MobileMenuLink to={canAccessAdmin ? '/dashboard' : '/home'} onClick={closeMenu}>🏠 Início</MobileMenuLink>
+              <MobileMenuLink to="/absences" onClick={closeMenu}>📋 Ausências</MobileMenuLink>
               <MobileMenuLink to="/substitutions" onClick={closeMenu}>🔄 Substituições</MobileMenuLink>
+              {canAccessAdmin && (
+                <>
+                  <MobileMenuLink to="/calendar" onClick={closeMenu}>📅 Calendário</MobileMenuLink>
+                  <MobileMenuLink to="/workload" onClick={closeMenu}>⚖️ Carga Horária</MobileMenuLink>
+                  <MobileMenuLink to="/school-schedule" onClick={closeMenu}>🏫 Grade Escolar</MobileMenuLink>
+                </>
+              )}
               <MobileMenuLink to="/settings" onClick={closeMenu}>
-                ⚙️ {isAdmin ? 'Configurações' : 'Meu Perfil'}
+                ⚙️ {canAccessAdmin ? 'Configurações' : 'Meu Perfil'}
                 {isAdmin && pendingCt > 0 && (
                   <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center">
                     {pendingCt > 9 ? '9+' : pendingCt}

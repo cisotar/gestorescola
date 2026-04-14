@@ -86,7 +86,7 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
   }
 
   const candidates = teachers
-    .filter(t => t.id !== absentTeacherId && !isBusy(t.id, date, timeSlot, schedules, absences))
+    .filter(t => t.id !== absentTeacherId && t.profile !== 'coordinator' && !isBusy(t.id, date, timeSlot, schedules, absences))
     .map(t => {
       const score = scoreOf(t)
       return {

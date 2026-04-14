@@ -1,8 +1,9 @@
 import { db } from './firebase'
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  collection, writeBatch, serverTimestamp, query, where, onSnapshot,
+  collection, writeBatch, serverTimestamp, query, where, onSnapshot, orderBy,
 } from 'firebase/firestore'
+import { uid } from './helpers'
 
 const LS_KEY = 'gestao_v7_cache'
 const DEFAULT_SHARED_SERIES = [
@@ -289,7 +290,7 @@ export async function patchTeacherSelf(id, changes) {
   await updateDoc(doc(db, 'teachers', id), changes)
 }
 
-export async function approveTeacher(pendingId, state, setState) {
+export async function approveTeacher(pendingId, state, setState, profile = 'teacher') {
   const ref  = doc(db, 'pending_teachers', pendingId)
   const snap = await getDoc(ref)
   if (!snap.exists()) return
@@ -301,16 +302,16 @@ export async function approveTeacher(pendingId, state, setState) {
     teacher = {
       id: uid(), name: data.name, email: data.email, whatsapp: '',
       celular: data.celular ?? '', apelido: data.apelido ?? '',
-      subjectIds: data.subjectIds ?? [], status: 'approved',
+      subjectIds: data.subjectIds ?? [], status: 'approved', profile,
     }
     setState(s => ({ teachers: [...s.teachers, teacher] }))
   } else {
     setState(s => ({
-      teachers: s.teachers.map(t => t.id === teacher.id ? { ...t, status: 'approved' } : t),
+      teachers: s.teachers.map(t => t.id === teacher.id ? { ...t, status: 'approved', profile } : t),
     }))
   }
 
-  await setDoc(doc(db, 'teachers', teacher.id), { ...teacher, status: 'approved' })
+  await setDoc(doc(db, 'teachers', teacher.id), { ...teacher, status: 'approved', profile })
 
   // Migrar schedules do UID pendente para o novo teacher.id
   const orphanSnap = await getDocs(
@@ -443,4 +444,56 @@ function _loadFromLS() {
     }
     return cached
   } catch { return { data: {}, timestamp: null } }
+}
+
+// ─── Pending Actions (coordenador approval workflow) ───────────────────────────
+
+export async function submitPendingAction({ coordinatorId, coordinatorName, action, payload, summary }) {
+  const id = uid()
+  await setDoc(doc(db, 'pending_actions', id), {
+    id,
+    coordinatorId,
+    coordinatorName,
+    action,
+    payload,
+    summary,
+    createdAt: serverTimestamp(),
+    status: 'pending',
+    reviewedBy: null,
+    reviewedAt: null,
+    rejectionReason: null,
+  })
+  return id
+}
+
+export async function getPendingActions() {
+  const snap = await getDocs(
+    query(collection(db, 'pending_actions'), where('status', '==', 'pending'), orderBy('createdAt', 'asc'))
+  )
+  return snap.docs.map(d => d.data())
+}
+
+export async function approvePendingAction(id, adminEmail) {
+  await updateDoc(doc(db, 'pending_actions', id), {
+    status: 'approved',
+    reviewedBy: adminEmail,
+    reviewedAt: serverTimestamp(),
+  })
+}
+
+export async function rejectPendingAction(id, adminEmail, reason = null) {
+  await updateDoc(doc(db, 'pending_actions', id), {
+    status: 'rejected',
+    reviewedBy: adminEmail,
+    reviewedAt: serverTimestamp(),
+    rejectionReason: reason,
+  })
+}
+
+export function subscribePendingActionsCount(callback) {
+  return onSnapshot(
+    query(collection(db, 'pending_actions'), where('status', '==', 'pending')),
+    snap => callback(snap.size),
+    err => console.warn('[pending_actions]', err)
+  )
 }
