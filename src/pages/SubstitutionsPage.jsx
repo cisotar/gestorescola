@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { allTurmaObjects, findTurma, parseDate, colorOfTeacher, teacherSubjectNames,
@@ -127,6 +128,7 @@ function SubFilterToolbar({ store, isAdmin,
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SubstitutionsPage() {
+  const navigate          = useNavigate()
   const store             = useAppStore()
   const { role, teacher } = useAuthStore()
   const isAdmin           = role === 'admin'
@@ -288,6 +290,14 @@ export default function SubstitutionsPage() {
               ${mode === t.id ? 'bg-navy text-white border-navy' : 'bg-surf text-t2 border-bdr hover:border-t3'}`}
           >{t.label}</button>
         ))}
+        {mode === 'month' && (
+          <button
+            onClick={() => navigate('/substitutions/ranking')}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold border bg-surf text-t2 border-bdr hover:border-t3 transition-colors ml-auto"
+          >
+            🏆 Ranking
+          </button>
+        )}
       </div>
 
       <SubFilterToolbar {...filterProps} />

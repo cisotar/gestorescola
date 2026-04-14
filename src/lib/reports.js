@@ -697,7 +697,57 @@ export function generateSubstitutionRankingHTML(rankingData, month, year) {
   )
 }
 
-// ─── 13. Comprovante de Substituição ─────────────────────────────────────────
+// ─── 13. Ranking de Assiduidade Completo (com Subs, Saldo e %) ───────────────
+
+export function generateAssiduityRankingHTML(rankingData, month, year) {
+  const metaHTML = `
+    <div class="m-blk"><span class="m-lbl">Mês</span><span class="m-val">${MONTH_NAMES[month]} ${year}</span></div>
+    <div class="m-blk" style="margin-left:auto;text-align:right">
+      <span class="m-lbl">Professores</span>
+      <span class="m-val">${rankingData.length}</span>
+    </div>`
+
+  const colorFor = pct => pct >= 90 ? '#16a34a' : pct >= 75 ? '#ca8a04' : '#dc2626'
+
+  const rows = rankingData.map((row, idx) => {
+    const pct      = row.pctAssiduidade
+    const pctStr   = pct !== null ? `${pct}%` : '—'
+    const pctColor = pct !== null ? colorFor(pct) : '#a09d97'
+    const saldoColor = row.saldo < 0 ? '#dc2626' : '#1a1814'
+    return `
+    <tr>
+      <td style="text-align:center;width:36px;font-weight:700;color:#a09d97">${idx + 1}º</td>
+      <td style="font-weight:600">${row.teacher?.name ?? '—'}</td>
+      <td style="text-align:center">${row.scheduled}</td>
+      <td style="text-align:center;color:#c8290a;font-weight:700">${row.absences || '—'}</td>
+      <td style="text-align:center;color:#16a34a;font-weight:700">${row.subsRealizadas || '—'}</td>
+      <td style="text-align:center;font-weight:700;color:${saldoColor}">${row.saldo}</td>
+      <td style="text-align:center;font-weight:700;color:${pctColor}">${pctStr}</td>
+    </tr>`
+  }).join('')
+
+  const bodyHTML = rankingData.length ? `
+    <table>
+      <thead><tr>
+        <th style="width:36px;text-align:center">#</th>
+        <th>Professor</th>
+        <th style="text-align:center">Aulas Próprias</th>
+        <th style="text-align:center">Ausências</th>
+        <th style="text-align:center">Subs Realizadas</th>
+        <th style="text-align:center">Saldo</th>
+        <th style="text-align:center">% Assiduidade</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>` : '<p style="color:#a09d97;padding:20px 0">Nenhum professor no ranking.</p>'
+
+  return _wrap(
+    `Ranking de Assiduidade — ${MONTH_NAMES[month]} ${year}`,
+    metaHTML, bodyHTML,
+    'GestãoEscolar — Ranking de Assiduidade'
+  )
+}
+
+// ─── 14. Comprovante de Substituição ─────────────────────────────────────────
 
 export function generateSlotCertificateHTML(slot, absentTeacher, substituteTeacher, store) {
   // slot: { date, timeSlot, turma, subjectId }

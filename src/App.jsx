@@ -16,6 +16,7 @@ import SettingsPage from './pages/SettingsPage'
 import WorkloadPage from './pages/WorkloadPage'
 import SchedulePage from './pages/SchedulePage'
 import SchoolSchedulePage from './pages/SchoolSchedulePage'
+import RankingPage from './pages/RankingPage'
 import Toast from './components/ui/Toast'
 import Spinner from './components/ui/Spinner'
 
@@ -87,6 +88,7 @@ export default function App() {
           <Route path="/calendar/day"  element={<CalendarDayPage />} />
           <Route path="/absences"       element={<AbsencesPage />} />
           <Route path="/substitutions"  element={<SubstitutionsPage />} />
+          <Route path="/substitutions/ranking" element={<RankingPage />} />
           <Route path="/settings"  element={<SettingsPage />} />
           <Route path="/workload"  element={<WorkloadPage />} />
           <Route path="/schedule"  element={<SchedulePage />} />
