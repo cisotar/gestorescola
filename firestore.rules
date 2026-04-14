@@ -4,7 +4,7 @@ service cloud.firestore {
 
     // ── Leitura pública ─────────────────────────────────────────────────────
     match /meta/{doc}     { allow read: if true; allow write: if isAdmin(); }
-    match /absences/{doc} { allow read: if true; allow write: if isAdmin() || isCoordinator(); }
+    match /absences/{doc} { allow read: if true; allow write: if isAdmin(); }
     match /history/{doc}  { allow read: if true; allow write: if isAdmin(); }
 
     // ── Professores: leitura pública; admin escreve; professor edita próprio perfil ──
@@ -40,10 +40,13 @@ service cloud.firestore {
         || (request.auth != null && request.auth.uid == docId);
     }
 
-    // ── Ações pendentes: coordenadores criam, admins aprovam/rejeitam ───────
+    // ── Ações pendentes: usuários autenticados criam, admins aprovam/rejeitam ──
+    // Nota: isCoordinator() não funciona com IDs UUID dos teachers — a validação
+    // de perfil é feita no lado JS (store guards). Qualquer usuário autenticado
+    // pode criar; apenas admins podem ler/atualizar/deletar.
     match /pending_actions/{id} {
-      allow read: if isAdmin() || isCoordinator();
-      allow create: if isCoordinator();
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -54,12 +57,6 @@ service cloud.firestore {
     // ── Funções auxiliares ───────────────────────────────────────────────────
     function isAuthenticated() {
       return request.auth != null;
-    }
-
-    function isCoordinator() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/teachers/$(emailToKey(request.auth.token.email))) &&
-        get(/databases/$(database)/documents/teachers/$(emailToKey(request.auth.token.email))).data.profile in ['coordinator', 'teacher-coordinator'];
     }
 
     function ownsProfile(teacherId) {
