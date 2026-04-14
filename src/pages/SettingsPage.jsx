@@ -7,7 +7,7 @@ import { getCfg, gerarPeriodos, defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
-import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin, deleteDocById, subscribePendingActionsCount, getPendingActions, approvePendingAction, rejectPendingAction } from '../lib/db'
+import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin, deleteDocById, subscribePendingActionsCount, getPendingActions, approvePendingAction, rejectPendingAction, getMyPendingActions } from '../lib/db'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -2097,13 +2097,34 @@ function AdminsModal({ open, onClose }) {
 
 function TabProfile({ teacher }) {
   const store = useAppStore()
-  const { teacher: authTeacher } = useAuthStore()
+  const { teacher: authTeacher, isCoordinator } = useAuthStore()
   const t = teacher ?? authTeacher
   const [celular,          setCelular]          = useState(t?.celular ?? '')
   const [apelido,          setApelido]          = useState(t?.apelido ?? '')
   const [selSubjs,         setSelSubjs]         = useState(t?.subjectIds ?? [])
   const [schedModal,       setSchedModal]       = useState(false)
   const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
+  const [myActions,        setMyActions]        = useState([])
+  const [loadingActions,   setLoadingActions]   = useState(false)
+  const [actionsError,     setActionsError]     = useState(false)
+
+  const loadActions = async () => {
+    if (!t?.id) return
+    setLoadingActions(true)
+    setActionsError(false)
+    try {
+      const actions = await getMyPendingActions(t.id)
+      setMyActions(actions)
+    } catch {
+      setActionsError(true)
+    } finally {
+      setLoadingActions(false)
+    }
+  }
+
+  useEffect(() => {
+    if (isCoordinator()) loadActions()
+  }, [t?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!t) return <p className="text-t3 text-sm">Perfil não disponível.</p>
 
@@ -2189,6 +2210,15 @@ function TabProfile({ teacher }) {
 
       <button className="btn btn-dark" onClick={save}>Salvar alterações</button>
 
+      {isCoordinator() && (
+        <MyRequestsSection
+          actions={myActions}
+          loading={loadingActions}
+          error={actionsError}
+          onRefresh={loadActions}
+        />
+      )}
+
       <ScheduleGridModal
         open={schedModal}
         onClose={() => setSchedModal(false)}
@@ -2196,6 +2226,66 @@ function TabProfile({ teacher }) {
         store={store}
       />
       <SubjectChangeModal ctx={subjectChangeCtx} />
+    </div>
+  )
+}
+
+// ─── Minhas Solicitações (coordenador) ───────────────────────────────────────
+
+const STATUS_BADGE = {
+  pending:  { label: 'Pendente',  cls: 'bg-amber-100 text-amber-800 border-amber-300' },
+  approved: { label: 'Aprovada',  cls: 'bg-green-100 text-green-800 border-green-300' },
+  rejected: { label: 'Rejeitada', cls: 'bg-red-100 text-red-800 border-red-300' },
+}
+
+function myTimeAgo(ts) {
+  if (!ts) return '—'
+  const ms = Date.now() - (ts?.toDate?.() ?? new Date(ts)).getTime()
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1) return 'agora mesmo'
+  if (mins < 60) return `há ${mins} min`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `há ${hrs}h`
+  const days = Math.floor(hrs / 24)
+  return `há ${days} dia${days !== 1 ? 's' : ''}`
+}
+
+function MyRequestsSection({ actions, loading, error, onRefresh }) {
+  const badge = (status) => STATUS_BADGE[status] ?? { label: status, cls: 'bg-gray-100 text-gray-700 border-gray-300' }
+  return (
+    <div className="pt-4 border-t border-bdr space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-bold text-sm">Minhas Solicitações</h3>
+        <button className="btn btn-sm btn-ghost text-xs" onClick={onRefresh} disabled={loading}>
+          {loading ? 'Carregando…' : 'Atualizar'}
+        </button>
+      </div>
+
+      {error && (
+        <p className="text-sm text-red-600">Erro ao carregar solicitações.</p>
+      )}
+
+      {!loading && !error && actions.length === 0 && (
+        <p className="text-sm text-t3">Nenhuma solicitação enviada ainda.</p>
+      )}
+
+      {actions.map(a => {
+        const b = badge(a.status)
+        return (
+          <div key={a.id} className="rounded-xl border border-bdr p-3 space-y-1 bg-surf">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-medium leading-snug">{a.summary}</p>
+              <span className={`shrink-0 text-xs border rounded-full px-2 py-0.5 font-semibold ${b.cls}`}>
+                {b.label}
+              </span>
+            </div>
+            <p className="text-xs text-t3">{myTimeAgo(a.createdAt)}</p>
+            {a.status === 'rejected' && a.rejectionReason && (
+              <p className="text-xs text-red-600 mt-1">Motivo: {a.rejectionReason}</p>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

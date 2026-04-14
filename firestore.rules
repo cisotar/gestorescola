@@ -45,7 +45,7 @@ service cloud.firestore {
     // de perfil é feita no lado JS (store guards). Qualquer usuário autenticado
     // pode criar; apenas admins podem ler/atualizar/deletar.
     match /pending_actions/{id} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || isAuthenticated();
       allow create: if isAuthenticated();
       allow update: if isAdmin();
       allow delete: if isAdmin();

@@ -1,7 +1,7 @@
 import { db } from './firebase'
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
-  collection, writeBatch, serverTimestamp, query, where, onSnapshot, orderBy,
+  collection, writeBatch, serverTimestamp, query, where, onSnapshot, orderBy, limit,
 } from 'firebase/firestore'
 import { uid } from './helpers'
 
@@ -469,6 +469,18 @@ export async function submitPendingAction({ coordinatorId, coordinatorName, acti
 export async function getPendingActions() {
   const snap = await getDocs(
     query(collection(db, 'pending_actions'), where('status', '==', 'pending'), orderBy('createdAt', 'asc'))
+  )
+  return snap.docs.map(d => d.data())
+}
+
+export async function getMyPendingActions(coordinatorId) {
+  const snap = await getDocs(
+    query(
+      collection(db, 'pending_actions'),
+      where('coordinatorId', '==', coordinatorId),
+      orderBy('createdAt', 'desc'),
+      limit(20)
+    )
   )
   return snap.docs.map(d => d.data())
 }
