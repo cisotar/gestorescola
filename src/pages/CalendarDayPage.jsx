@@ -173,8 +173,9 @@ export default function CalendarDayPage() {
   const navigate  = useNavigate()
   const location  = useLocation()
   const store     = useAppStore()
-  const { role }  = useAuthStore()
+  const { role, isCoordinator } = useAuthStore()
   const isAdmin   = role === 'admin'
+  const canManage = isAdmin || isCoordinator()
 
   const { createAbsence, assignSubstitute, deleteAbsenceSlot, clearDaySubstitutes, clearDayAbsences } = useAppStore()
 
@@ -343,8 +344,8 @@ export default function CalendarDayPage() {
         ))}
       </div>
 
-      {/* Ações rápidas (admin) */}
-      {isAdmin && dayMine.length > 0 && (
+      {/* Ações rápidas (admin/coordinator) */}
+      {canManage && dayMine.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-4 p-3 bg-surf2 rounded-xl">
           {!allAbsent && (
             <button className="btn btn-dark btn-sm" onClick={handleMarkAll}>Marcar dia inteiro</button>
@@ -365,7 +366,7 @@ export default function CalendarDayPage() {
       )}
 
       {/* Toggle de regra — aparece quando há faltas sem substituto */}
-      {isAdmin && anyAbsent && !allHasSub && (
+      {canManage && anyAbsent && !allHasSub && (
         <div className="mt-4">
           <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
         </div>
@@ -417,7 +418,7 @@ export default function CalendarDayPage() {
                                   {sub ? (
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
-                                      {isAdmin && (
+                                      {canManage && (
                                         <SubPicker
                                           absenceId={abs.absenceId} slotId={abs.slotId}
                                           teacherId={teacher.id} date={activeDate} slot={p.slot}
@@ -427,7 +428,7 @@ export default function CalendarDayPage() {
                                       )}
                                     </div>
                                   ) : (
-                                    isAdmin && (
+                                    canManage && (
                                       <SubPicker
                                         absenceId={abs.absenceId} slotId={abs.slotId}
                                         teacherId={teacher.id} date={activeDate} slot={p.slot}
@@ -446,7 +447,7 @@ export default function CalendarDayPage() {
                         </div>
 
                         {/* Ações */}
-                        {isAdmin && sched && (
+                        {canManage && sched && (
                           <div className="shrink-0 flex-shrink-0">
                             {abs ? (
                               <button

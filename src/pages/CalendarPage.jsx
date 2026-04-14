@@ -434,8 +434,9 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
 
 export default function CalendarPage() {
   const store    = useAppStore()
-  const { role } = useAuthStore()
-  const isAdmin  = role === 'admin'
+  const { role, isCoordinator } = useAuthStore()
+  const isAdmin   = role === 'admin'
+  const canManage = isAdmin || isCoordinator()
   const navigate = useNavigate()
 
   const [selectedTeacher, setSelectedTeacher] = useState(null)
@@ -610,7 +611,7 @@ export default function CalendarPage() {
             </div>
 
             {/* Marcar período (admin) */}
-            {isAdmin && <RangeAbsenceBar teacher={teacher} dates={dates} store={store} />}
+            {canManage && <RangeAbsenceBar teacher={teacher} dates={dates} store={store} />}
           </div>
         ) : (
           <div className="flex items-center justify-center h-48 text-t3">
@@ -626,7 +627,7 @@ export default function CalendarPage() {
       <DayModal
         open={!!modalDate} onClose={() => setModalDate(null)}
         date={modalDate} teacher={teacher}
-        store={store} isAdmin={isAdmin}
+        store={store} isAdmin={canManage}
       />
     </div>
   )

@@ -4,7 +4,7 @@ service cloud.firestore {
 
     // ── Leitura pública ─────────────────────────────────────────────────────
     match /meta/{doc}     { allow read: if true; allow write: if isAdmin(); }
-    match /absences/{doc} { allow read: if true; allow write: if isAdmin(); }
+    match /absences/{doc} { allow read: if true; allow write: if isAuthenticated(); }
     match /history/{doc}  { allow read: if true; allow write: if isAdmin(); }
 
     // ── Professores: leitura pública; admin escreve; professor edita próprio perfil ──
