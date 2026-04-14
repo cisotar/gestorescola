@@ -12,7 +12,7 @@ import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmin
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const { role, user, teacher: myTeacher } = useAuthStore()
+  const { role, user, teacher: myTeacher, isCoordinator } = useAuthStore()
   const isAdmin = role === 'admin'
   const location = useLocation()
 
@@ -31,6 +31,11 @@ export default function SettingsPage() {
     { id: 'schedules',   label: '🗓 Horários' },
     { id: 'admin',       label: '✅ Aprovação' },
     { id: 'approvals',   label: '🔔 Aprovações', badge: true },
+  ]
+
+  const COORDINATOR_TABS = [
+    { id: 'profile',      label: '👤 Meu Perfil' },
+    { id: 'my-schedules', label: '🗓 Minhas Aulas' },
   ]
 
   const initialTab = (() => {
@@ -65,18 +70,23 @@ export default function SettingsPage() {
                 )}
               </button>
             ))
-          : <button className={tabClass('profile')} onClick={() => setTab('profile')}>👤 Meu Perfil</button>}
+          : isCoordinator()
+            ? COORDINATOR_TABS.map(t => (
+                <button key={t.id} className={tabClass(t.id)} onClick={() => setTab(t.id)}>{t.label}</button>
+              ))
+            : <button className={tabClass('profile')} onClick={() => setTab('profile')}>👤 Meu Perfil</button>}
       </div>
 
-      {tab === 'segments'    && <TabSegments />}
-      {tab === 'disciplines' && <TabDisciplines />}
+      {tab === 'segments'     && <TabSegments />}
+      {tab === 'disciplines'  && <TabDisciplines />}
       {tab === 'sharedseries' && <TabSharedSeries />}
-      {tab === 'teachers'    && <TabTeachers />}
-      {tab === 'periods'     && <TabPeriods />}
-      {tab === 'schedules'   && <TabSchedules />}
-      {tab === 'admin'       && <TabAdmin />}
-      {tab === 'approvals'   && <TabApprovals adminEmail={user?.email} />}
-      {tab === 'profile'     && <TabProfile teacher={myTeacher} />}
+      {tab === 'teachers'     && <TabTeachers />}
+      {tab === 'periods'      && <TabPeriods />}
+      {tab === 'schedules'    && <TabSchedules />}
+      {tab === 'admin'        && <TabAdmin />}
+      {tab === 'approvals'    && <TabApprovals adminEmail={user?.email} />}
+      {tab === 'profile'      && <TabProfile teacher={myTeacher} />}
+      {tab === 'my-schedules' && <TabMySchedules />}
     </div>
   )
 }
@@ -1557,6 +1567,23 @@ function TabSchedules() {
       </div>
 
       {teacher && <ScheduleGrid teacher={teacher} store={store} />}
+    </div>
+  )
+}
+
+// ─── Tab: Minhas Aulas (coordenador) ─────────────────────────────────────────
+
+function TabMySchedules() {
+  const store = useAppStore()
+  const { teacher: myTeacher } = useAuthStore()
+  if (!myTeacher) return <p className="text-sm text-t3">Perfil de professor não encontrado.</p>
+  return (
+    <div>
+      <p className="text-sm text-t2 mb-4">
+        Clique em <strong>＋</strong> para solicitar inclusão de aula. Clique em <strong>✕</strong> para solicitar remoção.
+        As solicitações são enviadas para aprovação do administrador.
+      </p>
+      <ScheduleGrid teacher={myTeacher} store={store} />
     </div>
   )
 }
