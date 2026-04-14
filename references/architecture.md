@@ -1,6 +1,6 @@
 # Arquitetura — GestãoEscolar
 
-**Versão:** 2.0.0 | **Atualizado:** 2026-04-08 | **Firebase Project:** `gestordesubstituicoes`
+**Versão:** 2.1.0 | **Atualizado:** 2026-04-13 | **Firebase Project:** `gestordesubstituicoes`
 
 ---
 
@@ -93,6 +93,7 @@ export const provider = new GoogleAuthProvider()
 | `history` | Histórico de substituições realizadas | `id`, `teacherId`, `subId`, `date`, `day`, `slotLabel` |
 | `pending_teachers` | Pedidos de acesso aguardando aprovação | `id`, `uid`, `email`, `name`, `photoURL`, `requestedAt`, `status`, `celular?` |
 | `admins` | Administradores (além dos hardcoded) | `email`, `name`, `addedAt` |
+| `pending_actions` | Ações de coordenadores aguardando aprovação do admin | `id`, `coordinatorId`, `coordinatorName`, `action`, `payload`, `summary`, `status`, `reviewedBy`, `reviewedAt`, `rejectionReason` |
 
 **Formato de slot:** `"segmentId|turno|aulaIdx"` — ex: `"seg-fund|manha|1"`
 
@@ -111,15 +112,22 @@ export const provider = new GoogleAuthProvider()
 
 ```js
 {
-  user:      null,    // Firebase user object
-  role:      null,    // 'admin' | 'teacher' | 'pending' | null
-  teacher:   null,    // doc do professor (se role === 'teacher')
-  loading:   true,
-  pendingCt: 0,       // contagem de pedidos pendentes (só admin)
+  user:           null,    // Firebase user object
+  role:           null,    // 'admin' | 'coordinator' | 'teacher-coordinator' | 'teacher' | 'pending' | null
+  teacher:        null,    // doc do professor (se role !== 'admin')
+  loading:        true,
+  pendingCt:      0,       // contagem de pending_teachers (só admin)
+  _unsubPending:  null,    // unsub do listener de pending_teachers (só admin)
+  _unsubApproval: null,    // unsub do listener de pending_teachers/{uid} (só pending)
 }
 ```
 
-Actions: `init(teachers)`, `login()`, `logout()`, `isAdmin()`, `isTeacher()`, `isPending()`
+Actions: `init(teachers)`, `login()`, `logout()`, `isAdmin()`, `isTeacher()`, `isPending()`, `isCoordinator()`, `isGeneralCoordinator()`, `isTeacherCoordinator()`
+
+**Helpers de role:**
+- `isCoordinator()` → `true` para `'coordinator'` e `'teacher-coordinator'`
+- `isGeneralCoordinator()` → `true` apenas para `'coordinator'`
+- `isTeacherCoordinator()` → `true` apenas para `'teacher-coordinator'`
 
 ### `useAppStore`
 
@@ -171,8 +179,13 @@ onAuthStateChanged(auth, user => ...)
   ↓
 _resolveRole(user, teachers):
   1. isAdmin(email)?            → role = 'admin'  (hardcoded list + admins collection)
-  2. getTeacherByEmail() + status='approved'? → role = 'teacher'
-  3. else                       → role = 'pending' + requestTeacherAccess(user)
+                                  inicia listener de pending_teachers para badge
+  2. getTeacherByEmail() + status='approved'?
+       teacher.profile === 'coordinator'         → role = 'coordinator'
+       teacher.profile === 'teacher-coordinator' → role = 'teacher-coordinator'
+       else                                      → role = 'teacher'
+  3. else → role = 'pending' + requestTeacherAccess(user)
+             inicia listener em pending_teachers/{uid} para detectar aprovação
   ↓
 set({ loading: false })
 
@@ -201,18 +214,22 @@ const HARDCODED_ADMINS = [
 ## 7. Roteamento
 
 ```
-/               → redirect /dashboard (admin) ou /home (teacher)
-/home           → HomePage            (teacher)
-/dashboard      → DashboardPage       (admin + teacher, conteúdo diferenciado)
-/calendar       → CalendarPage        (admin)
-/calendar/day   → CalendarDayPage     (mobile — requer location.state)
-/absences       → AbsencesPage        (admin + teacher)
-/settings       → SettingsPage        (tabs diferenciadas por role)
-/workload       → WorkloadPage        (admin)
+/               → redirect /dashboard (admin/coordinator) ou /home (teacher)
+/home           → HomePage              (teacher)
+/dashboard      → DashboardPage         (admin + coordinator + teacher, conteúdo diferenciado)
+/calendar       → CalendarPage          (admin + coordinator)
+/calendar/day   → CalendarDayPage       (mobile — requer location.state)
+/absences       → AbsencesPage          (admin + coordinator + teacher)
+/substitutions  → SubstitutionsPage     (admin + coordinator + teacher)
+/schedule       → SchedulePage          (admin + teacher — grade individual)
+/school-schedule→ SchoolSchedulePage    (admin + coordinator)
+/settings       → SettingsPage          (tabs diferenciadas por role)
+/workload       → WorkloadPage          (admin + coordinator)
 ```
 
-**Guards:** implícitos — `App.jsx` controla o que renderiza antes das rotas.
-Páginas não têm guards próprios.
+**Guard global em `App.jsx`:**
+`canAccessAdmin = isAdmin || isCoordinator()` — determina redirect inicial e links visíveis no Navbar.
+Páginas não têm guards individuais.
 
 **Passagem de estado entre rotas:**
 ```js
@@ -235,12 +252,15 @@ const tab = new URLSearchParams(useLocation().search).get('tab')
 | `LoginPage` | — | Botão "Entrar com Google" |
 | `PendingPage` | pending | Mensagem de espera + campo de telefone opcional |
 | `HomePage` | teacher | Saudação + stats do mês + action cards |
-| `DashboardPage` | admin+teacher | Alertas de carga, stats globais, histórico, tabela de carga horária |
-| `CalendarPage` | admin | Calendário semanal interativo, ranking de substitutos, DayModal |
+| `DashboardPage` | admin + coordinator + teacher | Alertas de carga, stats globais, histórico, tabela de carga horária |
+| `CalendarPage` | admin + coordinator | Calendário semanal interativo, ranking de substitutos, DayModal |
 | `CalendarDayPage` | admin | Visão mobile: pills de dias, swipe, cards de período colapsáveis |
-| `AbsencesPage` | ambos | Relatórios em 4 abas (por prof / dia / semana / mês) + export PDF |
-| `SettingsPage` | ambos | Admin: 6 tabs de config / Teacher: perfil + grade horária |
-| `WorkloadPage` | admin | Tabela completa de carga horária: aulas/sem, faltas e substituições por professor |
+| `AbsencesPage` | todos | Relatórios em 4 abas (por prof / dia / semana / mês) + export PDF |
+| `SubstitutionsPage` | todos | Relatório de substituições em 5 abas + rankings + export PDF |
+| `SchedulePage` | admin + teacher | Grade horária individual com export PDF |
+| `SchoolSchedulePage` | admin + coordinator | Grade horária geral da escola com filtros e export PDF |
+| `SettingsPage` | todos | Admin: 8 tabs de config / Coordinator: aba Meu Perfil / Teacher: perfil |
+| `WorkloadPage` | admin + coordinator | Tabela completa de carga horária: aulas/sem, faltas e substituições por professor |
 
 **Componentes internos:** definidos no mesmo arquivo da página (acima do `export default`).
 Não são exportados — só usados localmente.
@@ -264,6 +284,29 @@ Não são exportados — só usados localmente.
   - Desempate: menor carga horária mensal (`monthlyLoad`)
 - `isBusy(teacherId, date, timeSlot, ...)` — detecta conflito de horário
 - `monthlyLoad(teacherId, referenceDate, ...)` — soma aulas + subs do mês
+
+### `useAppStore` — Guards de Coordenador
+
+20 actions possuem guard que intercepta chamadas de coordenadores e submete como `pending_action` em vez de executar diretamente:
+
+**Helpers internos:**
+- `_isCoordinator()` — lê `useAuthStore.getState().isCoordinator()`; retorna `false` em caso de erro (evita circular dependency)
+- `_coordinatorCtx()` — retorna `{ coordinatorId, coordinatorName }` do teacher logado
+- `_submitApproval(action, payload, summary)` — chama `submitPendingAction()` e exibe toast de confirmação
+
+**Padrão de guard:**
+```js
+addSchedule: async (sched) => {
+  if (_isCoordinator()) return _submitApproval('addSchedule', { sched }, `Adicionar aula ${sched.turma}`)
+  // ... execução normal para admins
+}
+```
+
+**Actions guardadas (20):** `addTeacher`, `updateTeacher`, `removeTeacher`, `addSchedule`, `removeSchedule`, `updateSchedule`, `addSegment`, `removeSegment`, `addGrade`, `removeGrade`, `addClassToGrade`, `removeClassFromGrade`, `savePeriodCfg`, `addArea`, `updateArea`, `removeArea`, `addSubject`, `removeSubject`, `saveAreaWithSubjects`, `setWorkload`
+
+**Regra de negócio adicional em `addSchedule`:** se o professor alvo tem `profile === 'coordinator'`, verifica que a turma é uma `sharedSeries` — caso contrário retorna erro sem salvar (coordenadores só podem ter turmas de formação compartilhada).
+
+---
 
 ### `reports.js`
 - Gera HTML com CSS de impressão e abre `window.print()`
@@ -344,14 +387,17 @@ Não são exportados — só usados localmente.
 
 ## 13. Débitos Técnicos e Limitações Conhecidas
 
-| Item | Impacto | Spec de correção |
+| Item | Impacto | Status |
 |---|---|---|
-| `getDocs` one-shot em vez de `onSnapshot` | Dados não atualizam sem reload | `spec_atualizacao_tempo_real.md` |
-| Regras Firestore não implementadas | Qualquer usuário autenticado pode ler/escrever | — |
-| Bundle único ~736KB | Carregamento inicial mais lento | Avaliar `React.lazy` por página |
-| Admins hardcoded em `db.js` | Adicionar admin requer deploy | Mover para `admins` collection exclusivamente |
-| Campo `subs: {}` em `useAppStore` | Código morto | Remover |
-| Sem testes automatizados | Regressões difíceis de detectar | — |
+| `getDocs` one-shot → `onSnapshot` | Dados não atualizam sem reload | ✅ Resolvido — teachers, schedules, config via onSnapshot; absences e history lazy |
+| Regras Firestore | `pending_actions` implantadas e ativas | ⚠️ Parcial — coordinators ainda não escrevem `absences` diretamente (#151) |
+| Bundle único ~736KB | Carregamento inicial mais lento | 🔴 Aberto — avaliar `React.lazy` por página |
+| Admins hardcoded em `db.js` | Adicionar admin requer deploy | 🔴 Aberto — mover para `admins` collection exclusivamente |
+| Campo `subs: {}` em `useAppStore` | Código morto | ✅ Resolvido (#153) |
+| Sem testes automatizados | Regressões difíceis de detectar | 🔴 Aberto |
+| Coordenadores sem UI para ver ações submetidas | UX incompleto | 🔴 Aberto (#150) |
+| Coordenadores não registram ausências no CalendarPage | Funcionalidade limitada | 🔴 Aberto (#151) |
+| Coordenadores sem acesso à aba Horários | Não podem solicitar aulas | 🔴 Aberto (#152) |
 
 ---
 
