@@ -320,19 +320,27 @@ const useAppStore = create((set, get) => {
 
   // ─── Horários ────────────────────────────────────────────────────────────────
   addSchedule: async (sched) => {
-    if (_isCoordinator()) return _submitApproval('addSchedule', { sched }, `Adicionar aula ${sched.turma ?? ''}`)
+    const myTeacher = useAuthStore.getState().teacher
+    const isOwnSchedule = sched.teacherId === myTeacher?.id
+    if (_isCoordinator() && !isOwnSchedule) return _submitApproval('addSchedule', { sched }, `Adicionar aula ${sched.turma ?? ''}`)
     const item = { id: uid(), ...sched }
     set(s => ({ schedules: [...s.schedules, item] }))
     saveDoc('schedules', item)
+    toast('Aula adicionada', 'success')
   },
   removeSchedule: async (id) => {
     const sched = get().schedules.find(x => x.id === id)
-    if (_isCoordinator()) return _submitApproval('removeSchedule', { id }, `Remover aula ${sched?.turma ?? id}`)
+    const myTeacher = useAuthStore.getState().teacher
+    const isOwnSchedule = sched?.teacherId === myTeacher?.id
+    if (_isCoordinator() && !isOwnSchedule) return _submitApproval('removeSchedule', { id }, `Remover aula ${sched?.turma ?? id}`)
     set(s => ({ schedules: s.schedules.filter(x => x.id !== id) }))
     deleteDocById('schedules', id)
   },
   updateSchedule: async (id, changes) => {
-    if (_isCoordinator()) return _submitApproval('updateSchedule', { id, changes }, 'Atualizar horário')
+    const sched = get().schedules.find(x => x.id === id)
+    const myTeacher = useAuthStore.getState().teacher
+    const isOwnSchedule = sched?.teacherId === myTeacher?.id
+    if (_isCoordinator() && !isOwnSchedule) return _submitApproval('updateSchedule', { id, changes }, 'Atualizar horário')
     set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...changes } : x) }))
     updateDocById('schedules', id, changes)
   },

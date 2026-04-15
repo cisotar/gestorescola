@@ -2045,6 +2045,7 @@ function TabProfile({ teacher }) {
   const store = useAppStore()
   const { teacher: authTeacher, isCoordinator } = useAuthStore()
   const t = teacher ?? authTeacher
+  const [nome,             setNome]             = useState(t?.name ?? '')
   const [celular,          setCelular]          = useState(t?.celular ?? '')
   const [apelido,          setApelido]          = useState(t?.apelido ?? '')
   const [selSubjs,         setSelSubjs]         = useState(t?.subjectIds ?? [])
@@ -2074,7 +2075,9 @@ function TabProfile({ teacher }) {
 
   if (!t) return <p className="text-t3 text-sm">Perfil não disponível.</p>
 
-  const save = () => {
+  const save = async () => {
+    if (!nome.trim()) { toast('Nome não pode ficar vazio', 'err'); return }
+
     const { removedIds, addedIds, affectedSchedules } =
       calcSubjectChange(t, selSubjs, store.schedules)
 
@@ -2086,16 +2089,26 @@ function TabProfile({ teacher }) {
         removedSubjects: removedIds.map(id => subjectsById[id] ?? { id, name: id }),
         addedSubjects:   addedIds.map(id => subjectsById[id] ?? { id, name: id }),
         affectedCount:   affectedSchedules.length,
-        onMigrate: isSwap ? () => {
-          store.migrateScheduleSubject(t.id, removedIds[0], addedIds[0])
-          store.updateTeacherProfile(t.id, { celular, apelido: apelido.trim(), subjectIds: selSubjs })
-          toast('Perfil salvo e horários migrados', 'ok')
+        onMigrate: isSwap ? async () => {
+          try {
+            store.migrateScheduleSubject(t.id, removedIds[0], addedIds[0])
+            await store.updateTeacherProfile(t.id, { name: nome.trim(), celular, apelido: apelido.trim(), subjectIds: selSubjs })
+            toast('Perfil salvo e horários migrados', 'ok')
+          } catch (e) {
+            console.error(e)
+            toast('Erro ao salvar perfil', 'err')
+          }
           setSubjectChangeCtx(null)
         } : null,
-        onRemove: () => {
-          removedIds.forEach(sid => store.removeSchedulesBySubject(t.id, sid))
-          store.updateTeacherProfile(t.id, { celular, apelido: apelido.trim(), subjectIds: selSubjs })
-          toast('Perfil salvo e horários removidos', 'ok')
+        onRemove: async () => {
+          try {
+            removedIds.forEach(sid => store.removeSchedulesBySubject(t.id, sid))
+            await store.updateTeacherProfile(t.id, { name: nome.trim(), celular, apelido: apelido.trim(), subjectIds: selSubjs })
+            toast('Perfil salvo e horários removidos', 'ok')
+          } catch (e) {
+            console.error(e)
+            toast('Erro ao salvar perfil', 'err')
+          }
           setSubjectChangeCtx(null)
         },
         onCancel: () => setSubjectChangeCtx(null),
@@ -2103,8 +2116,13 @@ function TabProfile({ teacher }) {
       return
     }
 
-    store.updateTeacherProfile(t.id, { celular, apelido: apelido.trim(), subjectIds: selSubjs })
-    toast('Perfil salvo', 'ok')
+    try {
+      await store.updateTeacherProfile(t.id, { name: nome.trim(), celular, apelido: apelido.trim(), subjectIds: selSubjs })
+      toast('Perfil salvo', 'ok')
+    } catch (e) {
+      console.error(e)
+      toast('Erro ao salvar perfil', 'err')
+    }
   }
 
   return (
@@ -2126,6 +2144,11 @@ function TabProfile({ teacher }) {
       <div>
         <label className="lbl">E-mail <span className="text-t3 normal-case font-normal">(não editável)</span></label>
         <div className="inp bg-surf2 text-t2">{t.email ?? '—'}</div>
+      </div>
+
+      <div>
+        <label className="lbl">Nome (como você prefere ser identificado)</label>
+        <input className="inp" type="text" value={nome} onChange={e => setNome(e.target.value)} />
       </div>
 
       <div>
@@ -2371,7 +2394,7 @@ function TabApprovals({ adminEmail }) {
   const load = async () => {
     setError(false)
     try { setActions(await getPendingActions()); setLoaded(true) }
-    catch { setError(true); setLoaded(true) }
+    catch (e) { console.error('[TabApprovals] Erro ao carregar aprovações pendentes:', e); setError(true); setLoaded(true) }
   }
   useEffect(() => { load() }, [])
 
@@ -2404,7 +2427,7 @@ function TabApprovals({ adminEmail }) {
       await rejectPendingAction(action.id, adminEmail, reason)
       setActions(prev => prev.filter(a => a.id !== action.id))
       toast('Ação rejeitada', 'warn')
-    } catch { toast('Erro ao rejeitar', 'error') }
+    } catch (e) { console.error('[TabApprovals] Erro ao rejeitar ação:', e); toast('Erro ao rejeitar', 'error') }
   }
 
   if (!loaded) return <div className="text-center py-12 text-t3 text-sm">Carregando…</div>

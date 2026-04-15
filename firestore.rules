@@ -14,7 +14,7 @@ service cloud.firestore {
       allow update: if request.auth != null
         && resource.data.email.lower() == request.auth.token.email.lower()
         && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['celular', 'whatsapp', 'subjectIds']);
+            .hasOnly(['celular', 'whatsapp', 'apelido', 'name', 'subjectIds']);
     }
 
     // ── Horários: leitura pública; admin escreve; professor gerencia próprios slots ──
