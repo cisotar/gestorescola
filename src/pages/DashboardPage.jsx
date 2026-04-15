@@ -1,18 +1,19 @@
 import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
+import { monthlyLoad } from '../lib/absences'
 
 // ─── Helpers locais ───────────────────────────────────────────────────────────
 
-function getTeacherStats(teacherId, schedules, absences) {
-  const sc      = schedules.filter(s => s.teacherId === teacherId).length
-  const faltas  = absences
+function getTeacherStats(teacherId, today, schedules, absences) {
+  const aulasDadas = monthlyLoad(teacherId, today, schedules, absences)
+  const faltas     = (absences || [])
     .filter(ab => ab.teacherId === teacherId)
     .reduce((acc, ab) => acc + ab.slots.length, 0)
-  const subs    = absences
+  const subs       = (absences || [])
     .flatMap(ab => ab.slots)
     .filter(sl => sl.substituteId === teacherId).length
-  return { schedules: sc, absences: faltas, subsGiven: subs }
+  return { aulasDadas, absences: faltas, subsGiven: subs }
 }
 
 // ─── Componentes ─────────────────────────────────────────────────────────────
@@ -57,10 +58,53 @@ function StatPill({ icon, value, label, warn = false, ok = false }) {
   )
 }
 
+function AulasAtribuidasCard({ teachers, schedules }) {
+  if (!(teachers ?? []).length) return (
+    <div className="card text-center text-t3 py-10">Nenhum professor cadastrado.</div>
+  )
+
+  const rows = (teachers ?? [])
+    .map(t => ({
+      t,
+      // Contagem exaustiva: inclui regulares e formation-* (spec v2)
+      count: (schedules ?? []).filter(s => s.teacherId === t.id).length,
+    }))
+    .sort((a, b) => b.count - a.count)
+
+  return (
+    <div className="card p-0 overflow-hidden">
+      <div className="px-4 py-3 border-b border-bdr">
+        <div className="font-bold text-sm">Aulas Atribuídas</div>
+      </div>
+      <div className="overflow-y-auto max-h-[360px] scroll-thin">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="bg-surf2">
+              {['Professor', 'Aulas Atribuídas'].map(h => (
+                <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-t3 uppercase tracking-wide">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ t, count }) => (
+              <tr key={t.id} className="border-b border-bdr/50">
+                <td className="px-3 py-2.5">
+                  <div className="font-semibold text-xs">{t.name}</div>
+                </td>
+                <td className="px-3 py-2.5 text-center font-bold">{count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const { teachers, schedules, absences, workloadDanger } = useAppStore()
+  const { teachers, schedules, absences } = useAppStore()
   const { user, role, teacher: myTeacher } = useAuthStore()
   const isAdmin = role === 'admin'
   const firstName = user?.displayName?.split(' ')[0] ?? 'Bem-vindo'
@@ -68,8 +112,6 @@ export default function DashboardPage() {
   const totalAbsences = (absences ?? []).reduce((acc, ab) => acc + ab.slots.length, 0)
   const uncovered     = (absences ?? []).reduce((acc, ab) =>
     acc + ab.slots.filter(s => !s.substituteId).length, 0)
-
-  const danger = workloadDanger || 26
 
   return (
     <div className="space-y-6">
@@ -79,6 +121,17 @@ export default function DashboardPage() {
         <p className="text-sm text-t2 mt-1">O que você quer fazer hoje?</p>
       </div>
 
+
+      {/* Stats rápidas */}
+      <div className="flex flex-wrap gap-3">
+        <StatPill icon="👩‍🏫" value={teachers.length}   label="professores" />
+        <StatPill icon="📚" value={schedules.length}    label="aulas/semana" />
+        <StatPill icon="📋" value={totalAbsences}       label="faltas registradas" />
+        {uncovered > 0
+          ? <StatPill icon="⚠️" value={uncovered} label="sem substituto" warn />
+          : <StatPill icon="✅" value={0}          label="sem substituto" ok />
+        }
+      </div>
 
       {/* Cards de ação */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -99,33 +152,11 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Stats rápidas */}
-      <div className="flex flex-wrap gap-3">
-        <StatPill icon="👩‍🏫" value={teachers.length}   label="professores" />
-        <StatPill icon="📚" value={schedules.length}    label="aulas/semana" />
-        <StatPill icon="📋" value={totalAbsences}       label="faltas registradas" />
-        {uncovered > 0
-          ? <StatPill icon="⚠️" value={uncovered} label="sem substituto" warn />
-          : <StatPill icon="✅" value={0}          label="sem substituto" ok />
-        }
-      </div>
-
-      {/* Relatórios */}
-      <div>
-        <h2 className="text-xs font-bold text-t2 uppercase tracking-wider mb-3">Relatório de Ausências</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          <ActionCard
-            icon="🔄" label="Relatório de Substituições"
-            desc="Acesse o histórico completo de substituições realizadas"
-            to="/substitutions"
-          />
-        </div>
-      </div>
-
       {/* Tabelas (admin) */}
       {isAdmin && (
-        <div className="grid grid-cols-1 gap-5">
-          <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} maxLoad={danger} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <AulasAtribuidasCard teachers={teachers} schedules={schedules} />
+          <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} />
         </div>
       )}
 
@@ -139,15 +170,17 @@ export default function DashboardPage() {
 
 // ─── Workload table ───────────────────────────────────────────────────────────
 
-function WorkloadTable({ teachers, schedules, absences, maxLoad }) {
+function WorkloadTable({ teachers, schedules, absences }) {
   const navigate = useNavigate()
   if (!teachers.length) return (
     <div className="card text-center text-t3 py-10">Nenhum professor cadastrado.</div>
   )
 
+  const today = new Date().toISOString().slice(0, 10)
+
   const rows = teachers
-    .map(t => ({ t, ...getTeacherStats(t.id, schedules, absences) }))
-    .sort((a, b) => b.schedules - a.schedules)
+    .map(t => ({ t, ...getTeacherStats(t.id, today, schedules, absences) }))
+    .sort((a, b) => b.aulasDadas - a.aulasDadas)
 
   return (
     <div className="card p-0 overflow-hidden">
@@ -156,8 +189,7 @@ function WorkloadTable({ teachers, schedules, absences, maxLoad }) {
         className="w-full px-4 py-3 border-b border-bdr text-left hover:bg-surf2 transition-colors flex items-center justify-between"
       >
         <div>
-          <div className="font-bold text-sm">Histórico de Aulas Dadas</div>
-          <div className="text-xs text-t3">Aulas / semana · limite: {maxLoad}</div>
+          <div className="font-bold text-sm">Aulas dadas até o presente</div>
         </div>
         <span className="text-t3 text-lg">›</span>
       </button>
@@ -171,20 +203,15 @@ function WorkloadTable({ teachers, schedules, absences, maxLoad }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ t, schedules: sc, absences: ab, subsGiven }) => {
-              const pct      = Math.round((sc / maxLoad) * 100)
-              const barColor = pct >= 100 ? '#C8290A' : pct >= 77 ? '#D97706' : '#16A34A'
-              const saldo    = sc - ab + subsGiven
+            {rows.map(({ t, aulasDadas, absences: ab, subsGiven }) => {
+              const saldo = aulasDadas - ab + subsGiven
               return (
                 <tr key={t.id} className="border-b border-bdr/50">
                   <td className="px-3 py-2.5">
                     <div className="font-semibold text-xs">{t.name}</div>
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    <div className="font-bold">{sc}</div>
-                    <div className="w-full bg-surf2 rounded-full h-1 mt-1">
-                      <div className="h-1 rounded-full" style={{ width: `${Math.min(pct,100)}%`, background: barColor }} />
-                    </div>
+                    <div className="font-bold">{aulasDadas}</div>
                   </td>
                   <td className="px-3 py-2.5 text-center font-bold text-err text-xs">{ab || '—'}</td>
                   <td className="px-3 py-2.5 text-center font-bold text-ok text-xs">{subsGiven || '—'}</td>
