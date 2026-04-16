@@ -110,10 +110,11 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
 export function suggestSubstitutes(absenceSlot, ruleType, store) {
   if (!absenceSlot || !absenceSlot.absentTeacherId) return []
 
-  // Candidatos base: aprovados, disponíveis e diferentes do ausente
+  // Candidatos base: aprovados, disponíveis, diferentes do ausente e excluindo coord. geral
   const baseCandidates = store.teachers.filter(t =>
     t.id !== absenceSlot.absentTeacherId &&
     t.status === 'approved' &&
+    t.profile !== 'coordinator' &&
     !isBusy(t.id, absenceSlot.date, absenceSlot.slot, store.schedules, store.absences)
   )
 

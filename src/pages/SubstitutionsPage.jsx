@@ -1041,14 +1041,16 @@ function ViewByMonth({ store, isAdmin, filteredSlots, selProps }) {
       })
     })
 
-    return (store.teachers ?? []).map(t => {
-      const scheduled = dayLabels.reduce(
-        (acc, lbl) => acc + (schedByTeacherDay.get(`${t.id}||${lbl}`) ?? 0), 0
-      )
-      const absences = absByTeacher.get(t.id) ?? 0
-      const attendance = scheduled > 0 ? ((scheduled - absences) / scheduled * 100) : null
-      return { teacher: t, scheduled, absences, attendance }
-    })
+    return (store.teachers ?? [])
+      .filter(t => t.profile !== 'coordinator')
+      .map(t => {
+        const scheduled = dayLabels.reduce(
+          (acc, lbl) => acc + (schedByTeacherDay.get(`${t.id}||${lbl}`) ?? 0), 0
+        )
+        const absences = absByTeacher.get(t.id) ?? 0
+        const attendance = scheduled > 0 ? ((scheduled - absences) / scheduled * 100) : null
+        return { teacher: t, scheduled, absences, attendance }
+      })
   }, [store.teachers, store.schedules, store.absences, year, month])
 
   const sortedRanking = useMemo(() => {

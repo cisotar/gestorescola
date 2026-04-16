@@ -59,11 +59,13 @@ function StatPill({ icon, value, label, warn = false, ok = false }) {
 }
 
 function AulasAtribuidasCard({ teachers, schedules }) {
-  if (!(teachers ?? []).length) return (
+  const lecturers = (teachers ?? []).filter(t => t.profile !== 'coordinator')
+
+  if (!lecturers.length) return (
     <div className="card text-center text-t3 py-10">Nenhum professor cadastrado.</div>
   )
 
-  const rows = (teachers ?? [])
+  const rows = lecturers
     .map(t => ({
       t,
       // Contagem exaustiva: inclui regulares e formation-* (spec v2)
@@ -171,14 +173,16 @@ export default function DashboardPage() {
 // ─── Workload table ───────────────────────────────────────────────────────────
 
 function WorkloadTable({ teachers, schedules, absences }) {
-  const navigate = useNavigate()
-  if (!teachers.length) return (
+  const navigate  = useNavigate()
+  const lecturers = (teachers ?? []).filter(t => t.profile !== 'coordinator')
+
+  if (!lecturers.length) return (
     <div className="card text-center text-t3 py-10">Nenhum professor cadastrado.</div>
   )
 
   const today = new Date().toISOString().slice(0, 10)
 
-  const rows = teachers
+  const rows = lecturers
     .map(t => ({ t, ...getTeacherStats(t.id, today, schedules, absences) }))
     .sort((a, b) => b.aulasDadas - a.aulasDadas)
 

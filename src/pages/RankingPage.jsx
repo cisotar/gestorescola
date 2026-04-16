@@ -46,16 +46,18 @@ export default function RankingPage() {
       })
     })
 
-    return (store.teachers ?? []).map(t => {
-      const scheduled      = dayLabels.reduce((acc, lbl) => acc + (schedByTeacherDay.get(`${t.id}||${lbl}`) ?? 0), 0)
-      const absences       = absByTeacher.get(t.id) ?? 0
-      const subsRealizadas = subsByTeacher.get(t.id) ?? 0
-      const saldo          = scheduled - absences + subsRealizadas
-      const pctAssiduidade = scheduled > 0
-        ? Math.min(100, Math.max(0, Math.round((scheduled - absences) / scheduled * 100)))
-        : null
-      return { teacher: t, scheduled, absences, subsRealizadas, saldo, pctAssiduidade }
-    })
+    return (store.teachers ?? [])
+      .filter(t => t.profile !== 'coordinator')
+      .map(t => {
+        const scheduled      = dayLabels.reduce((acc, lbl) => acc + (schedByTeacherDay.get(`${t.id}||${lbl}`) ?? 0), 0)
+        const absences       = absByTeacher.get(t.id) ?? 0
+        const subsRealizadas = subsByTeacher.get(t.id) ?? 0
+        const saldo          = scheduled - absences + subsRealizadas
+        const pctAssiduidade = scheduled > 0
+          ? Math.min(100, Math.max(0, Math.round((scheduled - absences) / scheduled * 100)))
+          : null
+        return { teacher: t, scheduled, absences, subsRealizadas, saldo, pctAssiduidade }
+      })
   }, [store.teachers, store.schedules, store.absences, filterMonth, filterYear])
 
   const sortedRanking = useMemo(() => {
