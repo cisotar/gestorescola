@@ -1,5 +1,6 @@
-const CACHE_NAME = 'gestorescola-v2'
+const CACHE_NAME = 'gestorescola-v3'
 const STATIC_ASSETS = ['/manifest.json', '/icon.svg']
+const ORIGIN = self.location.origin
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -21,13 +22,16 @@ self.addEventListener('fetch', event => {
   const { request } = event
   const url = new URL(request.url)
 
-  // Hashed assets (/assets/*.js, /assets/*.css): always network — never serve stale JS
+  // Never intercept cross-origin requests (Firestore, Google Auth, fonts, etc.)
+  if (url.origin !== ORIGIN) return
+
+  // Hashed assets: always fetch from network (hash guarantees uniqueness per build)
   if (url.pathname.startsWith('/assets/')) {
     event.respondWith(fetch(request))
     return
   }
 
-  // Navigation requests: network-first, fallback to cached index.html for offline SPA
+  // Navigation (SPA routes): network-first, fallback to cached index.html offline
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() => caches.match('/index.html'))
@@ -35,7 +39,7 @@ self.addEventListener('fetch', event => {
     return
   }
 
-  // Static assets without hash (manifest, icons): cache-first
+  // Same-origin static assets without hash (manifest, icons): cache-first
   event.respondWith(
     caches.match(request).then(cached => cached || fetch(request))
   )
