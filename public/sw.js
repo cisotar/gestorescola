@@ -1,53 +1,42 @@
-const CACHE_NAME = 'gestorescola-v1'
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon.svg'
-]
+const CACHE_NAME = 'gestorescola-v2'
+const STATIC_ASSETS = ['/manifest.json', '/icon.svg']
 
-// install event
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(urlsToCache)
-    })
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
   )
   self.skipWaiting()
 })
 
-// fetch event (cache-first strategy)
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request).then(response => {
-      // Return from cache if found
-      if (response) {
-        return response
-      }
-
-      // Otherwise, fetch from network
-      return fetch(event.request).catch(() => {
-        // Fallback for offline: return index.html for navigation requests
-        if (event.request.mode === 'navigate') {
-          return caches.match('/index.html')
-        }
-      })
-    })
-  )
-})
-
-// activate event
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName)
-          }
-        })
-      )
-    })
+    caches.keys().then(names =>
+      Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)))
+    )
   )
   self.clients.claim()
+})
+
+self.addEventListener('fetch', event => {
+  const { request } = event
+  const url = new URL(request.url)
+
+  // Hashed assets (/assets/*.js, /assets/*.css): always network — never serve stale JS
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(fetch(request))
+    return
+  }
+
+  // Navigation requests: network-first, fallback to cached index.html for offline SPA
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).catch(() => caches.match('/index.html'))
+    )
+    return
+  }
+
+  // Static assets without hash (manifest, icons): cache-first
+  event.respondWith(
+    caches.match(request).then(cached => cached || fetch(request))
+  )
 })
