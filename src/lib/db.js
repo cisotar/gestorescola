@@ -277,8 +277,8 @@ export async function requestTeacherAccess(user) {
   })
 }
 
-export async function updatePendingData(uid, { celular, apelido, subjectIds }) {
-  await updateDoc(doc(db, 'pending_teachers', uid), { celular, apelido, subjectIds })
+export async function updatePendingData(uid, { celular, apelido, subjectIds, horariosSemana }) {
+  await updateDoc(doc(db, 'pending_teachers', uid), { celular, apelido, subjectIds, horariosSemana })
 }
 
 export async function listPendingTeachers() {
@@ -286,6 +286,37 @@ export async function listPendingTeachers() {
   return snap.docs.map(d => d.data()).filter(d => d.status === 'pending')
 }
 
+/**
+ * Atualiza campos do próprio perfil de um professor aprovado.
+ * O Firestore permite que o professor grave apenas os campos listados em
+ * `hasOnly` na regra `allow update` de `teachers/{docId}`:
+ * celular, whatsapp, apelido, name, subjectIds, horariosSemana.
+ *
+ * O campo `horariosSemana` descreve os horários de presença do professor
+ * na escola por dia da semana. Formato esperado:
+ *
+ * @example
+ * // Professor que trabalha de segunda a quarta (manhã) e quarta a sexta (tarde):
+ * {
+ *   "Segunda": { entrada: "07:00", saida: "12:30" },
+ *   "Terça":   { entrada: "07:00", saida: "12:30" },
+ *   "Quarta":  { entrada: "07:00", saida: "17:20" },
+ *   "Quinta":  { entrada: "13:00", saida: "17:20" },
+ *   "Sexta":   { entrada: "13:00", saida: "17:20" }
+ * }
+ *
+ * Semântica:
+ * - Dia ausente do objeto  → professor NÃO trabalha naquele dia
+ * - Campo `horariosSemana` ausente ou `null` → sem restrição de horário
+ *   (professor aparece no ranking de substitutos normalmente)
+ * - Objeto vazio `{}` → tratado como ausente pelas funções de ranking
+ *
+ * Chaves de dia válidas: "Segunda", "Terça", "Quarta", "Quinta", "Sexta"
+ * (alinhadas com `schedules[].day` e `DAYS` em `src/lib/constants.js`).
+ *
+ * @param {string} id - Document ID do professor em `teachers/`
+ * @param {object} changes - Campos a atualizar (parcial)
+ */
 export async function patchTeacherSelf(id, changes) {
   await updateDoc(doc(db, 'teachers', id), changes)
 }
@@ -303,6 +334,7 @@ export async function approveTeacher(pendingId, state, setState, profile = 'teac
       id: uid(), name: data.name, email: data.email, whatsapp: '',
       celular: data.celular ?? '', apelido: data.apelido ?? '',
       subjectIds: data.subjectIds ?? [], status: 'approved', profile,
+      horariosSemana: data.horariosSemana ?? null,
     }
     setState(s => ({ teachers: [...s.teachers, teacher] }))
   } else {
@@ -311,7 +343,10 @@ export async function approveTeacher(pendingId, state, setState, profile = 'teac
     }))
   }
 
-  await setDoc(doc(db, 'teachers', teacher.id), { ...teacher, status: 'approved', profile })
+  await setDoc(doc(db, 'teachers', teacher.id), {
+    ...teacher, status: 'approved', profile,
+    horariosSemana: data.horariosSemana ?? teacher.horariosSemana ?? null,
+  })
 
   // Migrar schedules do UID pendente para o novo teacher.id
   const orphanSnap = await getDocs(

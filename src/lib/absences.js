@@ -1,5 +1,6 @@
-import { uid, dateToDayLabel, formatISO, parseDate, weekStart, businessDaysBetween } from './helpers'
+import { uid, dateToDayLabel, formatISO, parseDate, weekStart, businessDaysBetween, isSharedSeriesTurma, getSharedSeriesActivity } from './helpers'
 export { dateToDayLabel, formatISO, formatBR, parseDate, weekStart, businessDaysBetween } from './helpers'
+import { resolveSlot } from './periods'
 
 // ─── Carga mensal ─────────────────────────────────────────────────────────────
 
@@ -39,6 +40,44 @@ export function isBusy(teacherId, date, timeSlot, schedules, absences) {
   )
 }
 
+export function isAvailableBySchedule(teacher, day, timeSlot, periodConfigs) {
+  if (!teacher.horariosSemana || Object.keys(teacher.horariosSemana).length === 0) return true
+  const horarioDia = teacher.horariosSemana[day]
+  if (!horarioDia) return false
+  const resolved = resolveSlot(timeSlot, periodConfigs ?? {})
+  if (!resolved) return true
+  return horarioDia.entrada <= resolved.inicio && resolved.fim <= horarioDia.saida
+}
+
+export function isUnderWeeklyLimit(teacher, date, schedules, absences, sharedSeries = []) {
+  const ws = weekStart(date)
+  const weekDays = businessDaysBetween(ws, date)
+  const weekDaySet = new Set(weekDays.map(d => dateToDayLabel(d)).filter(Boolean))
+
+  const isFormacao = (sched) =>
+    isSharedSeriesTurma(sched.turma, sharedSeries) ||
+    !!getSharedSeriesActivity(sched.subjectId, sharedSeries)
+
+  const ownAulas = schedules.filter(s =>
+    s.teacherId === teacher.id &&
+    weekDaySet.has(s.day) &&
+    !isFormacao(s)
+  ).length
+
+  const subsAulas = (absences || []).reduce((acc, ab) => {
+    return acc + ab.slots.filter(sl => {
+      if (sl.substituteId !== teacher.id) return false
+      if (!weekDays.includes(sl.date)) return false
+      const isFormacaoSlot =
+        isSharedSeriesTurma(sl.turma, sharedSeries) ||
+        !!getSharedSeriesActivity(sl.subjectId, sharedSeries)
+      return !isFormacaoSlot
+    }).length
+  }, 0)
+
+  return ownAulas + subsAulas < 32
+}
+
 // ─── Ranking de candidatos ────────────────────────────────────────────────────
 // Critérios (em ordem de prioridade):
 //   0 — mesma matéria + mesmo segmento
@@ -48,7 +87,7 @@ export function isBusy(teacherId, date, timeSlot, schedules, absences) {
 //   4 — outra área
 // Desempate: menor carga horária mensal
 
-export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teachers, schedules, absences, subjects, areas) {
+export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teachers, schedules, absences, subjects, areas, periodConfigs = {}, sharedSeries = []) {
   // Extrai o segmentId do timeSlot (formato: segmentId|turno|aulaIdx)
   const slotSegmentId = timeSlot?.split('|')[0] ?? null
 
@@ -86,7 +125,13 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
   }
 
   const candidates = teachers
-    .filter(t => t.id !== absentTeacherId && t.profile !== 'coordinator' && !isBusy(t.id, date, timeSlot, schedules, absences))
+    .filter(t =>
+      t.id !== absentTeacherId &&
+      t.profile !== 'coordinator' &&
+      !isBusy(t.id, date, timeSlot, schedules, absences) &&
+      isAvailableBySchedule(t, dateToDayLabel(date), timeSlot, periodConfigs) &&
+      isUnderWeeklyLimit(t, date, schedules, absences, sharedSeries)
+    )
     .map(t => {
       const score = scoreOf(t)
       return {
@@ -110,12 +155,17 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
 export function suggestSubstitutes(absenceSlot, ruleType, store) {
   if (!absenceSlot || !absenceSlot.absentTeacherId) return []
 
+  const _periodConfigs = store.periodConfigs ?? {}
+  const _sharedSeries  = store.sharedSeries  ?? []
+
   // Candidatos base: aprovados, disponíveis, diferentes do ausente e excluindo coord. geral
   const baseCandidates = store.teachers.filter(t =>
     t.id !== absenceSlot.absentTeacherId &&
     t.status === 'approved' &&
     t.profile !== 'coordinator' &&
-    !isBusy(t.id, absenceSlot.date, absenceSlot.slot, store.schedules, store.absences)
+    !isBusy(t.id, absenceSlot.date, absenceSlot.slot, store.schedules, store.absences) &&
+    isAvailableBySchedule(t, dateToDayLabel(absenceSlot.date), absenceSlot.slot, _periodConfigs) &&
+    isUnderWeeklyLimit(t, absenceSlot.date, store.schedules, store.absences, _sharedSeries)
   )
 
   if (ruleType === 'qualitative') {

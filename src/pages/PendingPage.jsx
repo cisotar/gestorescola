@@ -5,8 +5,43 @@
   import { updatePendingData } from '../lib/db'
   import { db } from '../lib/firebase'
   import { ScheduleGrid } from './SettingsPage'
+  import { DAYS } from '../lib/constants'
 
   const PHONE_REGEX = /^[1-9][0-9]9[0-9]{7,8}$/
+
+  function HorarioDiaSemana({ day, value, onChange }) {
+    const entrada = value?.entrada ?? ''
+    const saida   = value?.saida   ?? ''
+
+    let error = null
+    if (entrada && !saida) error = 'Preencha a saída também'
+    else if (!entrada && saida) error = 'Preencha a entrada também'
+    else if (entrada && saida && saida <= entrada) error = 'Saída deve ser após a entrada'
+
+    return (
+      <div>
+        <div className="flex items-center gap-3">
+          <span className="w-20 text-sm font-medium text-t1 shrink-0">{day}</span>
+          <div className="flex items-center gap-2 flex-1">
+            <input
+              type="time"
+              className="inp flex-1"
+              value={entrada}
+              onChange={e => onChange(day, 'entrada', e.target.value)}
+            />
+            <span className="text-t3 text-sm shrink-0">até</span>
+            <input
+              type="time"
+              className="inp flex-1"
+              value={saida}
+              onChange={e => onChange(day, 'saida', e.target.value)}
+            />
+          </div>
+        </div>
+        {error && <p className="text-xs text-err mt-1 ml-23">{error}</p>}
+      </div>
+    )
+  }
 
   function validatePhone(raw) {
     const digits = raw.replace(/\D/g, '')
@@ -22,10 +57,39 @@
     const [celular,       setCelular]    = useState('')
     const [apelido,       setApelido]    = useState('')
     const [selectedSubjs, setSelSubjs]  = useState([])
+    const [horariosSemana, setHorariosSemana] = useState({})
     const [saving,        setSaving]    = useState(false)
     const [phoneError,    setPhoneError] = useState('')
     const [subjError,     setSubjError]  = useState('')
     const [saveError,     setSaveError]  = useState('')
+
+    // Erros de validação de horários — derivados sem estado extra
+    const horarioErrors = Object.fromEntries(
+      DAYS.map(day => {
+        const v = horariosSemana[day]
+        const entrada = v?.entrada ?? ''
+        const saida   = v?.saida   ?? ''
+        let error = null
+        if (entrada && !saida) error = 'Preencha a saída também'
+        else if (!entrada && saida) error = 'Preencha a entrada também'
+        else if (entrada && saida && saida <= entrada) error = 'Saída deve ser após a entrada'
+        return [day, error]
+      })
+    )
+    const hasHorarioError = Object.values(horarioErrors).some(Boolean)
+
+    const handleHorarioChange = (day, field, val) => {
+      setHorariosSemana(prev => {
+        const current = prev[day] ?? { entrada: '', saida: '' }
+        const updated = { ...current, [field]: val }
+        // Remove a chave se ambos os campos ficarem vazios
+        if (!updated.entrada && !updated.saida) {
+          const { [day]: _, ...rest } = prev
+          return rest
+        }
+        return { ...prev, [day]: updated }
+      })
+    }
 
     // Re-entry: se celular já foi salvo, retomar no step de grade horária
     useEffect(() => {
@@ -63,7 +127,7 @@
 
       setSaving(true); setSaveError('')
       try {
-        await updatePendingData(user.uid, { celular: celular.replace(/\D/g, ''), apelido: apelido.trim(), subjectIds: selectedSubjs })
+        await updatePendingData(user.uid, { celular: celular.replace(/\D/g, ''), apelido: apelido.trim(), subjectIds: selectedSubjs, horariosSemana })
         setStep('schedule')
       } catch (e) {
         setSaveError('Erro ao salvar: ' + e.message)
@@ -171,6 +235,22 @@
                       {subjError && <p className="text-xs text-err mt-2">{subjError}</p>}
                     </div>
 
+                    {/* Horários de entrada/saída */}
+                    <div>
+                      <label className="lbl">Seus horários na escola <span className="text-t3 normal-case font-normal">(opcional)</span></label>
+                      <p className="text-xs text-t3 mt-0.5 mb-3">Informe seus horários de entrada e saída por dia. Deixe em branco os dias em que não trabalha.</p>
+                      <div className="space-y-3">
+                        {DAYS.map(day => (
+                          <HorarioDiaSemana
+                            key={day}
+                            day={day}
+                            value={horariosSemana[day]}
+                            onChange={handleHorarioChange}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Erro de save */}
                     {saveError && <p className="text-xs text-err">{saveError}</p>}
 
@@ -178,7 +258,7 @@
                     <div className="flex flex-col gap-2 pt-1">
                       <button
                         onClick={handleSubmit}
-                        disabled={saving}
+                        disabled={saving || hasHorarioError}
                         className="btn btn-dark w-full disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {saving ? 'Salvando…' : 'Enviar cadastro'}

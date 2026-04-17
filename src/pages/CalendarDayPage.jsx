@@ -51,7 +51,8 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
 
   const candidates = useMemo(() =>
     rankCandidates(teacherId, date, slot, subjectId,
-      store.teachers, store.schedules, store.absences, store.subjects, store.areas),
+      store.teachers, store.schedules, store.absences, store.subjects, store.areas,
+      store.periodConfigs, store.sharedSeries),
     [teacherId, date, slot, subjectId, store]
   )
 

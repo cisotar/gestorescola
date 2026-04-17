@@ -64,7 +64,8 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
 
   const candidates = useMemo(() =>
     rankCandidates(teacherId, date, slot, subjectId,
-      store.teachers, store.schedules, store.absences, store.subjects, store.areas),
+      store.teachers, store.schedules, store.absences, store.subjects, store.areas,
+      store.periodConfigs, store.sharedSeries),
     [teacherId, date, slot, subjectId, store]
   )
 
@@ -266,7 +267,8 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
       if (substituteId) return
       const sched = mine.find(s => s.timeSlot === slot)
       const top = rankCandidates(teacher.id, date, slot, sched?.subjectId,
-        store.teachers, store.schedules, store.absences, store.subjects, store.areas)[0]
+        store.teachers, store.schedules, store.absences, store.subjects, store.areas,
+        store.periodConfigs, store.sharedSeries)[0]
       if (top) assignSubstitute(absenceId, slotId, top.teacher.id)
     })
     toast('Substituições confirmadas', 'ok')

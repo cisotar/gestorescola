@@ -4,10 +4,138 @@ import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
 import { getCfg, gerarPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, defaultCfg, toMin, fromMin, calcSaldo, validarEncaixe } from '../lib/periods'
-import { COLOR_PALETTE } from '../lib/constants'
+import { COLOR_PALETTE, DAYS } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
 import { listPendingTeachers, approveTeacher, rejectTeacher, addAdmin, listAdmins, removeAdmin, deleteDocById, subscribePendingActionsCount, getPendingActions, approvePendingAction, rejectPendingAction, getMyPendingActions } from '../lib/db'
+
+// ─── HorarioDiaSemana ─────────────────────────────────────────────────────────
+
+function HorarioDiaSemana({ day, value, onChange }) {
+  const entrada = value?.entrada ?? ''
+  const saida   = value?.saida   ?? ''
+  let error = null
+  if (entrada && !saida) error = 'Preencha a saída também'
+  else if (!entrada && saida) error = 'Preencha a entrada também'
+  else if (entrada && saida && saida <= entrada) error = 'Saída deve ser após a entrada'
+  return (
+    <div>
+      <div className="flex items-center gap-3">
+        <span className="w-20 text-sm font-medium text-t1 shrink-0">{day}</span>
+        <div className="flex items-center gap-2 flex-1">
+          <input type="time" className="inp flex-1" value={entrada} onChange={e => onChange(day, 'entrada', e.target.value)} />
+          <span className="text-t3 text-sm shrink-0">até</span>
+          <input type="time" className="inp flex-1" value={saida} onChange={e => onChange(day, 'saida', e.target.value)} />
+        </div>
+      </div>
+      {error && <p className="text-xs text-err mt-1 ml-23">{error}</p>}
+    </div>
+  )
+}
+
+// ─── HorariosSemanaForm ───────────────────────────────────────────────────────
+
+function HorariosSemanaForm({ value, onChange, onSave, onCancel, saving }) {
+  const horarioErrors = Object.fromEntries(
+    DAYS.map(day => {
+      const v = value[day]
+      const entrada = v?.entrada ?? ''
+      const saida   = v?.saida   ?? ''
+      let error = null
+      if (entrada && !saida) error = 'Preencha a saída também'
+      else if (!entrada && saida) error = 'Preencha a entrada também'
+      else if (entrada && saida && saida <= entrada) error = 'Saída deve ser após a entrada'
+      return [day, error]
+    })
+  )
+  const hasHorarioError = Object.values(horarioErrors).some(Boolean)
+  const handleChange = (day, field, val) => {
+    onChange(prev => {
+      const current = prev[day] ?? { entrada: '', saida: '' }
+      const updated = { ...current, [field]: val }
+      if (!updated.entrada && !updated.saida) {
+        const { [day]: _, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [day]: updated }
+    })
+  }
+  return (
+    <div className="space-y-3">
+      {DAYS.map(day => (
+        <HorarioDiaSemana key={day} day={day} value={value[day]} onChange={handleChange} />
+      ))}
+      <div className="flex gap-2 pt-1">
+        <button className="btn btn-dark btn-sm" disabled={hasHorarioError || saving} onClick={onSave}>
+          {saving ? 'Salvando…' : 'Salvar horários'}
+        </button>
+        {onCancel && <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancelar</button>}
+      </div>
+    </div>
+  )
+}
+
+// ─── SecaoHorarios ────────────────────────────────────────────────────────────
+
+function SecaoHorarios({ teacher, isEditable, onSaveAdmin }) {
+  const store = useAppStore()
+  const [editando, setEditando] = useState(false)
+  const [horariosSemana, setHorariosSemana] = useState(teacher?.horariosSemana ?? {})
+  const [saving, setSaving] = useState(false)
+  const teacherHorarios = teacher?.horariosSemana ?? {}
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      if (onSaveAdmin) {
+        await onSaveAdmin(horariosSemana)
+      } else {
+        await store.updateTeacherProfile(teacher.id, { horariosSemana })
+        toast('Horários salvos com sucesso', 'ok')
+      }
+      setEditando(false)
+    } catch (e) {
+      console.error(e)
+      toast('Erro ao salvar horários', 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="lbl !mb-0">Horários na escola</label>
+        {isEditable && !editando && (
+          <button className="btn btn-ghost btn-xs" onClick={() => { setHorariosSemana(teacherHorarios); setEditando(true) }}>
+            Editar horários
+          </button>
+        )}
+      </div>
+      {editando ? (
+        <HorariosSemanaForm
+          value={horariosSemana}
+          onChange={setHorariosSemana}
+          onSave={handleSave}
+          onCancel={() => { setHorariosSemana(teacherHorarios); setEditando(false) }}
+          saving={saving}
+        />
+      ) : (
+        <div className="space-y-1">
+          {DAYS.map(day => {
+            const v = teacherHorarios[day]
+            return (
+              <div key={day} className="flex items-center gap-3 text-sm">
+                <span className="w-20 font-medium text-t1 shrink-0">{day}</span>
+                <span className="text-t2">{v?.entrada && v?.saida ? `${v.entrada} – ${v.saida}` : '—'}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -1047,6 +1175,7 @@ function TabTeachers() {
   const [schedTeacher,    setSchedTeacher]    = useState(null)
   const [viewingSchedule, setViewingSchedule] = useState(null)
   const [editId,          setEditId]          = useState(null)
+  const [editingTeacher,  setEditingTeacher]  = useState(null)
   const [form,         setForm]         = useState({ name: '', email: '', celular: '', apelido: '', subjectIds: [] })
   const [view,         setView]         = useState('cards') // 'cards' | 'table'
   const [subjectChangeCtx, setSubjectChangeCtx] = useState(null)
@@ -1123,8 +1252,8 @@ function TabTeachers() {
     .map(p => ({ ...p, _isPending: true }))
   const allRows = [...approvedRows, ...pendingRows]
 
-  const openAdd  = () => { setForm({ name: '', email: '', celular: '', subjectIds: [] }); setEditId(null); setModal(true) }
-  const openEdit = (t) => { setForm({ name: t.name, email: t.email ?? '', celular: t.celular ?? '', apelido: t.apelido ?? '', subjectIds: t.subjectIds ?? [] }); setEditId(t.id); setModal(true) }
+  const openAdd  = () => { setForm({ name: '', email: '', celular: '', subjectIds: [] }); setEditId(null); setEditingTeacher(null); setModal(true) }
+  const openEdit = (t) => { setForm({ name: t.name, email: t.email ?? '', celular: t.celular ?? '', apelido: t.apelido ?? '', subjectIds: t.subjectIds ?? [] }); setEditId(t.id); setEditingTeacher(t); setModal(true) }
 
   const save = () => {
     if (!form.name.trim()) return
@@ -1333,6 +1462,18 @@ function TabTeachers() {
               />
             )}
           </div>
+          {editingTeacher && (
+            <div className="border-t border-bdr pt-4">
+              <SecaoHorarios
+                teacher={editingTeacher}
+                isEditable={true}
+                onSaveAdmin={async (hs) => {
+                  await store.updateTeacher(editId, { horariosSemana: hs })
+                  toast(`Horários de ${editingTeacher.name} atualizados`, 'ok')
+                }}
+              />
+            </div>
+          )}
           <div className="flex gap-2 pt-2">
             <button className="btn btn-dark flex-1" onClick={save}>Salvar</button>
             <button className="btn btn-ghost" onClick={() => setModal(false)}>Cancelar</button>
