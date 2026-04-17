@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
-import { monthlyLoad } from '../lib/absences'
+import { useState } from 'react'
+import { monthlyLoad, businessDaysBetween, dateToDayLabel } from '../lib/absences'
 
 // ─── Helpers locais ───────────────────────────────────────────────────────────
 
@@ -164,7 +165,14 @@ export default function DashboardPage() {
 
       {/* Stats do professor */}
       {!isAdmin && myTeacher && (
-        <TeacherStats teacher={myTeacher} schedules={schedules} absences={absences} />
+        <>
+          <TeacherStats teacher={myTeacher} schedules={schedules} absences={absences} />
+          <ActionCard
+            icon="🔄" label="Minhas Substituições"
+            desc="Veja o histórico completo das substituições que você realizou"
+            to="/substitutions"
+          />
+        </>
       )}
     </div>
   )
@@ -234,24 +242,57 @@ function WorkloadTable({ teachers, schedules, absences }) {
 // ─── Teacher stats ────────────────────────────────────────────────────────────
 
 function TeacherStats({ teacher, schedules, absences }) {
-  const myAulas = schedules.filter(s => s.teacherId === teacher.id).length
-  const myFaltas = (absences ?? []).reduce((acc, ab) =>
-    acc + (ab.teacherId === teacher.id ? ab.slots.length : 0), 0)
+  const [period, setPeriod] = useState('month')
+
+  const today    = new Date().toISOString().slice(0, 10)
+  const year     = today.slice(0, 4)
+  const fromDate = period === 'year' ? `${year}-01-01` : `${today.slice(0, 7)}-01`
+
+  const days       = businessDaysBetween(fromDate, today)
+  const myAulas    = schedules.filter(s => s.teacherId === teacher.id).length
+  const aulasDadas = days.reduce((acc, d) => {
+    const dl = dateToDayLabel(d)
+    return acc + (dl ? schedules.filter(s => s.teacherId === teacher.id && s.day === dl).length : 0)
+  }, 0)
+  const myFaltas = (absences ?? []).reduce((acc, ab) => {
+    if (ab.teacherId !== teacher.id) return acc
+    return acc + ab.slots.filter(sl => sl.date >= fromDate && sl.date <= today).length
+  }, 0)
   const mySubs = (absences ?? []).reduce((acc, ab) =>
-    acc + ab.slots.filter(s => s.substituteId === teacher.id).length, 0)
+    acc + ab.slots.filter(sl => sl.substituteId === teacher.id && sl.date >= fromDate && sl.date <= today).length
+  , 0)
+
+  const stats = [
+    { v: myAulas,    l: 'aulas atribuídas', sub: 'na grade semanal' },
+    { v: aulasDadas, l: 'aulas dadas',      sub: period === 'year' ? 'este ano' : 'este mês' },
+    { v: myFaltas,   l: 'faltas',           sub: period === 'year' ? 'este ano' : 'este mês' },
+    { v: mySubs,     l: 'substituições',    sub: period === 'year' ? 'este ano' : 'este mês' },
+  ]
 
   return (
     <div className="card">
-      <div className="font-bold text-sm mb-4">Suas estatísticas do mês</div>
-      <div className="flex gap-6 flex-wrap">
-        {[
-          { v: myAulas,  l: 'aulas/semana' },
-          { v: myFaltas, l: 'faltas registradas' },
-          { v: mySubs,   l: 'subs. realizadas' },
-        ].map(({ v, l }) => (
-          <div key={l} className="text-center">
-            <div className="text-3xl font-extrabold text-navy">{v}</div>
-            <div className="text-xs text-t2 mt-0.5">{l}</div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="font-bold text-sm">Suas estatísticas</div>
+        <div className="flex gap-1">
+          {[['month','Este mês'],['year','Este ano']].map(([val, lbl]) => (
+            <button
+              key={val}
+              onClick={() => setPeriod(val)}
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+                period === val
+                  ? 'bg-navy text-white border-navy'
+                  : 'bg-surf2 text-t2 border-bdr hover:border-t3'
+              }`}
+            >{lbl}</button>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {stats.map(({ v, l, sub }) => (
+          <div key={l} className="flex flex-col items-center text-center bg-surf2 rounded-xl px-3 py-3">
+            <div className="text-2xl font-extrabold text-navy leading-none">{v}</div>
+            <div className="text-[11px] font-bold text-t1 mt-1">{l}</div>
+            <div className="text-[10px] text-t3 mt-0.5">{sub}</div>
           </div>
         ))}
       </div>
