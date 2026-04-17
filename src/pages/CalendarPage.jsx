@@ -314,7 +314,7 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
               ✕ Remover todas as faltas
             </button>
           )}
-          {allHasSub && (
+          {anyAbsent && (
             <button className="btn btn-ghost btn-sm ml-auto" onClick={handleDownloadPDF}>
               📄 Baixar PDF
             </button>
@@ -322,9 +322,9 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
         </div>
       )}
 
-      {/* Toggle de regra — aparece no topo quando há faltas sem substituto */}
+      {/* Toggle de regra — aparece acima das sugestões quando há faltas sem substituto */}
       {isAdmin && anyAbsent && !allHasSub && (
-        <div className="mb-4">
+        <div className="mb-4 p-3 bg-surf2 rounded-xl">
           <ToggleRuleButtons activeRule={ruleType} onRuleChange={setRuleType} />
         </div>
       )}
