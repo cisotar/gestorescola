@@ -276,7 +276,22 @@ Documento único em `meta/config`. Toda mutação usa `saveConfig(state)` (um `s
         intervalos: [
           { apos: 2, duracao: 10 },   // intervalo de 10min após a 2ª aula
           { apos: 5, duracao: 60 }    // almoço de 60min após a 5ª aula
-        ]
+        ],
+
+        // ── Campos opcionais — retrocompatível com configs existentes ──────
+        inicioPeriodo: "06:45",  // horário de início do turno escolar (antes da 1ª aula)
+        fimPeriodo:    "12:30",  // horário de encerramento do turno escolar
+
+        gradeEspecial: {         // grade para dias especiais (ex: dias de evento)
+          inicioEspecial: "14:00",  // horário de início da 1ª entrada da grade especial
+          itens: [
+            // ordem é 0-based e define a sequência de exibição
+            { tipo: "intervalo", ordem: 0, duracao: 15, label: "Entrada"  },
+            { tipo: "aula",      ordem: 1, duracao: 40, label: "Aula 1"   },
+            { tipo: "aula",      ordem: 2, duracao: 40, label: "Aula 2"   }
+            // slots gerados: "seg-fund|manha|e1", "seg-fund|manha|e2"
+          ]
+        }
       }
     }
   },
@@ -986,7 +1001,8 @@ O sistema **não armazena horários fixos**. Em vez disso, deriva os horários e
 
 ```
 getCfg(segmentId, turno, periodConfigs)
-    → { inicio, duracao, qtd, intervalos }
+    → { inicio, duracao, qtd, intervalos, inicioPeriodo?, fimPeriodo?, gradeEspecial? }
+      (campos opcionais ficam undefined em configs antigas — sem erro)
 
 gerarPeriodos(cfg)
     → [ { aulaIdx, label, inicio, fim, isIntervalo }, ... ]
@@ -996,11 +1012,23 @@ getAulas(segId, turno, periodConfigs)
     → filtra isIntervalo === false → só as aulas "reais"
 
 makeSlot(segId, turno, aulaIdx)        →  "seg-fund|manha|3"
+makeEspecialSlot(segId, turno, idx)    →  "seg-fund|manha|e1"
+
 parseSlot("seg-fund|manha|3")          →  { segmentId, turno, aulaIdx: 3 }
+parseSlot("seg-fund|manha|e1")         →  { segmentId, turno, aulaIdx: "e1", isEspecial: true }
+
 resolveSlot(timeSlot, periodConfigs)   →  { label: "3ª Aula", inicio: "08:40", fim: "09:30" }
+                                          (retorna null para slots especiais — sem erro)
 slotLabel(timeSlot, periodConfigs)     →  "3ª Aula"
 slotFullLabel(timeSlot, periodConfigs) →  "3ª Aula (08:40–09:30)"
+
+gerarPeriodosEspeciais(cfg)
+    → [ { label, inicio, fim, isEspecial: true, isIntervalo }, ... ]
+      derivado de cfg.gradeEspecial.itens ordenados por ordem
+      retorna [] se gradeEspecial ausente ou itens vazio
 ```
+
+**Formato dos timeSlots especiais:** `"segmentId|turno|e{idx}"` onde `idx` é 1-based e conta apenas os itens do tipo `"aula"` dentro de `gradeEspecial.itens` (intervalos não são contados na indexação).
 
 ---
 

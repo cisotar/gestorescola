@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
-import { getAulas } from '../lib/periods'
+import { getAulas, getCfg, gerarPeriodosEspeciais, makeEspecialSlot } from '../lib/periods'
 import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
 import { isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
 
@@ -11,6 +11,8 @@ const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = false }) {
   const turno = seg.turno ?? 'manha'
   const aulas = getAulas(seg.id, turno, store.periodConfigs)
+  const cfg = getCfg(seg.id, turno, store.periodConfigs)
+  const especiais = gerarPeriodosEspeciais(cfg)
 
   if (aulas.length === 0) return null
 
@@ -82,6 +84,63 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
               </tr>
             )
           })}
+          {/* Linhas de aulas especiais */}
+          {especiais.length > 0 && (() => {
+            let espCount = 0
+            return especiais.map((p, idx) => {
+              if (p.isIntervalo) return null
+              espCount += 1
+              const aulaCount = espCount
+              const slotKey = makeEspecialSlot(seg.id, turno, aulaCount)
+              const daySlots = DAYS.map(day =>
+                schedules.filter(s => s.timeSlot === slotKey && s.day === day)
+              )
+              return (
+                <tr key={`esp-${idx}`} className="bg-surf2 border-b border-bdr/50">
+                  <td className="px-3 py-2 font-bold text-[#1a1814] whitespace-nowrap align-top border-r border-bdr border-l-2 border-accent bg-surf2">
+                    <div>{p.label}</div>
+                    {p.inicio && (
+                      <div className="text-[10px] text-[#4a4740]">{p.inicio}–{p.fim}</div>
+                    )}
+                  </td>
+                  {daySlots.map((matches, dayIdx) => (
+                    matches.length === 0 ? (
+                      <td key={dayIdx} className="px-2 py-2 align-top border-r border-bdr last:border-r-0 bg-surf2" />
+                    ) : (
+                      <td key={dayIdx} className="px-2 py-2 align-top border-r border-bdr last:border-r-0 bg-surf2">
+                        <div className="space-y-1">
+                          {matches.map(s => {
+                            const teacher = store.teachers.find(t => t.id === s.teacherId)
+                            const subject = store.subjects?.find(sub => sub.id === s.subjectId)
+                            const isShared = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                            const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
+                            const displayLabel = isShared
+                              ? `${s.turma} · ${sharedAct?.name ?? '?'}`
+                              : s.turma
+                            return (
+                              <div key={s.id} className="leading-tight">
+                                {showTeacher ? (
+                                  <>
+                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name || '—')}</div>
+                                    <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{displayLabel ?? '—'}</div>
+                                    <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </td>
+                    )
+                  ))}
+                </tr>
+              )
+            })
+          })()}
         </tbody>
       </table>
     </div>

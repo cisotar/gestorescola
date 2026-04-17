@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
-import { getCfg, gerarPeriodos, defaultCfg, toMin, fromMin } from '../lib/periods'
+import { getCfg, gerarPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, defaultCfg, toMin, fromMin, calcSaldo, validarEncaixe } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
@@ -1477,167 +1477,115 @@ function TabTeachers() {
   )
 }
 
-// ─── Horários Especiais — seção visual dentro do card de segmento ────────────
+// ─── CamposGradeEspecial — seção de grade especial dentro de CardPeriodo ────────
 
-function HorariosEspeciaisSection({ cfg, segId, turno, store }) {
-  const horariosEspeciais = cfg.horariosEspeciais ?? []
-  const intervalosEspeciais = cfg.intervalosEspeciais ?? []
+function CamposGradeEspecial({ gradeEspecial, onChange }) {
+  const itens = gradeEspecial.itens ?? []
 
-  const handleAddHorario = () => {
-    const novoItem = { id: uid(), inicio: '07:00', duracao: 50 }
-    const novosHorarios = [...horariosEspeciais, novoItem]
-    store.savePeriodCfg(segId, turno, { ...cfg, horariosEspeciais: novosHorarios })
+  const handleCampoGlobal = (campo, valor) => {
+    onChange({ ...gradeEspecial, [campo]: valor })
   }
 
-  const handleChangeInicio = (idx, valor) => {
-    const novosHorarios = horariosEspeciais.map((h, i) => i === idx ? { ...h, inicio: valor } : h)
-    store.savePeriodCfg(segId, turno, { ...cfg, horariosEspeciais: novosHorarios })
+  const handleAdicionarAula = () => {
+    const proximaOrdem = itens.length > 0 ? Math.max(...itens.map(i => i.ordem)) + 1 : 0
+    const novoItem = { id: uid(), tipo: 'aula', ordem: proximaOrdem, duracao: gradeEspecial.duracaoAula ?? 40 }
+    onChange({ ...gradeEspecial, itens: [...itens, novoItem] })
   }
 
-  const handleChangeDuracao = (idx, valor) => {
-    const parsed = parseInt(valor, 10)
-    if (!parsed || parsed <= 0) return
-    const novosHorarios = horariosEspeciais.map((h, i) => i === idx ? { ...h, duracao: parsed } : h)
-    store.savePeriodCfg(segId, turno, { ...cfg, horariosEspeciais: novosHorarios })
+  const handleAdicionarIntervalo = () => {
+    const proximaOrdem = itens.length > 0 ? Math.max(...itens.map(i => i.ordem)) + 1 : 0
+    const novoItem = { id: uid(), tipo: 'intervalo', ordem: proximaOrdem, duracao: 15 }
+    onChange({ ...gradeEspecial, itens: [...itens, novoItem] })
   }
 
-  const handleRemoveHorario = (idx) => {
-    const removido = horariosEspeciais[idx]
-    const ordenados = [...horariosEspeciais].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
-    const idxOrdenado = ordenados.findIndex(h => h.id === removido.id)
-    const anterior = idxOrdenado > 0 ? ordenados[idxOrdenado - 1] : null
-    const idAnterior = anterior ? anterior.id : null
+  const handleRemoverItem = (id) => {
+    onChange({ ...gradeEspecial, itens: itens.filter(i => i.id !== id) })
+  }
 
-    const novosHorarios = horariosEspeciais.filter((_, i) => i !== idx)
-    const novosIntervalos = intervalosEspeciais.map(iv =>
-      iv.aposEspecial === removido.id ? { ...iv, aposEspecial: idAnterior } : iv
-    )
-    store.savePeriodCfg(segId, turno, { ...cfg, horariosEspeciais: novosHorarios, intervalosEspeciais: novosIntervalos })
+  const handleEditarItem = (id, campo, valor) => {
+    onChange({
+      ...gradeEspecial,
+      itens: itens.map(i => i.id === id ? { ...i, [campo]: valor } : i),
+    })
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <label className="lbl !mb-0">Horários Especiais</label>
+    <div className="space-y-3">
+      <label className="lbl !mb-0">Grade Especial</label>
+
+      {/* Campos globais */}
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="lbl">Início especial</label>
+          <input
+            className="inp"
+            type="time"
+            value={gradeEspecial.inicioEspecial ?? ''}
+            onChange={e => handleCampoGlobal('inicioEspecial', e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="lbl">Duração aula (min)</label>
+          <input
+            className="inp"
+            type="number"
+            min="1"
+            value={gradeEspecial.duracaoAula ?? 40}
+            onChange={e => handleCampoGlobal('duracaoAula', Number(e.target.value) || 40)}
+          />
+        </div>
+        <div>
+          <label className="lbl">Qtd. aulas</label>
+          <input
+            className="inp"
+            type="number"
+            min="1"
+            value={gradeEspecial.qtd ?? 1}
+            onChange={e => handleCampoGlobal('qtd', Number(e.target.value) || 1)}
+          />
+        </div>
       </div>
-      {horariosEspeciais.length === 0 && (
-        <p className="text-t3 text-sm py-1">Nenhum horário especial configurado.</p>
+
+      {/* Lista de itens */}
+      {itens.length === 0 && (
+        <p className="text-t3 text-sm py-1">Nenhum item na grade especial.</p>
       )}
       <div className="space-y-2">
-        {horariosEspeciais.map((item, idx) => (
+        {itens.map(item => (
           <div key={item.id} className="flex items-center gap-2 bg-surf2 rounded-xl px-3 py-2 flex-wrap">
+            <span className={`badge text-xs font-semibold ${item.tipo === 'aula' ? 'bg-accent text-white' : 'bg-surf text-t2 border border-bdr'}`}>
+              {item.tipo === 'aula' ? 'Aula' : 'Intervalo'}
+            </span>
+            <span className="text-xs text-t2 shrink-0">Ordem</span>
             <input
-              className="inp !w-28 py-1 text-xs"
-              type="time"
-              value={item.inicio}
-              onChange={e => handleChangeInicio(idx, e.target.value)}
+              className="inp !w-16 py-1 text-xs text-center"
+              type="number"
+              min="0"
+              value={item.ordem}
+              onChange={e => handleEditarItem(item.id, 'ordem', Number(e.target.value))}
             />
+            <span className="text-xs text-t2 shrink-0">Duração (min)</span>
             <input
               className="inp !w-20 py-1 text-xs text-center"
               type="number"
+              min="1"
               value={item.duracao}
-              onChange={e => handleChangeDuracao(idx, e.target.value)}
+              disabled={item.tipo === 'aula'}
+              onChange={e => handleEditarItem(item.id, 'duracao', Number(e.target.value))}
             />
-            <span className="text-xs text-t2 shrink-0">min</span>
             <button
-              className="ml-auto btn btn-ghost btn-xs text-t3 hover:text-err transition-colors"
-              title="Remover horário especial"
-              onClick={() => handleRemoveHorario(idx)}
-            >✕</button>
+              className="ml-auto btn btn-danger btn-xs"
+              title="Remover item"
+              onClick={() => handleRemoverItem(item.id)}
+            >Remover</button>
           </div>
         ))}
       </div>
-      <div className="mt-2">
-        <button className="btn btn-ghost btn-xs" onClick={handleAddHorario}>+ Adicionar horário especial</button>
-      </div>
-    </div>
-  )
-}
 
-// ─── Intervalos Especiais — seção visual dentro do card de segmento ──────────
-
-function IntervalosEspeciaisSection({ cfg, segId, turno, store }) {
-  const horariosEspeciais = cfg.horariosEspeciais ?? []
-  const intervalosEspeciais = cfg.intervalosEspeciais ?? []
-  const semHorarios = horariosEspeciais.length === 0
-
-  const handleAddIntervalo = () => {
-    const ultimoId = horariosEspeciais.length > 0
-      ? horariosEspeciais[horariosEspeciais.length - 1].id
-      : null
-    const novoItem = { id: uid(), aposEspecial: ultimoId, duracao: 20 }
-    const novosIntervalos = [...intervalosEspeciais, novoItem]
-    store.savePeriodCfg(segId, turno, { ...cfg, intervalosEspeciais: novosIntervalos })
-  }
-
-  const handleChangeApos = (idx, valor) => {
-    const novosIntervalos = intervalosEspeciais.map((iv, i) =>
-      i === idx ? { ...iv, aposEspecial: valor || null } : iv
-    )
-    store.savePeriodCfg(segId, turno, { ...cfg, intervalosEspeciais: novosIntervalos })
-  }
-
-  const handleChangeDuracaoIntervalo = (idx, valor) => {
-    const parsed = parseInt(valor, 10)
-    if (!parsed || parsed <= 0) return
-    const novosIntervalos = intervalosEspeciais.map((iv, i) =>
-      i === idx ? { ...iv, duracao: parsed } : iv
-    )
-    store.savePeriodCfg(segId, turno, { ...cfg, intervalosEspeciais: novosIntervalos })
-  }
-
-  const handleRemoveIntervalo = (idx) => {
-    const novosIntervalos = intervalosEspeciais.filter((_, i) => i !== idx)
-    store.savePeriodCfg(segId, turno, { ...cfg, intervalosEspeciais: novosIntervalos })
-  }
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <label className="lbl !mb-0">Intervalos Especiais</label>
-      </div>
-      {intervalosEspeciais.length === 0 && (
-        <p className="text-t3 text-sm py-1">Nenhum intervalo especial configurado.</p>
-      )}
-      <div className="space-y-2">
-        {intervalosEspeciais.map((item, idx) => (
-          <div key={item.id} className="flex items-center gap-2 bg-surf2 rounded-xl px-3 py-2 flex-wrap">
-            <select
-              className="inp py-1 text-xs"
-              value={item.aposEspecial ?? ''}
-              disabled={semHorarios}
-              onChange={e => handleChangeApos(idx, e.target.value)}
-            >
-              {semHorarios ? (
-                <option value="">— Nenhum horário especial —</option>
-              ) : (
-                <>
-                  <option value="" disabled>— Nenhum horário especial —</option>
-                  {horariosEspeciais.map((he, heIdx) => (
-                    <option key={he.id} value={he.id}>
-                      Horário especial {heIdx + 1} ({he.inicio})
-                    </option>
-                  ))}
-                </>
-              )}
-            </select>
-            <input
-              className="inp !w-20 py-1 text-xs text-center"
-              type="number"
-              value={item.duracao}
-              onChange={e => handleChangeDuracaoIntervalo(idx, e.target.value)}
-            />
-            <span className="text-xs text-t2 shrink-0">min</span>
-            <button
-              className="ml-auto btn btn-ghost btn-xs text-t3 hover:text-err transition-colors"
-              title="Remover intervalo especial"
-              onClick={() => handleRemoveIntervalo(idx)}
-            >✕</button>
-          </div>
-        ))}
-      </div>
-      <div className="mt-2">
-        <button className="btn btn-ghost btn-xs" onClick={handleAddIntervalo}>+ Adicionar intervalo especial</button>
+      {/* Botões de adição */}
+      <div className="flex gap-2 flex-wrap">
+        <button className="btn btn-ghost btn-xs" onClick={handleAdicionarAula}>+ Adicionar aula</button>
+        <button className="btn btn-ghost btn-xs" onClick={handleAdicionarIntervalo}>+ Adicionar intervalo</button>
       </div>
     </div>
   )
@@ -1646,8 +1594,26 @@ function IntervalosEspeciaisSection({ cfg, segId, turno, store }) {
 // ─── buildPreviewItems — combina períodos regulares + especiais para o preview ─
 
 function buildPreviewItems(cfg) {
-  const itensRegulares = gerarPeriodos(cfg)
+  const itensRegulares = gerarPeriodos(cfg).map(p => ({
+    tipo: p.isIntervalo ? 'intervalo' : 'aula',
+    inicio: p.inicio,
+    fim: p.fim,
+    label: p.label,
+  }))
 
+  // Fonte primária: gradeEspecial via gerarPeriodosEspeciais
+  const periodosEspeciais = gerarPeriodosEspeciais(cfg)
+  if (periodosEspeciais.length > 0) {
+    const itensEspeciais = periodosEspeciais.map(p => ({
+      tipo: p.isIntervalo ? 'intervaloEspecial' : 'aulaEspecial',
+      inicio: p.inicio,
+      fim: p.fim,
+      label: p.label,
+    }))
+    return [...itensRegulares, ...itensEspeciais]
+  }
+
+  // Fallback legacy: horariosEspeciais / intervalosEspeciais
   const horariosEspeciais = cfg.horariosEspeciais ?? []
   const intervalosEspeciais = cfg.intervalosEspeciais ?? []
 
@@ -1659,26 +1625,301 @@ function buildPreviewItems(cfg) {
   const itensEspeciais = []
   for (const h of ordenados) {
     const fim = fromMin(toMin(h.inicio) + (h.duracao || 0))
-    // N = índice 1-based na lista ORIGINAL (mesma numeração usada em HorariosEspeciaisSection)
     const N = horariosEspeciais.findIndex(orig => orig.id === h.id) + 1
-    itensEspeciais.push({ label: `Horário especial ${N}`, inicio: h.inicio, fim, isEspecial: true })
+    itensEspeciais.push({ tipo: 'aulaEspecial', label: `Horário especial ${N}`, inicio: h.inicio, fim })
 
-    // Intervalos especiais cujo aposEspecial aponta para este horário
     intervalosEspeciais
       .filter(iv => iv.aposEspecial === h.id)
       .forEach(iv => {
         const ivFim = fromMin(toMin(fim) + (iv.duracao || 0))
-        itensEspeciais.push({
-          label: 'Intervalo especial',
-          inicio: fim,
-          fim: ivFim,
-          isEspecial: true,
-          isIntervaloEspecial: true,
-        })
+        itensEspeciais.push({ tipo: 'intervaloEspecial', label: 'Intervalo especial', inicio: fim, fim: ivFim })
       })
   }
 
   return [...itensRegulares, ...itensEspeciais]
+}
+
+// ─── PreviewLinhaTempo — barras proporcionais ao tempo de cada bloco ─────────
+
+function PreviewLinhaTempo({ items }) {
+  if (!items || items.length === 0) return null
+
+  const tempoTotalItems = items.reduce((acc, b) => acc + (toMin(b.fim) - toMin(b.inicio)), 0)
+
+  const styleByTipo = {
+    aula:             'bg-navy/10 border border-bdr rounded text-[10px]',
+    intervalo:        'bg-surf2 border border-bdr rounded text-[10px] text-t3',
+    aulaEspecial:     'bg-surf2 border-l-2 border-accent rounded text-[10px] font-semibold',
+    intervaloEspecial:'bg-surf2 border border-dashed border-bdr rounded text-[10px] text-t3',
+  }
+
+  return (
+    <div className="bg-surf2 rounded-xl p-3">
+      <div className="text-[11px] font-bold text-t2 uppercase tracking-wide mb-2">Preview</div>
+      <div className="flex w-full gap-0.5 overflow-hidden">
+        {items.map((b, i) => {
+          const dur = toMin(b.fim) - toMin(b.inicio)
+          const pct = tempoTotalItems > 0 ? (dur / tempoTotalItems) * 100 : 0
+          const cls = styleByTipo[b.tipo] ?? 'bg-surf2 border border-bdr rounded text-[10px]'
+          return (
+            <div
+              key={i}
+              className={`${cls} min-w-[2px] overflow-hidden flex flex-col items-center justify-center px-0.5 py-1 text-center`}
+              style={{ width: `${pct}%` }}
+              title={`${b.label} ${b.inicio}–${b.fim}`}
+            >
+              <span className="truncate leading-none w-full text-center">{b.label}</span>
+              <span className="truncate leading-none w-full text-center opacity-70">{b.inicio}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── SaldoTempo — indicador visual de saldo de tempo do turno ─────────────────
+
+function SaldoTempo({ tempoTotal, tempoLetivo, tempoResidual, tempoEspecial = 0 }) {
+  const fmtMin = (m) => {
+    const total = Math.abs(m)
+    const h = Math.floor(total / 60)
+    const min = total % 60
+    return `${h}h ${min}min`
+  }
+
+  const corResidual = tempoResidual >= 0 ? 'text-ok' : 'text-err'
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <span className="badge bg-surf2 text-t2 text-xs">
+        Total: <span className="font-mono ml-1">{fmtMin(tempoTotal)}</span>
+      </span>
+      <span className="badge bg-surf2 text-t2 text-xs">
+        Letivo: <span className="font-mono ml-1">{fmtMin(tempoLetivo)}</span>
+      </span>
+      {tempoEspecial > 0 && (
+        <span className="badge bg-surf2 text-t2 text-xs">
+          Especial: <span className="font-mono ml-1">{fmtMin(tempoEspecial)}</span>
+        </span>
+      )}
+      <span className={`badge bg-surf2 text-xs ${corResidual}`}>
+        Residual: <span className="font-mono ml-1">{tempoResidual < 0 ? '-' : ''}{fmtMin(tempoResidual)}</span>
+      </span>
+    </div>
+  )
+}
+
+// ─── AlertaImpeditivoModal ────────────────────────────────────────────────────
+
+function AlertaImpeditivoModal({ open, excedente, duracaoSugerida, onAplicar, onFechar }) {
+  return (
+    <Modal open={open} onClose={onFechar} title="Grade especial excede o tempo disponível" size="sm">
+      <div className="space-y-3">
+        <p className="text-sm text-t1">
+          Excedente: <span className="font-mono font-semibold">{excedente} minuto{excedente !== 1 ? 's' : ''}</span>.
+        </p>
+        {duracaoSugerida !== null ? (
+          <>
+            <p className="text-sm text-t2">
+              Duração sugerida por aula: <span className="font-mono font-semibold">{duracaoSugerida} min</span>.
+            </p>
+            <button className="btn btn-dark btn-sm w-full" onClick={onAplicar}>
+              Aplicar sugestão
+            </button>
+          </>
+        ) : (
+          <p className="text-sm text-warn font-medium">
+            Ajuste manual necessário — não há duração viável para as aulas.
+          </p>
+        )}
+        <div className="flex justify-end pt-1">
+          <button className="btn btn-ghost btn-sm" onClick={onFechar}>Fechar</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── CardPeriodo — card por segmento dentro de TabPeriods ────────────────────
+
+function CardPeriodo({ seg, store }) {
+  const turno   = seg.turno ?? 'manha'
+  const cfg     = getCfg(seg.id, turno, store.periodConfigs)
+
+  const [localInicio, setLocalInicio] = useState(cfg.inicioPeriodo ?? '')
+  const [localFim, setLocalFim]       = useState(cfg.fimPeriodo ?? '')
+  const [localGradeEspecial, setLocalGradeEspecial] = useState(
+    cfg.gradeEspecial ?? { inicioEspecial: '', duracaoAula: 40, qtd: 1, itens: [] }
+  )
+  const [alertaAberto, setAlertaAberto] = useState(false)
+  const [alertaDados, setAlertaDados]   = useState({ excedente: 0, duracaoSugerida: null })
+
+  const cfgLocal = { ...cfg, inicioPeriodo: localInicio, fimPeriodo: localFim, gradeEspecial: localGradeEspecial }
+  const saldo    = calcSaldo(cfgLocal)
+  const preview  = buildPreviewItems(cfgLocal)
+
+  const update = (field, val) =>
+    store.savePeriodCfg(seg.id, turno, { ...cfg, [field]: val })
+
+  const saveLimiteTurno = () =>
+    store.savePeriodCfg(seg.id, turno, { ...cfg, inicioPeriodo: localInicio, fimPeriodo: localFim })
+
+  const saveGradeEspecial = () => {
+    const v = validarEncaixe(cfgLocal, saldo)
+    if (!v.valido) {
+      setAlertaDados({ excedente: v.excedente, duracaoSugerida: v.duracaoSugerida })
+      setAlertaAberto(true)
+      return
+    }
+    store.savePeriodCfg(seg.id, turno, cfgLocal)
+    toast('Configuração salva', 'ok')
+  }
+
+  const addIntervalo = () => {
+    const novos = [...(cfg.intervalos ?? []), { apos: 1, duracao: 20 }]
+    store.savePeriodCfg(seg.id, turno, { ...cfg, intervalos: novos })
+  }
+
+  const removeIntervalo = (idx) => {
+    const novos = (cfg.intervalos ?? []).filter((_, i) => i !== idx)
+    store.savePeriodCfg(seg.id, turno, { ...cfg, intervalos: novos })
+  }
+
+  const updateIntervalo = (idx, field, val) => {
+    const novos = (cfg.intervalos ?? []).map((iv, i) =>
+      i === idx ? { ...iv, [field]: val } : iv
+    )
+    store.savePeriodCfg(seg.id, turno, { ...cfg, intervalos: novos })
+  }
+
+  return (
+    <div className="card space-y-4">
+      {/* Cabeçalho com turno editável — item 1 */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="font-bold text-base">{seg.name}</div>
+        <TurnoSelector seg={seg} store={store} />
+      </div>
+
+      {/* Campos de limite de turno */}
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="lbl">Início do turno</label>
+            <input
+              className="inp"
+              type="time"
+              value={localInicio}
+              onChange={e => setLocalInicio(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="lbl">Fim do turno</label>
+            <input
+              className="inp"
+              type="time"
+              value={localFim}
+              onChange={e => setLocalFim(e.target.value)}
+            />
+          </div>
+        </div>
+        {localInicio !== '' && cfg.inicio && toMin(cfg.inicio) < toMin(localInicio) && (
+          <p className="text-xs text-warn">Início da 1ª aula é anterior ao início do turno</p>
+        )}
+        <div className="flex justify-end">
+          <button className="btn btn-dark btn-sm" onClick={saveLimiteTurno}>Salvar</button>
+        </div>
+      </div>
+
+      {/* Configurações básicas */}
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="lbl">Início</label>
+          <input className="inp" type="time" value={cfg.inicio}
+            onChange={e => update('inicio', e.target.value)} />
+        </div>
+        <div>
+          <label className="lbl">Duração (min)</label>
+          <input className="inp" type="number" min="30" max="120" value={cfg.duracao}
+            onChange={e => update('duracao', Number(e.target.value))} />
+        </div>
+        <div>
+          <label className="lbl">Qtd. aulas</label>
+          <input className="inp" type="number" min="1" max="12" value={cfg.qtd}
+            onChange={e => update('qtd', Number(e.target.value))} />
+        </div>
+      </div>
+
+      {/* Intervalos editáveis — item 3 */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="lbl !mb-0">Intervalos</label>
+          <button className="btn btn-ghost btn-xs" onClick={addIntervalo}>+ Adicionar intervalo</button>
+        </div>
+        {(cfg.intervalos ?? []).length === 0 && (
+          <p className="text-xs text-t3 py-1">Nenhum intervalo configurado.</p>
+        )}
+        <div className="space-y-2">
+          {(cfg.intervalos ?? []).map((iv, idx) => (
+            <div key={idx} className="flex items-center gap-2 bg-surf2 rounded-xl px-3 py-2 flex-wrap">
+              <span className="text-xs text-t2 shrink-0">Após a aula nº</span>
+              <input
+                className="inp !w-16 py-1 text-xs text-center"
+                type="number"
+                min="1"
+                max={cfg.qtd}
+                value={iv.apos}
+                onChange={e => updateIntervalo(idx, 'apos', Number(e.target.value))}
+              />
+              <span className="text-xs text-t2 shrink-0">Duração:</span>
+              <input
+                className="inp !w-20 py-1 text-xs text-center"
+                type="number"
+                min="5"
+                max="120"
+                value={iv.duracao}
+                onChange={e => updateIntervalo(idx, 'duracao', Number(e.target.value))}
+              />
+              <span className="text-xs text-t2 shrink-0">min</span>
+              <button
+                className="ml-auto text-t3 hover:text-err text-sm transition-colors"
+                onClick={() => removeIntervalo(idx)}
+                title="Remover intervalo"
+              >✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Saldo de tempo */}
+      <SaldoTempo
+        tempoTotal={saldo.tempoTotal}
+        tempoLetivo={saldo.tempoLetivo}
+        tempoResidual={saldo.tempoResidual}
+        tempoEspecial={saldo.tempoEspecial}
+      />
+
+      {/* Grade Especial */}
+      <CamposGradeEspecial gradeEspecial={localGradeEspecial} onChange={setLocalGradeEspecial} />
+      <div className="flex justify-end">
+        <button className="btn btn-dark btn-sm" onClick={saveGradeEspecial}>Salvar grade especial</button>
+      </div>
+
+      {/* Preview */}
+      <PreviewLinhaTempo items={preview} />
+
+      <AlertaImpeditivoModal
+        open={alertaAberto}
+        excedente={alertaDados.excedente}
+        duracaoSugerida={alertaDados.duracaoSugerida}
+        onFechar={() => setAlertaAberto(false)}
+        onAplicar={() => {
+          setLocalGradeEspecial({ ...localGradeEspecial, duracaoAula: alertaDados.duracaoSugerida })
+          setAlertaAberto(false)
+        }}
+      />
+    </div>
+  )
 }
 
 // ─── Tab: Períodos — item 1 (turno) e item 3 (intervalos editáveis) ──────────
@@ -1688,133 +1929,9 @@ function TabPeriods() {
 
   return (
     <div className="grid gap-5 grid-cols-1 lg:grid-cols-2">
-      {store.segments.map((seg, segIdx) => {
-        const turno   = seg.turno ?? 'manha'
-        const cfg     = getCfg(seg.id, turno, store.periodConfigs)
-        const preview = buildPreviewItems(cfg)
-
-        const update = (field, val) =>
-          store.savePeriodCfg(seg.id, turno, { ...cfg, [field]: val })
-
-        const addIntervalo = () => {
-          const novos = [...(cfg.intervalos ?? []), { apos: 1, duracao: 20 }]
-          store.savePeriodCfg(seg.id, turno, { ...cfg, intervalos: novos })
-        }
-
-        const removeIntervalo = (idx) => {
-          const novos = (cfg.intervalos ?? []).filter((_, i) => i !== idx)
-          store.savePeriodCfg(seg.id, turno, { ...cfg, intervalos: novos })
-        }
-
-        const updateIntervalo = (idx, field, val) => {
-          const novos = (cfg.intervalos ?? []).map((iv, i) =>
-            i === idx ? { ...iv, [field]: val } : iv
-          )
-          store.savePeriodCfg(seg.id, turno, { ...cfg, intervalos: novos })
-        }
-
-        return (
-          <div key={seg.id} className="card space-y-4">
-            {/* Cabeçalho com turno editável — item 1 */}
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="font-bold text-base">{seg.name}</div>
-              <TurnoSelector seg={seg} store={store} />
-            </div>
-
-            {/* Configurações básicas */}
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="lbl">Início</label>
-                <input className="inp" type="time" value={cfg.inicio}
-                  onChange={e => update('inicio', e.target.value)} />
-              </div>
-              <div>
-                <label className="lbl">Duração (min)</label>
-                <input className="inp" type="number" min="30" max="120" value={cfg.duracao}
-                  onChange={e => update('duracao', Number(e.target.value))} />
-              </div>
-              <div>
-                <label className="lbl">Qtd. aulas</label>
-                <input className="inp" type="number" min="1" max="12" value={cfg.qtd}
-                  onChange={e => update('qtd', Number(e.target.value))} />
-              </div>
-            </div>
-
-            {/* Intervalos editáveis — item 3 */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="lbl !mb-0">Intervalos</label>
-                <button className="btn btn-ghost btn-xs" onClick={addIntervalo}>+ Adicionar intervalo</button>
-              </div>
-              {(cfg.intervalos ?? []).length === 0 && (
-                <p className="text-xs text-t3 py-1">Nenhum intervalo configurado.</p>
-              )}
-              <div className="space-y-2">
-                {(cfg.intervalos ?? []).map((iv, idx) => (
-                  <div key={idx} className="flex items-center gap-2 bg-surf2 rounded-xl px-3 py-2 flex-wrap">
-                    <span className="text-xs text-t2 shrink-0">Após a aula nº</span>
-                    <input
-                      className="inp !w-16 py-1 text-xs text-center"
-                      type="number"
-                      min="1"
-                      max={cfg.qtd}
-                      value={iv.apos}
-                      onChange={e => updateIntervalo(idx, 'apos', Number(e.target.value))}
-                    />
-                    <span className="text-xs text-t2 shrink-0">Duração:</span>
-                    <input
-                      className="inp !w-20 py-1 text-xs text-center"
-                      type="number"
-                      min="5"
-                      max="120"
-                      value={iv.duracao}
-                      onChange={e => updateIntervalo(idx, 'duracao', Number(e.target.value))}
-                    />
-                    <span className="text-xs text-t2 shrink-0">min</span>
-                    <button
-                      className="ml-auto text-t3 hover:text-err text-sm transition-colors"
-                      onClick={() => removeIntervalo(idx)}
-                      title="Remover intervalo"
-                    >✕</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Horários Especiais */}
-            <HorariosEspeciaisSection cfg={cfg} segId={seg.id} turno={turno} store={store} />
-
-            {/* Intervalos Especiais */}
-            <IntervalosEspeciaisSection cfg={cfg} segId={seg.id} turno={turno} store={store} />
-
-            {/* Preview */}
-            <div className="bg-surf2 rounded-xl p-3">
-              <div className="text-[11px] font-bold text-t2 uppercase tracking-wide mb-2">Preview</div>
-              <div className="space-y-0.5">
-                {preview.map((p, i) => p.isEspecial ? (
-                  p.isIntervaloEspecial ? (
-                    <div key={i} className="text-xs text-indigo-400 py-0.5 pl-3">
-                      ↳ {p.label} {p.inicio}–{p.fim}
-                    </div>
-                  ) : (
-                    <div key={i} className="text-xs text-accent font-semibold py-0.5">
-                      ★ <span className="font-bold">{p.label}</span> {p.inicio}–{p.fim}
-                    </div>
-                  )
-                ) : p.isIntervalo ? (
-                  <div key={i} className="text-xs text-amber-700 font-semibold py-0.5">
-                    ☕ Intervalo {p.inicio}–{p.fim} ({p.duracao} min)
-                  </div>
-                ) : (
-                  <div key={i} className="text-xs">
-                    <span className="font-bold">{p.label}</span> {p.inicio}–{p.fim}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )
-      })}
+      {store.segments.map(seg => (
+        <CardPeriodo key={seg.id} seg={seg} store={store} />
+      ))}
     </div>
   )
 }
@@ -1931,7 +2048,7 @@ export function ScheduleGridModal({ open, onClose, teacher, store, readOnly = fa
   )
 }
 
-export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap }) {
+export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap, segmentFilter = null }) {
   const { addSchedule, removeSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
 
@@ -1939,7 +2056,9 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
 
   // Segmentos do professor derivados das matérias — mesma lógica de TabTeachers e TabSchedules
   const teacherSegIds = teacherSegmentIds(teacher, store.subjects, store.areas)
-  const relevantSegments = store.segments.filter(s => teacherSegIds.includes(s.id))
+  const relevantSegments = segmentFilter
+    ? store.segments.filter(s => s.id === segmentFilter.segmentId)
+    : store.segments.filter(s => teacherSegIds.includes(s.id))
 
   return (
     <div>
@@ -1949,8 +2068,11 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
 
       {relevantSegments.map(seg => {
         const turno = seg.turno ?? 'manha'
-        const aulas = gerarPeriodos(getCfg(seg.id, turno, store.periodConfigs)).filter(p => !p.isIntervalo)
+        const cfg = getCfg(seg.id, turno, store.periodConfigs)
+        const aulas = gerarPeriodos(cfg).filter(p => !p.isIntervalo)
         if (!aulas.length) return null
+
+        const especiais = gerarPeriodosEspeciais(cfg)
 
         return (
           <div key={seg.id} className="mb-6">
@@ -2053,6 +2175,95 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                       })}
                     </tr>
                   ))}
+
+                  {/* ── Linhas de grade especial ─────────────────────────────── */}
+                  {(() => {
+                    if (especiais.length === 0) return null
+                    let espCount = 0
+                    return especiais.map((p, idx) => {
+                      if (p.isIntervalo) return null
+                      espCount += 1
+                      const aulaCount = espCount
+                      return (
+                        <tr key={`esp-${idx}`} className="border-b border-bdr/50 bg-surf2">
+                          <td className="px-3 py-1.5 border-l-2 border-accent">
+                            <div className="font-bold font-mono">{aulaCount}ª Aula Esp.</div>
+                            <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
+                          </td>
+                          {DAYS.map(day => {
+                            const slot = makeEspecialSlot(seg.id, turno, aulaCount)
+                            const mine = store.schedules.filter(s =>
+                              s.teacherId === teacher.id && s.timeSlot === slot && s.day === day
+                            )
+                            const teacherConflict = mine.length > 0
+                            const occupiedSchedules = store.schedules
+                              .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+                            const hardBlockedTurmas = occupiedSchedules
+                              .filter(s => !isSharedSchedule(s, store) && !isSharedSeriesTurma(s.turma, store.sharedSeries))
+                              .map(s => s.turma)
+                            const allTurmas = seg.grades.flatMap(g =>
+                              g.classes.map(c => `${g.name} ${c.letter}`)
+                            )
+                            const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
+
+                            return (
+                              <td key={day} className={`px-1.5 py-1.5 align-top bg-surf2 ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
+                                <div className="space-y-1">
+                                  {mine.map(s => {
+                                    const isShared  = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                                    const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
+                                    const subj      = isShared ? sharedAct : store.subjects.find(x => x.id === s.subjectId)
+                                    const isFixed   = sharedAct?.tipo === 'fixo'
+                                    const showBadge = Boolean(sharedAct?.tipo)
+                                    return (
+                                      <div key={s.id} className="relative bg-white border border-bdr rounded-lg p-1.5 text-[11px] group">
+                                        <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
+                                        {isShared && showBadge && (
+                                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${isFixed ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            {isFixed ? 'Fixo' : 'Variável'}
+                                          </span>
+                                        )}
+                                        <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
+                                        {!readOnly && (
+                                          <button
+                                            className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
+                                            onClick={() => removeSchedule(s.id)}
+                                          >✕</button>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+
+                                  {substitutionMap?.[slot] && (
+                                    <div className="text-[10px] font-bold text-ok truncate">
+                                      ✓ {substitutionMap[slot]}
+                                    </div>
+                                  )}
+
+                                  {!readOnly && (teacherConflict ? (
+                                    <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
+                                      title="Professor já tem aula neste horário">
+                                      🔒
+                                    </div>
+                                  ) : freeTurmas.length === 0 ? (
+                                    <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg border border-dashed border-bdr"
+                                      title="Todas as turmas já têm professor neste horário">
+                                      —
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => setModal({ segId: seg.id, turno, aulaIdx: `e${aulaCount}`, day })}
+                                      className="w-full text-center text-[10px] text-t3 hover:text-navy py-1 rounded-lg hover:bg-white transition-colors border border-dashed border-bdr hover:border-bdr"
+                                    >＋</button>
+                                  ))}
+                                </div>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      )
+                    })
+                  })()}
                 </tbody>
               </table>
             </div>

@@ -4,6 +4,31 @@ import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { ScheduleGrid } from './SettingsPage'
 import { openPDF, generateTeacherScheduleHTML } from '../lib/reports'
+import { parseSlot } from '../lib/periods'
+
+const TURNO_LABELS = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
+
+function GradeTurnoCard({ segmentId, turno, teacher, store }) {
+  const seg = store.segments.find(s => s.id === segmentId)
+  const segName = seg?.name ?? segmentId
+  const turnoLabel = TURNO_LABELS[turno] ?? turno
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-bold text-t1">{segName}</span>
+        <span className="text-xs text-t2 px-2 py-0.5 rounded-full bg-surf2 border border-bdr">
+          {turno === 'tarde' ? 'Tarde' : turno === 'noite' ? 'Noite' : 'Manhã'}
+        </span>
+      </div>
+      <ScheduleGrid
+        teacher={teacher}
+        store={store}
+        segmentFilter={{ segmentId, turno }}
+      />
+    </div>
+  )
+}
 
 export default function SchedulePage() {
   const navigate = useNavigate()
@@ -26,6 +51,30 @@ export default function SchedulePage() {
     </div>
   )
 
+  // Derivar pares únicos segmentId|turno a partir dos schedules do professor
+  const teacherSchedules = store.schedules.filter(s => s.teacherId === teacher.id)
+  const pairsSeen = new Set()
+  const allPairs = teacherSchedules
+    .map(s => parseSlot(s.timeSlot))
+    .filter(Boolean)
+    .reduce((acc, { segmentId, turno }) => {
+      const key = `${segmentId}|${turno}`
+      if (!pairsSeen.has(key)) {
+        pairsSeen.add(key)
+        acc.push({ segmentId, turno })
+      }
+      return acc
+    }, [])
+
+  // Turno duplo: dois ou mais pares com turnos distintos entre si
+  const distinctTurnos = [...new Set(allPairs.map(p => p.turno))]
+  const isDupleTurno = distinctTurnos.length >= 2
+
+  // Para turno duplo: manter apenas um par por turno (primeiro encontrado por turno)
+  const turnoPairs = isDupleTurno
+    ? distinctTurnos.map(t => allPairs.find(p => p.turno === t))
+    : []
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3 flex-wrap">
@@ -46,9 +95,24 @@ export default function SchedulePage() {
         <button
           className="btn btn-ghost btn-sm"
           onClick={() => openPDF(generateTeacherScheduleHTML(teacher, store, useApelido))}
-        >📄 Exportar PDF</button>
+        >Exportar PDF</button>
       </div>
-      <ScheduleGrid teacher={teacher} store={store} />
+
+      {isDupleTurno ? (
+        <div className="space-y-8">
+          {turnoPairs.map(({ segmentId, turno }) => (
+            <GradeTurnoCard
+              key={`${segmentId}|${turno}`}
+              segmentId={segmentId}
+              turno={turno}
+              teacher={teacher}
+              store={store}
+            />
+          ))}
+        </div>
+      ) : (
+        <ScheduleGrid teacher={teacher} store={store} />
+      )}
     </div>
   )
 }

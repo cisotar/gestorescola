@@ -1,5 +1,5 @@
 import { formatBR, dateToDayLabel, parseDate, formatISO } from './helpers'
-import { slotFullLabel, getAulas } from './periods'
+import { slotFullLabel, getAulas, gerarPeriodosEspeciais, makeEspecialSlot, getCfg, parseSlot } from './periods'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -42,9 +42,11 @@ function _css() {
     .err{color:#c8290a;font-weight:700}
     .doc-ftr{margin-top:32px;border-top:1px solid #e5e2d9;padding-top:8px;font-size:10px;
       color:#a09d97;display:flex;justify-content:space-between}
+    .grade-section + .grade-section{page-break-before:always}
     @media print{
       body{background:#fff}
       .page{box-shadow:none;border-radius:0;padding:0}
+      .grade-section + .grade-section{page-break-before:always}
     }
   `
 }
@@ -451,42 +453,130 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
     </tr>`
   }).join('')
 
-  return `<table style="table-layout:fixed;width:100%">${header}<tbody>${rows}</tbody></table>`
+  // ── Linhas de aulas especiais ──────────────────────────────────────────────
+  const cfg = getCfg(seg.id, turno, store.periodConfigs)
+  const especiais = gerarPeriodosEspeciais(cfg)
+  let aulaCount = 0
+
+  const especialRows = especiais.map(p => {
+    if (!p.isIntervalo) aulaCount += 1
+    const slotKey = p.isIntervalo ? null : makeEspecialSlot(seg.id, turno, aulaCount)
+
+    const labelStyle = p.isIntervalo
+      ? 'background:#F4F2EE;border-left:3px solid #C05621;border-style:dashed;width:90px;white-space:nowrap;color:#1a1814'
+      : 'background:#F4F2EE;border-left:3px solid #C05621;width:90px;white-space:nowrap;color:#1a1814'
+
+    const cells = SCHED_DAYS.map(day => {
+      if (p.isIntervalo || !slotKey) {
+        return `<td style="background:#F4F2EE;border-style:dashed;color:#a09d97;font-style:italic">—</td>`
+      }
+      const matches = schedules.filter(s => s.timeSlot === slotKey && s.day === day)
+      if (!matches.length) return `<td style="background:#F4F2EE;color:#c8c4bb">—</td>`
+      const lines = matches.map(s => {
+        const subj = store.subjects.find(x => x.id === s.subjectId)
+        if (showTeacher) {
+          const teacher = store.teachers.find(t => t.id === s.teacherId)
+          const displayName = useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name ?? '—')
+          return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${displayName}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
+        }
+        return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${s.turma ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
+      }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
+      return `<td style="background:#F4F2EE">${lines}</td>`
+    }).join('')
+
+    return `<tr>
+      <td style="${labelStyle}"><strong>${p.label}</strong><br><span style="color:#4a4740;font-size:10px">${p.inicio}–${p.fim}</span></td>
+      ${cells}
+    </tr>`
+  }).join('')
+
+  return `<table style="table-layout:fixed;width:100%">${header}<tbody>${rows}${especialRows}</tbody></table>`
 }
 
 // ─── 8. Grade horária — por professor ────────────────────────────────────────
 
 export function generateTeacherScheduleHTML(teacher, store, useApelido = false) {
-  // Segmentos do professor derivados das matérias
-  const teacherSegIds = [...new Set(
-    (teacher.subjectIds ?? []).flatMap(sid => {
-      const subj = store.subjects.find(s => s.id === sid)
-      const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
-      return area?.segmentIds ?? []
-    })
-  )]
-  const relevantSegments = store.segments.filter(s => teacherSegIds.includes(s.id))
+  const teacherSchedules = (store.schedules ?? []).filter(s => s.teacherId === teacher.id)
+
+  // ── Detecção de turno duplo (mesma lógica de SchedulePage.jsx) ─────────────
+  const pairsSeen = new Set()
+  const allPairs = teacherSchedules
+    .map(s => parseSlot(s.timeSlot))
+    .filter(Boolean)
+    .reduce((acc, { segmentId, turno }) => {
+      const key = `${segmentId}|${turno}`
+      if (!pairsSeen.has(key)) {
+        pairsSeen.add(key)
+        acc.push({ segmentId, turno })
+      }
+      return acc
+    }, [])
+
+  const distinctTurnos = [...new Set(allPairs.map(p => p.turno))]
+  const isDupleTurno = distinctTurnos.length >= 2
+
+  // Para turno duplo: um par por turno distinto (primeiro encontrado)
+  const turnoPairs = isDupleTurno
+    ? distinctTurnos.map(t => allPairs.find(p => p.turno === t))
+    : []
 
   const metaHTML = `
     <div class="m-blk"><span class="m-lbl">Professor</span><span class="m-val">${teacher?.name ?? '—'}</span></div>
     <div class="m-blk" style="margin-left:auto;text-align:right">
       <span class="m-lbl">Aulas/semana</span>
-      <span class="m-val">${(store.schedules ?? []).filter(s => s.teacherId === teacher.id).length}</span>
+      <span class="m-val">${teacherSchedules.length}</span>
     </div>`
 
-  const teacherSchedules = (store.schedules ?? []).filter(s => s.teacherId === teacher.id)
+  const TURNO_LABELS_PDF = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
 
-  const bodyHTML = relevantSegments.length === 0
-    ? '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
-    : relevantSegments.map(seg => {
-        const turno = seg.turno ?? 'manha'
-        const turnoLabel = turno === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
-        return `
-          <div class="section">
-            <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
-            ${_scheduleGrid(seg, turno, teacherSchedules, store, false, useApelido)}
-          </div>`
-      }).join('')
+  let bodyHTML
+
+  if (isDupleTurno) {
+    // ── Turno duplo: uma <section class="grade-section"> por turno ────────────
+    const sections = turnoPairs.map(({ segmentId, turno }) => {
+      const seg = store.segments.find(s => s.id === segmentId)
+      const segName = seg?.name ?? segmentId
+      const turnoLabel = TURNO_LABELS_PDF[turno] ?? turno
+      // Filtrar schedules do professor apenas para este segmento/turno
+      const filteredSchedules = teacherSchedules.filter(s => {
+        const parsed = parseSlot(s.timeSlot)
+        return parsed && parsed.segmentId === segmentId && parsed.turno === turno
+      })
+      const grid = seg ? _scheduleGrid(seg, turno, filteredSchedules, store, false, useApelido) : ''
+      return `<section class="grade-section">
+        <h2 style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#1a1814;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #1a1814">${segName} — ${turnoLabel}</h2>
+        ${grid}
+      </section>`
+    })
+
+    if (sections.length === 0) {
+      bodyHTML = '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
+    } else {
+      bodyHTML = sections.join('<div style="page-break-after:always"></div>')
+    }
+  } else {
+    // ── Turno simples: comportamento original (segmentos derivados das matérias) ─
+    const teacherSegIds = [...new Set(
+      (teacher.subjectIds ?? []).flatMap(sid => {
+        const subj = store.subjects.find(s => s.id === sid)
+        const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
+        return area?.segmentIds ?? []
+      })
+    )]
+    const relevantSegments = store.segments.filter(s => teacherSegIds.includes(s.id))
+
+    bodyHTML = relevantSegments.length === 0
+      ? '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
+      : relevantSegments.map(seg => {
+          const turno = seg.turno ?? 'manha'
+          const turnoLabel = turno === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
+          return `
+            <div class="section">
+              <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
+              ${_scheduleGrid(seg, turno, teacherSchedules, store, false, useApelido)}
+            </div>`
+        }).join('')
+  }
 
   return _wrap(`Grade Horária — ${teacher?.name ?? '—'}`, metaHTML, bodyHTML, 'GestãoEscolar — Grade Horária')
 }
