@@ -48,6 +48,20 @@ export function defaultCfg(turno = 'manha') {
   }
 }
 
+/**
+ * Retorna a configuração de período para um segmento/turno.
+ * O objeto retornado é a referência direta do store — campos extras como
+ * `horariosEspeciais` e `intervalosEspeciais` são preservados por passthrough
+ * sem nenhuma truncagem ou filtragem. Consumidores de UI podem ler esses campos
+ * diretamente com fallback: `cfg.horariosEspeciais ?? []`.
+ *
+ * @param {string} segmentId
+ * @param {string} turno
+ * @param {Object} periodConfigs — `useAppStore.getState().periodConfigs`
+ * @returns {{ inicio: string, duracao: number, qtd: number, intervalos: Array,
+ *             horariosEspeciais?: import('../store/useAppStore').HorarioEspecial[],
+ *             intervalosEspeciais?: import('../store/useAppStore').IntervaloEspecial[] }}
+ */
 export function getCfg(segmentId, turno, periodConfigs) {
   return periodConfigs?.[segmentId]?.[turno] ?? defaultCfg(turno)
 }

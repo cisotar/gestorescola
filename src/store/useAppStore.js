@@ -197,6 +197,27 @@ const useAppStore = create((set, get) => {
   },
 
   // ─── Períodos ───────────────────────────────────────────────────────────────
+  /**
+   * Persiste a configuração de um período em `meta/config` via Firestore.
+   * O objeto `cfg` substitui integralmente `periodConfigs[segId][turno]`.
+   * Campos opcionais que o chamador pode incluir em `cfg`:
+   *
+   * @typedef {{ id: string, inicio: string, duracao: number }} HorarioEspecial
+   *   - `id`      — uid() gerado na criação; chave para referência por intervalosEspeciais
+   *   - `inicio`  — horário de início no formato "HH:mm"
+   *   - `duracao` — duração em minutos (inteiro > 0)
+   *
+   * @typedef {{ id: string, aposEspecial: string|null, duracao: number }} IntervaloEspecial
+   *   - `id`           — uid() gerado na criação
+   *   - `aposEspecial` — FK → horariosEspeciais[].id, ou null para posicionamento absoluto
+   *   - `duracao`      — duração em minutos (inteiro > 0)
+   *
+   * @param {string} segId  — ID do segmento (ex: "seg-fund")
+   * @param {string} turno  — turno do segmento (ex: "manha" | "tarde" | "noite")
+   * @param {{ inicio: string, duracao: number, qtd: number, intervalos: Array,
+   *            horariosEspeciais?: HorarioEspecial[], intervalosEspeciais?: IntervaloEspecial[] }} cfg
+   *   — configuração completa do período; campos ausentes não são merged (spread substituição total)
+   */
   savePeriodCfg: async (segId, turno, cfg) => {
     if (_isCoordinator()) return _submitApproval('savePeriodCfg', { segId, turno, cfg }, 'Atualizar períodos do segmento')
     set(s => ({

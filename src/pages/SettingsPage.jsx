@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
-import { getCfg, gerarPeriodos, defaultCfg } from '../lib/periods'
+import { getCfg, gerarPeriodos, defaultCfg, toMin, fromMin } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
@@ -1477,6 +1477,210 @@ function TabTeachers() {
   )
 }
 
+// ─── Horários Especiais — seção visual dentro do card de segmento ────────────
+
+function HorariosEspeciaisSection({ cfg, segId, turno, store }) {
+  const horariosEspeciais = cfg.horariosEspeciais ?? []
+  const intervalosEspeciais = cfg.intervalosEspeciais ?? []
+
+  const handleAddHorario = () => {
+    const novoItem = { id: uid(), inicio: '07:00', duracao: 50 }
+    const novosHorarios = [...horariosEspeciais, novoItem]
+    store.savePeriodCfg(segId, turno, { ...cfg, horariosEspeciais: novosHorarios })
+  }
+
+  const handleChangeInicio = (idx, valor) => {
+    const novosHorarios = horariosEspeciais.map((h, i) => i === idx ? { ...h, inicio: valor } : h)
+    store.savePeriodCfg(segId, turno, { ...cfg, horariosEspeciais: novosHorarios })
+  }
+
+  const handleChangeDuracao = (idx, valor) => {
+    const parsed = parseInt(valor, 10)
+    if (!parsed || parsed <= 0) return
+    const novosHorarios = horariosEspeciais.map((h, i) => i === idx ? { ...h, duracao: parsed } : h)
+    store.savePeriodCfg(segId, turno, { ...cfg, horariosEspeciais: novosHorarios })
+  }
+
+  const handleRemoveHorario = (idx) => {
+    const removido = horariosEspeciais[idx]
+    const ordenados = [...horariosEspeciais].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
+    const idxOrdenado = ordenados.findIndex(h => h.id === removido.id)
+    const anterior = idxOrdenado > 0 ? ordenados[idxOrdenado - 1] : null
+    const idAnterior = anterior ? anterior.id : null
+
+    const novosHorarios = horariosEspeciais.filter((_, i) => i !== idx)
+    const novosIntervalos = intervalosEspeciais.map(iv =>
+      iv.aposEspecial === removido.id ? { ...iv, aposEspecial: idAnterior } : iv
+    )
+    store.savePeriodCfg(segId, turno, { ...cfg, horariosEspeciais: novosHorarios, intervalosEspeciais: novosIntervalos })
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="lbl !mb-0">Horários Especiais</label>
+      </div>
+      {horariosEspeciais.length === 0 && (
+        <p className="text-t3 text-sm py-1">Nenhum horário especial configurado.</p>
+      )}
+      <div className="space-y-2">
+        {horariosEspeciais.map((item, idx) => (
+          <div key={item.id} className="flex items-center gap-2 bg-surf2 rounded-xl px-3 py-2 flex-wrap">
+            <input
+              className="inp !w-28 py-1 text-xs"
+              type="time"
+              value={item.inicio}
+              onChange={e => handleChangeInicio(idx, e.target.value)}
+            />
+            <input
+              className="inp !w-20 py-1 text-xs text-center"
+              type="number"
+              value={item.duracao}
+              onChange={e => handleChangeDuracao(idx, e.target.value)}
+            />
+            <span className="text-xs text-t2 shrink-0">min</span>
+            <button
+              className="ml-auto btn btn-ghost btn-xs text-t3 hover:text-err transition-colors"
+              title="Remover horário especial"
+              onClick={() => handleRemoveHorario(idx)}
+            >✕</button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2">
+        <button className="btn btn-ghost btn-xs" onClick={handleAddHorario}>+ Adicionar horário especial</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Intervalos Especiais — seção visual dentro do card de segmento ──────────
+
+function IntervalosEspeciaisSection({ cfg, segId, turno, store }) {
+  const horariosEspeciais = cfg.horariosEspeciais ?? []
+  const intervalosEspeciais = cfg.intervalosEspeciais ?? []
+  const semHorarios = horariosEspeciais.length === 0
+
+  const handleAddIntervalo = () => {
+    const ultimoId = horariosEspeciais.length > 0
+      ? horariosEspeciais[horariosEspeciais.length - 1].id
+      : null
+    const novoItem = { id: uid(), aposEspecial: ultimoId, duracao: 20 }
+    const novosIntervalos = [...intervalosEspeciais, novoItem]
+    store.savePeriodCfg(segId, turno, { ...cfg, intervalosEspeciais: novosIntervalos })
+  }
+
+  const handleChangeApos = (idx, valor) => {
+    const novosIntervalos = intervalosEspeciais.map((iv, i) =>
+      i === idx ? { ...iv, aposEspecial: valor || null } : iv
+    )
+    store.savePeriodCfg(segId, turno, { ...cfg, intervalosEspeciais: novosIntervalos })
+  }
+
+  const handleChangeDuracaoIntervalo = (idx, valor) => {
+    const parsed = parseInt(valor, 10)
+    if (!parsed || parsed <= 0) return
+    const novosIntervalos = intervalosEspeciais.map((iv, i) =>
+      i === idx ? { ...iv, duracao: parsed } : iv
+    )
+    store.savePeriodCfg(segId, turno, { ...cfg, intervalosEspeciais: novosIntervalos })
+  }
+
+  const handleRemoveIntervalo = (idx) => {
+    const novosIntervalos = intervalosEspeciais.filter((_, i) => i !== idx)
+    store.savePeriodCfg(segId, turno, { ...cfg, intervalosEspeciais: novosIntervalos })
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="lbl !mb-0">Intervalos Especiais</label>
+      </div>
+      {intervalosEspeciais.length === 0 && (
+        <p className="text-t3 text-sm py-1">Nenhum intervalo especial configurado.</p>
+      )}
+      <div className="space-y-2">
+        {intervalosEspeciais.map((item, idx) => (
+          <div key={item.id} className="flex items-center gap-2 bg-surf2 rounded-xl px-3 py-2 flex-wrap">
+            <select
+              className="inp py-1 text-xs"
+              value={item.aposEspecial ?? ''}
+              disabled={semHorarios}
+              onChange={e => handleChangeApos(idx, e.target.value)}
+            >
+              {semHorarios ? (
+                <option value="">— Nenhum horário especial —</option>
+              ) : (
+                <>
+                  <option value="" disabled>— Nenhum horário especial —</option>
+                  {horariosEspeciais.map((he, heIdx) => (
+                    <option key={he.id} value={he.id}>
+                      Horário especial {heIdx + 1} ({he.inicio})
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
+            <input
+              className="inp !w-20 py-1 text-xs text-center"
+              type="number"
+              value={item.duracao}
+              onChange={e => handleChangeDuracaoIntervalo(idx, e.target.value)}
+            />
+            <span className="text-xs text-t2 shrink-0">min</span>
+            <button
+              className="ml-auto btn btn-ghost btn-xs text-t3 hover:text-err transition-colors"
+              title="Remover intervalo especial"
+              onClick={() => handleRemoveIntervalo(idx)}
+            >✕</button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2">
+        <button className="btn btn-ghost btn-xs" onClick={handleAddIntervalo}>+ Adicionar intervalo especial</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── buildPreviewItems — combina períodos regulares + especiais para o preview ─
+
+function buildPreviewItems(cfg) {
+  const itensRegulares = gerarPeriodos(cfg)
+
+  const horariosEspeciais = cfg.horariosEspeciais ?? []
+  const intervalosEspeciais = cfg.intervalosEspeciais ?? []
+
+  if (horariosEspeciais.length === 0) return itensRegulares
+
+  // Ordena por inicio (comparação lexicográfica de HH:mm é suficiente para toMin)
+  const ordenados = [...horariosEspeciais].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
+
+  const itensEspeciais = []
+  for (const h of ordenados) {
+    const fim = fromMin(toMin(h.inicio) + (h.duracao || 0))
+    // N = índice 1-based na lista ORIGINAL (mesma numeração usada em HorariosEspeciaisSection)
+    const N = horariosEspeciais.findIndex(orig => orig.id === h.id) + 1
+    itensEspeciais.push({ label: `Horário especial ${N}`, inicio: h.inicio, fim, isEspecial: true })
+
+    // Intervalos especiais cujo aposEspecial aponta para este horário
+    intervalosEspeciais
+      .filter(iv => iv.aposEspecial === h.id)
+      .forEach(iv => {
+        const ivFim = fromMin(toMin(fim) + (iv.duracao || 0))
+        itensEspeciais.push({
+          label: 'Intervalo especial',
+          inicio: fim,
+          fim: ivFim,
+          isEspecial: true,
+          isIntervaloEspecial: true,
+        })
+      })
+  }
+
+  return [...itensRegulares, ...itensEspeciais]
+}
+
 // ─── Tab: Períodos — item 1 (turno) e item 3 (intervalos editáveis) ──────────
 
 function TabPeriods() {
@@ -1484,10 +1688,10 @@ function TabPeriods() {
 
   return (
     <div className="grid gap-5 grid-cols-1 lg:grid-cols-2">
-      {store.segments.map(seg => {
+      {store.segments.map((seg, segIdx) => {
         const turno   = seg.turno ?? 'manha'
         const cfg     = getCfg(seg.id, turno, store.periodConfigs)
-        const preview = gerarPeriodos(cfg)
+        const preview = buildPreviewItems(cfg)
 
         const update = (field, val) =>
           store.savePeriodCfg(seg.id, turno, { ...cfg, [field]: val })
@@ -1577,11 +1781,27 @@ function TabPeriods() {
               </div>
             </div>
 
+            {/* Horários Especiais */}
+            <HorariosEspeciaisSection cfg={cfg} segId={seg.id} turno={turno} store={store} />
+
+            {/* Intervalos Especiais */}
+            <IntervalosEspeciaisSection cfg={cfg} segId={seg.id} turno={turno} store={store} />
+
             {/* Preview */}
             <div className="bg-surf2 rounded-xl p-3">
               <div className="text-[11px] font-bold text-t2 uppercase tracking-wide mb-2">Preview</div>
               <div className="space-y-0.5">
-                {preview.map((p, i) => p.isIntervalo ? (
+                {preview.map((p, i) => p.isEspecial ? (
+                  p.isIntervaloEspecial ? (
+                    <div key={i} className="text-xs text-indigo-400 py-0.5 pl-3">
+                      ↳ {p.label} {p.inicio}–{p.fim}
+                    </div>
+                  ) : (
+                    <div key={i} className="text-xs text-accent font-semibold py-0.5">
+                      ★ <span className="font-bold">{p.label}</span> {p.inicio}–{p.fim}
+                    </div>
+                  )
+                ) : p.isIntervalo ? (
                   <div key={i} className="text-xs text-amber-700 font-semibold py-0.5">
                     ☕ Intervalo {p.inicio}–{p.fim} ({p.duracao} min)
                   </div>

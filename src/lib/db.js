@@ -5,7 +5,7 @@ import {
 } from 'firebase/firestore'
 import { uid } from './helpers'
 
-const LS_KEY = 'gestao_v7_cache'
+const LS_KEY = 'gestao_v8_cache'
 const DEFAULT_SHARED_SERIES = [
   {
     id: 'shared-formacao',
