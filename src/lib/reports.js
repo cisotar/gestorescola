@@ -1,5 +1,5 @@
 import { formatBR, dateToDayLabel, parseDate, formatISO } from './helpers'
-import { slotFullLabel, getAulas, gerarPeriodosEspeciais, makeEspecialSlot, getCfg, parseSlot } from './periods'
+import { slotFullLabel, getAulas, gerarPeriodosEspeciais, makeEspecialSlot, getCfg, parseSlot, toMin } from './periods'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -430,44 +430,58 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
 
   const header = `<tr><th style="width:90px;color:#1a1814"></th>${SCHED_DAYS.map(d => `<th style="color:#1a1814">${d}</th>`).join('')}</tr>`
 
-  const rows = aulas.map(({ aulaIdx, label, inicio, fim }) => {
-    const cells = SCHED_DAYS.map(day => {
-      const matches = schedules.filter(s =>
-        s.timeSlot === `${seg.id}|${turno}|${aulaIdx}` && s.day === day
-      )
-      if (!matches.length) return '<td style="color:#c8c4bb">—</td>'
-      const lines = matches.map(s => {
-        const subj = store.subjects.find(x => x.id === s.subjectId)
-        if (showTeacher) {
-          const teacher = store.teachers.find(t => t.id === s.teacherId)
-          const displayName = useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name ?? '—')
-          return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${displayName}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
-        }
-        return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${s.turma ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
-      }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
-      return `<td>${lines}</td>`
-    }).join('')
-    return `<tr>
-      <td style="width:90px;white-space:nowrap;color:#1a1814"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
-      ${cells}
-    </tr>`
-  }).join('')
+  // ── Montar lista regular ───────────────────────────────────────────────────
+  const regularItems = aulas.map(({ aulaIdx, label, inicio, fim }) =>
+    ({ tipo: 'regular', aulaIdx, label, inicio, fim })
+  )
 
-  // ── Linhas de aulas especiais ──────────────────────────────────────────────
+  // ── Montar lista especial (aulaCount atribuído antes do sort) ──────────────
   const cfg = getCfg(seg.id, turno, store.periodConfigs)
   const especiais = gerarPeriodosEspeciais(cfg)
   let aulaCount = 0
-
-  const especialRows = especiais.map(p => {
+  const especialItems = especiais.map(p => {
     if (!p.isIntervalo) aulaCount += 1
     const slotKey = p.isIntervalo ? null : makeEspecialSlot(seg.id, turno, aulaCount)
+    return { tipo: 'especial', aulaCount, slotKey, label: p.label, inicio: p.inicio, fim: p.fim, isIntervalo: p.isIntervalo }
+  })
 
-    const labelStyle = p.isIntervalo
+  // ── Mesclar e ordenar cronologicamente ────────────────────────────────────
+  const allItems = [...regularItems, ...especialItems].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
+
+  // ── Gerar HTML de cada linha ──────────────────────────────────────────────
+  const allRows = allItems.map(item => {
+    if (item.tipo === 'regular') {
+      const { aulaIdx, label, inicio, fim } = item
+      const cells = SCHED_DAYS.map(day => {
+        const matches = schedules.filter(s =>
+          s.timeSlot === `${seg.id}|${turno}|${aulaIdx}` && s.day === day
+        )
+        if (!matches.length) return '<td style="color:#c8c4bb">—</td>'
+        const lines = matches.map(s => {
+          const subj = store.subjects.find(x => x.id === s.subjectId)
+          if (showTeacher) {
+            const teacher = store.teachers.find(t => t.id === s.teacherId)
+            const displayName = useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name ?? '—')
+            return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${displayName}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
+          }
+          return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${s.turma ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
+        }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
+        return `<td>${lines}</td>`
+      }).join('')
+      return `<tr>
+      <td style="width:90px;white-space:nowrap;color:#1a1814"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
+      ${cells}
+    </tr>`
+    }
+
+    // tipo === 'especial'
+    const { slotKey, label, inicio, fim, isIntervalo } = item
+    const labelStyle = isIntervalo
       ? 'background:#F4F2EE;border-left:3px solid #C05621;border-style:dashed;width:90px;white-space:nowrap;color:#1a1814'
       : 'background:#F4F2EE;border-left:3px solid #C05621;width:90px;white-space:nowrap;color:#1a1814'
 
     const cells = SCHED_DAYS.map(day => {
-      if (p.isIntervalo || !slotKey) {
+      if (isIntervalo || !slotKey) {
         return `<td style="background:#F4F2EE;border-style:dashed;color:#a09d97;font-style:italic">—</td>`
       }
       const matches = schedules.filter(s => s.timeSlot === slotKey && s.day === day)
@@ -485,12 +499,12 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
     }).join('')
 
     return `<tr>
-      <td style="${labelStyle}"><strong>${p.label}</strong><br><span style="color:#4a4740;font-size:10px">${p.inicio}–${p.fim}</span></td>
+      <td style="${labelStyle}"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
       ${cells}
     </tr>`
   }).join('')
 
-  return `<table style="table-layout:fixed;width:100%">${header}<tbody>${rows}${especialRows}</tbody></table>`
+  return `<table style="table-layout:fixed;width:100%">${header}<tbody>${allRows}</tbody></table>`
 }
 
 // ─── 8. Grade horária — por professor ────────────────────────────────────────

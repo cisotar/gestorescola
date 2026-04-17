@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
-import { getAulas, getCfg, gerarPeriodosEspeciais, makeEspecialSlot } from '../lib/periods'
+import { getAulas, getCfg, gerarPeriodosEspeciais, makeEspecialSlot, toMin } from '../lib/periods'
 import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
 import { isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
 
@@ -16,6 +16,22 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
 
   if (aulas.length === 0) return null
 
+  // Atribuir espCount ANTES do sort para preservar os timeSlots do Firestore
+  let espCount = 0
+  const periodosEspeciais = especiais
+    .filter(p => !p.isIntervalo)
+    .map(p => {
+      espCount += 1
+      return { ...p, _tipo: 'especial', _espIdx: espCount, _slotKey: makeEspecialSlot(seg.id, turno, espCount) }
+    })
+
+  const periodosRegulares = aulas.map(p => ({ ...p, _tipo: 'regular' }))
+
+  const periodos = [...periodosRegulares, ...periodosEspeciais]
+    .sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
+
+  let regIdx = 0
+
   return (
     <div className="overflow-x-auto rounded-xl border border-bdr">
       <table className="w-full text-xs border-collapse table-fixed">
@@ -28,75 +44,75 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
           </tr>
         </thead>
         <tbody>
-          {aulas.map((aula, i) => {
-            const daySlots = DAYS.map((day, dayIdx) => {
-              return schedules.filter(s => {
-                if (!s.timeSlot) return false
-                const [sid, , ai] = s.timeSlot.split('|')
-                return sid === seg.id && Number(ai) === aula.aulaIdx && s.day === day
+          {periodos.map((p) => {
+            if (p._tipo === 'regular') {
+              const aula = p
+              const daySlots = DAYS.map(day => {
+                return schedules.filter(s => {
+                  if (!s.timeSlot) return false
+                  const [sid, , ai] = s.timeSlot.split('|')
+                  return sid === seg.id && Number(ai) === aula.aulaIdx && s.day === day
+                })
               })
-            })
 
-            const isEmpty = daySlots.every(ds => ds.length === 0)
+              const isEmpty = daySlots.every(ds => ds.length === 0)
+              if (isEmpty) return null
 
-            return (
-              <tr key={aula.aulaIdx} className={i % 2 === 0 ? 'bg-bg' : 'bg-surf'}>
-                <td className="px-3 py-2 font-bold text-[#1a1814] whitespace-nowrap align-top border-r border-bdr">
-                  <div>{aula.label}</div>
-                  {aula.inicio && (
-                    <div className="text-[10px] text-[#4a4740]">{aula.inicio}–{aula.fim}</div>
-                  )}
-                </td>
-                {daySlots.map((matches, i) => (
-                  <td key={i} className="px-2 py-2 align-top border-r border-bdr last:border-r-0">
-                    {matches.length === 0 ? (
-                      isEmpty ? null : <span className="text-t3">—</span>
-                    ) : (
-                      <div className="space-y-1">
-                        {matches.map(s => {
-                          const teacher = store.teachers.find(t => t.id === s.teacherId)
-                          const subject = store.subjects?.find(sub => sub.id === s.subjectId)
-                          const isShared = isSharedSeriesTurma(s.turma, store.sharedSeries)
-                          const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
-                          const displayLabel = isShared
-                            ? `${s.turma} · ${sharedAct?.name ?? '?'}`
-                            : s.turma
-                          return (
-                            <div key={s.id} className="leading-tight">
-                              {showTeacher ? (
-                                <>
-                                  <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name || '—')}</div>
-                                  <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{displayLabel ?? '—'}</div>
-                                  <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
-                                </>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
+              const stripe = regIdx % 2 === 0 ? 'bg-bg' : 'bg-surf'
+              regIdx += 1
+
+              return (
+                <tr key={aula.aulaIdx} className={stripe}>
+                  <td className="px-3 py-2 font-bold text-[#1a1814] whitespace-nowrap align-top border-r border-bdr">
+                    <div>{aula.label}</div>
+                    {aula.inicio && (
+                      <div className="text-[10px] text-[#4a4740]">{aula.inicio}–{aula.fim}</div>
                     )}
                   </td>
-                ))}
-              </tr>
-            )
-          })}
-          {/* Linhas de aulas especiais */}
-          {especiais.length > 0 && (() => {
-            let espCount = 0
-            return especiais.map((p, idx) => {
-              if (p.isIntervalo) return null
-              espCount += 1
-              const aulaCount = espCount
-              const slotKey = makeEspecialSlot(seg.id, turno, aulaCount)
+                  {daySlots.map((matches, dayIdx) => (
+                    <td key={dayIdx} className="px-2 py-2 align-top border-r border-bdr last:border-r-0">
+                      {matches.length === 0 ? (
+                        <span className="text-t3">—</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {matches.map(s => {
+                            const teacher = store.teachers.find(t => t.id === s.teacherId)
+                            const subject = store.subjects?.find(sub => sub.id === s.subjectId)
+                            const isShared = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                            const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
+                            const displayLabel = isShared
+                              ? `${s.turma} · ${sharedAct?.name ?? '?'}`
+                              : s.turma
+                            return (
+                              <div key={s.id} className="leading-tight">
+                                {showTeacher ? (
+                                  <>
+                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name || '—')}</div>
+                                    <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{displayLabel ?? '—'}</div>
+                                    <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              )
+            } else {
+              // _tipo === 'especial'
+              const slotKey = p._slotKey
               const daySlots = DAYS.map(day =>
                 schedules.filter(s => s.timeSlot === slotKey && s.day === day)
               )
               return (
-                <tr key={`esp-${idx}`} className="bg-surf2 border-b border-bdr/50">
+                <tr key={`esp-${p._espIdx}`} className="bg-surf2 border-b border-bdr/50">
                   <td className="px-3 py-2 font-bold text-[#1a1814] whitespace-nowrap align-top border-r border-bdr border-l-2 border-accent bg-surf2">
                     <div>{p.label}</div>
                     {p.inicio && (
@@ -139,8 +155,8 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                   ))}
                 </tr>
               )
-            })
-          })()}
+            }
+          })}
         </tbody>
       </table>
     </div>

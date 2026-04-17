@@ -2070,7 +2070,15 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
         const aulas = gerarPeriodos(cfg).filter(p => !p.isIntervalo)
         if (!aulas.length) return null
 
-        const especiais = gerarPeriodosEspeciais(cfg)
+        let espCount = 0
+        const periodosEspeciais = gerarPeriodosEspeciais(cfg)
+          .filter(p => !p.isIntervalo)
+          .map(p => { espCount += 1; return { ...p, _tipo: 'especial', _espIdx: espCount } })
+
+        const periodos = [
+          ...aulas.map(p => ({ ...p, _tipo: 'regular' })),
+          ...periodosEspeciais,
+        ].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
 
         return (
           <div key={seg.id} className="mb-6">
@@ -2091,109 +2099,22 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                   </tr>
                 </thead>
                 <tbody>
-                  {aulas.map(p => (
-                    <tr key={p.aulaIdx} className="border-b border-bdr/50">
-                      <td className="px-3 py-1.5">
-                        <div className="font-bold font-mono">{p.label}</div>
-                        <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
-                      </td>
-                      {DAYS.map(day => {
-                        const slot = `${seg.id}|${turno}|${p.aulaIdx}`
-                        const mine = store.schedules.filter(s =>
-                          s.teacherId === teacher.id && s.timeSlot === slot && s.day === day
-                        )
-                        // Conflito de professor: já tem aula neste slot/dia
-                        const teacherConflict = mine.length > 0
-                        // Turmas ocupadas por outros professores neste slot/dia
-                        const occupiedSchedules = store.schedules
-                          .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
-                        const hardBlockedTurmas = occupiedSchedules
-                          .filter(s => !isSharedSchedule(s, store) && !isSharedSeriesTurma(s.turma, store.sharedSeries))
-                          .map(s => s.turma)
-                        const allTurmas = seg.grades.flatMap(g =>
-                          g.classes.map(c => `${g.name} ${c.letter}`)
-                        )
-                        // freeTurmas: turmas sem ocupante de área não-compartilhada (inclui turmas de área compartilhada)
-                        const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
-
-                        return (
-                          <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
-                            <div className="space-y-1">
-                              {mine.map(s => {
-                                const isShared  = isSharedSeriesTurma(s.turma, store.sharedSeries)
-                                const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
-                                const subj      = isShared ? sharedAct : store.subjects.find(x => x.id === s.subjectId)
-                                const isFixed   = sharedAct?.tipo === 'fixo'
-                                const showBadge = Boolean(sharedAct?.tipo)
-                                return (
-                                  <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
-                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                    {isShared && showBadge && (
-                                      <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${isFixed ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                        {isFixed ? 'Fixo' : 'Variável'}
-                                      </span>
-                                    )}
-                                    <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
-                                    {!readOnly && (
-                                      <button
-                                        className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
-                                        onClick={() => removeSchedule(s.id)}
-                                      >✕</button>
-                                    )}
-                                  </div>
-                                )
-                              })}
-
-                              {substitutionMap?.[slot] && (
-                                <div className="text-[10px] font-bold text-ok truncate">
-                                  ✓ {substitutionMap[slot]}
-                                </div>
-                              )}
-
-                              {/* Indicadores de bloqueio — sem dados de terceiros */}
-                              {!readOnly && (teacherConflict ? (
-                                <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
-                                  title="Professor já tem aula neste horário">
-                                  🔒
-                                </div>
-                              ) : freeTurmas.length === 0 ? (
-                                <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg bg-surf2 border border-dashed border-bdr"
-                                  title="Todas as turmas já têm professor neste horário">
-                                  —
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => setModal({ segId: seg.id, turno, aulaIdx: p.aulaIdx, day })}
-                                  className="w-full text-center text-[10px] text-t3 hover:text-navy py-1 rounded-lg hover:bg-surf2 transition-colors border border-dashed border-bdr hover:border-bdr"
-                                >＋</button>
-                              ))}
-                            </div>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-
-                  {/* ── Linhas de grade especial ─────────────────────────────── */}
-                  {(() => {
-                    if (especiais.length === 0) return null
-                    let espCount = 0
-                    return especiais.map((p, idx) => {
-                      if (p.isIntervalo) return null
-                      espCount += 1
-                      const aulaCount = espCount
+                  {periodos.map(p => {
+                    if (p._tipo === 'regular') {
                       return (
-                        <tr key={`esp-${idx}`} className="border-b border-bdr/50 bg-surf2">
-                          <td className="px-3 py-1.5 border-l-2 border-accent">
+                        <tr key={p.aulaIdx} className="border-b border-bdr/50">
+                          <td className="px-3 py-1.5">
                             <div className="font-bold font-mono">{p.label}</div>
                             <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
                           </td>
                           {DAYS.map(day => {
-                            const slot = makeEspecialSlot(seg.id, turno, aulaCount)
+                            const slot = `${seg.id}|${turno}|${p.aulaIdx}`
                             const mine = store.schedules.filter(s =>
                               s.teacherId === teacher.id && s.timeSlot === slot && s.day === day
                             )
+                            // Conflito de professor: já tem aula neste slot/dia
                             const teacherConflict = mine.length > 0
+                            // Turmas ocupadas por outros professores neste slot/dia
                             const occupiedSchedules = store.schedules
                               .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
                             const hardBlockedTurmas = occupiedSchedules
@@ -2202,10 +2123,11 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                             const allTurmas = seg.grades.flatMap(g =>
                               g.classes.map(c => `${g.name} ${c.letter}`)
                             )
+                            // freeTurmas: turmas sem ocupante de área não-compartilhada (inclui turmas de área compartilhada)
                             const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
 
                             return (
-                              <td key={day} className={`px-1.5 py-1.5 align-top bg-surf2 ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
+                              <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                                 <div className="space-y-1">
                                   {mine.map(s => {
                                     const isShared  = isSharedSeriesTurma(s.turma, store.sharedSeries)
@@ -2214,7 +2136,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                     const isFixed   = sharedAct?.tipo === 'fixo'
                                     const showBadge = Boolean(sharedAct?.tipo)
                                     return (
-                                      <div key={s.id} className="relative bg-white border border-bdr rounded-lg p-1.5 text-[11px] group">
+                                      <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
                                         <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
                                         {isShared && showBadge && (
                                           <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${isFixed ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -2238,20 +2160,21 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                     </div>
                                   )}
 
+                                  {/* Indicadores de bloqueio — sem dados de terceiros */}
                                   {!readOnly && (teacherConflict ? (
                                     <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
                                       title="Professor já tem aula neste horário">
                                       🔒
                                     </div>
                                   ) : freeTurmas.length === 0 ? (
-                                    <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg border border-dashed border-bdr"
+                                    <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg bg-surf2 border border-dashed border-bdr"
                                       title="Todas as turmas já têm professor neste horário">
                                       —
                                     </div>
                                   ) : (
                                     <button
-                                      onClick={() => setModal({ segId: seg.id, turno, aulaIdx: `e${aulaCount}`, day })}
-                                      className="w-full text-center text-[10px] text-t3 hover:text-navy py-1 rounded-lg hover:bg-white transition-colors border border-dashed border-bdr hover:border-bdr"
+                                      onClick={() => setModal({ segId: seg.id, turno, aulaIdx: p.aulaIdx, day })}
+                                      className="w-full text-center text-[10px] text-t3 hover:text-navy py-1 rounded-lg hover:bg-surf2 transition-colors border border-dashed border-bdr hover:border-bdr"
                                     >＋</button>
                                   ))}
                                 </div>
@@ -2260,8 +2183,89 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                           })}
                         </tr>
                       )
-                    })
-                  })()}
+                    }
+
+                    // _tipo === 'especial'
+                    const aulaCount = p._espIdx
+                    return (
+                      <tr key={`esp-${aulaCount}`} className="border-b border-bdr/50 bg-surf2">
+                        <td className="px-3 py-1.5 border-l-2 border-accent">
+                          <div className="font-bold font-mono">{p.label}</div>
+                          <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
+                        </td>
+                        {DAYS.map(day => {
+                          const slot = makeEspecialSlot(seg.id, turno, aulaCount)
+                          const mine = store.schedules.filter(s =>
+                            s.teacherId === teacher.id && s.timeSlot === slot && s.day === day
+                          )
+                          const teacherConflict = mine.length > 0
+                          const occupiedSchedules = store.schedules
+                            .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+                          const hardBlockedTurmas = occupiedSchedules
+                            .filter(s => !isSharedSchedule(s, store) && !isSharedSeriesTurma(s.turma, store.sharedSeries))
+                            .map(s => s.turma)
+                          const allTurmas = seg.grades.flatMap(g =>
+                            g.classes.map(c => `${g.name} ${c.letter}`)
+                          )
+                          const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
+
+                          return (
+                            <td key={day} className={`px-1.5 py-1.5 align-top bg-surf2 ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
+                              <div className="space-y-1">
+                                {mine.map(s => {
+                                  const isShared  = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                                  const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
+                                  const subj      = isShared ? sharedAct : store.subjects.find(x => x.id === s.subjectId)
+                                  const isFixed   = sharedAct?.tipo === 'fixo'
+                                  const showBadge = Boolean(sharedAct?.tipo)
+                                  return (
+                                    <div key={s.id} className="relative bg-white border border-bdr rounded-lg p-1.5 text-[11px] group">
+                                      <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
+                                      {isShared && showBadge && (
+                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${isFixed ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                          {isFixed ? 'Fixo' : 'Variável'}
+                                        </span>
+                                      )}
+                                      <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
+                                      {!readOnly && (
+                                        <button
+                                          className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
+                                          onClick={() => removeSchedule(s.id)}
+                                        >✕</button>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+
+                                {substitutionMap?.[slot] && (
+                                  <div className="text-[10px] font-bold text-ok truncate">
+                                    ✓ {substitutionMap[slot]}
+                                  </div>
+                                )}
+
+                                {!readOnly && (teacherConflict ? (
+                                  <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
+                                    title="Professor já tem aula neste horário">
+                                    🔒
+                                  </div>
+                                ) : freeTurmas.length === 0 ? (
+                                  <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg border border-dashed border-bdr"
+                                    title="Todas as turmas já têm professor neste horário">
+                                    —
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setModal({ segId: seg.id, turno, aulaIdx: `e${aulaCount}`, day })}
+                                    className="w-full text-center text-[10px] text-t3 hover:text-navy py-1 rounded-lg hover:bg-white transition-colors border border-dashed border-bdr hover:border-bdr"
+                                  >＋</button>
+                                ))}
+                              </div>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
