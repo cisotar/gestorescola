@@ -1384,6 +1384,24 @@ function TabTeachers() {
                     <div className="text-xs text-t2 truncate">{p.email}</div>
                     {p.celular && <div className="text-xs text-t1">📱 {p.celular}</div>}
                     {p.apelido && <div className="text-xs text-t3 italic">"{p.apelido}"</div>}
+                    {(p.subjectIds ?? []).length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {(p.subjectIds ?? []).map(sid => {
+                          const subj = store.subjects.find(s => s.id === sid)
+                          if (!subj) return null
+                          const area = store.areas.find(a => a.id === subj.areaId)
+                          const segNames = (area?.segmentIds ?? [])
+                            .map(sgId => store.segments.find(sg => sg.id === sgId)?.name)
+                            .filter(Boolean)
+                            .join(', ')
+                          return (
+                            <span key={sid} className="text-[11px] px-1.5 py-0.5 rounded-full bg-surf2 border border-bdr text-t2 whitespace-nowrap">
+                              {subj.name}{segNames ? <span className="text-t3"> · {segNames}</span> : null}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-bdr">
