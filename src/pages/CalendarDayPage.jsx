@@ -7,7 +7,7 @@ import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
 import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, formatMonthlyAulas } from '../lib/helpers'
-import { getPeriodos } from '../lib/periods'
+import { getPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, toMin, getCfg } from '../lib/periods'
 import { rankCandidates, suggestSubstitutes, monthlyLoad } from '../lib/absences'
 import { generateDayHTML, generateSlotCertificateHTML, openPDF } from '../lib/reports'
 import Modal from '../components/ui/Modal'
@@ -228,12 +228,22 @@ export default function CalendarDayPage() {
   const segsForDay = store.segments
     .filter(s => daySegIds.includes(s.id))
     .sort((a, b) => (a.id === segId ? -1 : b.id === segId ? 1 : 0))
-  const segPeriodos = segsForDay.map(s => ({
-    seg: s,
-    periodos: getPeriodos(s.id, s.turno ?? 'manha', store.periodConfigs)
+  const segPeriodos = segsForDay.map(s => {
+    const turno = s.turno ?? 'manha'
+    const cfg = getCfg(s.id, turno, store.periodConfigs)
+
+    const regulares = getPeriodos(s.id, turno, store.periodConfigs)
       .filter(p => !p.isIntervalo)
-      .map(p => ({ ...p, slot: `${s.id}|${s.turno ?? 'manha'}|${p.aulaIdx}` }))
-  }))
+      .map(p => ({ ...p, slot: `${s.id}|${turno}|${p.aulaIdx}` }))
+
+    const especiais = gerarPeriodosEspeciais(cfg)
+      .filter(p => !p.isIntervalo && p.aulaIdx != null)
+      .map(p => ({ ...p, slot: makeEspecialSlot(s.id, turno, Number(p.aulaIdx.slice(1))) }))
+
+    const periodos = [...regulares, ...especiais].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
+
+    return { seg: s, periodos }
+  })
   const dayAbsMap  = Object.fromEntries(
     Object.entries(absMap).filter(([k]) => k.startsWith(activeDate + '|'))
       .map(([k, v]) => [k.replace(activeDate + '|', ''), v])
@@ -402,7 +412,7 @@ export default function CalendarDayPage() {
                         }`}
                       >
                         {/* Horário ancorado */}
-                        <div className="text-center min-w-[56px] shrink-0 bg-surf2 rounded-lg py-1.5 px-1 flex-shrink-0">
+                        <div className={`text-center min-w-[56px] shrink-0 bg-surf2 rounded-lg py-1.5 px-1 flex-shrink-0${p.isEspecial ? ' border-l-2 border-accent' : ''}`}>
                           <div className="font-mono text-[11px] font-bold text-t2">{p.label}</div>
                           <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
                         </div>

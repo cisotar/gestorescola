@@ -1486,15 +1486,8 @@ function CamposGradeEspecial({ gradeEspecial, onChange }) {
     onChange({ ...gradeEspecial, [campo]: valor })
   }
 
-  const handleAdicionarAula = () => {
-    const proximaOrdem = itens.length > 0 ? Math.max(...itens.map(i => i.ordem)) + 1 : 0
-    const novoItem = { id: uid(), tipo: 'aula', ordem: proximaOrdem, duracao: gradeEspecial.duracaoAula ?? 40 }
-    onChange({ ...gradeEspecial, itens: [...itens, novoItem] })
-  }
-
   const handleAdicionarIntervalo = () => {
-    const proximaOrdem = itens.length > 0 ? Math.max(...itens.map(i => i.ordem)) + 1 : 0
-    const novoItem = { id: uid(), tipo: 'intervalo', ordem: proximaOrdem, duracao: 15 }
+    const novoItem = { id: uid(), apos: 0, duracao: 15 }
     onChange({ ...gradeEspecial, itens: [...itens, novoItem] })
   }
 
@@ -1546,23 +1539,20 @@ function CamposGradeEspecial({ gradeEspecial, onChange }) {
         </div>
       </div>
 
-      {/* Lista de itens */}
+      {/* Lista de intervalos */}
       {itens.length === 0 && (
-        <p className="text-t3 text-sm py-1">Nenhum item na grade especial.</p>
+        <p className="text-t3 text-sm py-1">Nenhum intervalo na grade especial.</p>
       )}
       <div className="space-y-2">
         {itens.map(item => (
           <div key={item.id} className="flex items-center gap-2 bg-surf2 rounded-xl px-3 py-2 flex-wrap">
-            <span className={`badge text-xs font-semibold ${item.tipo === 'aula' ? 'bg-accent text-white' : 'bg-surf text-t2 border border-bdr'}`}>
-              {item.tipo === 'aula' ? 'Aula' : 'Intervalo'}
-            </span>
-            <span className="text-xs text-t2 shrink-0">Ordem</span>
+            <span className="text-xs text-t2 shrink-0">Após o Tempo nº</span>
             <input
               className="inp !w-16 py-1 text-xs text-center"
               type="number"
               min="0"
-              value={item.ordem}
-              onChange={e => handleEditarItem(item.id, 'ordem', Number(e.target.value))}
+              value={item.apos ?? 0}
+              onChange={e => handleEditarItem(item.id, 'apos', Number(e.target.value))}
             />
             <span className="text-xs text-t2 shrink-0">Duração (min)</span>
             <input
@@ -1570,21 +1560,19 @@ function CamposGradeEspecial({ gradeEspecial, onChange }) {
               type="number"
               min="1"
               value={item.duracao}
-              disabled={item.tipo === 'aula'}
               onChange={e => handleEditarItem(item.id, 'duracao', Number(e.target.value))}
             />
             <button
               className="ml-auto btn btn-danger btn-xs"
-              title="Remover item"
+              title="Remover intervalo"
               onClick={() => handleRemoverItem(item.id)}
             >Remover</button>
           </div>
         ))}
       </div>
 
-      {/* Botões de adição */}
+      {/* Botão de adição */}
       <div className="flex gap-2 flex-wrap">
-        <button className="btn btn-ghost btn-xs" onClick={handleAdicionarAula}>+ Adicionar aula</button>
         <button className="btn btn-ghost btn-xs" onClick={handleAdicionarIntervalo}>+ Adicionar intervalo</button>
       </div>
     </div>
@@ -1595,7 +1583,8 @@ function CamposGradeEspecial({ gradeEspecial, onChange }) {
 
 function buildPreviewItems(cfg) {
   const itensRegulares = gerarPeriodos(cfg).map(p => ({
-    tipo: p.isIntervalo ? 'intervalo' : 'aula',
+    isEspecial: false,
+    isIntervalo: p.isIntervalo,
     inicio: p.inicio,
     fim: p.fim,
     label: p.label,
@@ -1605,12 +1594,13 @@ function buildPreviewItems(cfg) {
   const periodosEspeciais = gerarPeriodosEspeciais(cfg)
   if (periodosEspeciais.length > 0) {
     const itensEspeciais = periodosEspeciais.map(p => ({
-      tipo: p.isIntervalo ? 'intervaloEspecial' : 'aulaEspecial',
+      isEspecial: true,
+      isIntervalo: p.isIntervalo,
       inicio: p.inicio,
       fim: p.fim,
       label: p.label,
     }))
-    return [...itensRegulares, ...itensEspeciais]
+    return [...itensRegulares, ...itensEspeciais].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
   }
 
   // Fallback legacy: horariosEspeciais / intervalosEspeciais
@@ -1626,50 +1616,51 @@ function buildPreviewItems(cfg) {
   for (const h of ordenados) {
     const fim = fromMin(toMin(h.inicio) + (h.duracao || 0))
     const N = horariosEspeciais.findIndex(orig => orig.id === h.id) + 1
-    itensEspeciais.push({ tipo: 'aulaEspecial', label: `Horário especial ${N}`, inicio: h.inicio, fim })
+    itensEspeciais.push({ isEspecial: true, isIntervalo: false, label: `Horário especial ${N}`, inicio: h.inicio, fim })
 
     intervalosEspeciais
       .filter(iv => iv.aposEspecial === h.id)
       .forEach(iv => {
         const ivFim = fromMin(toMin(fim) + (iv.duracao || 0))
-        itensEspeciais.push({ tipo: 'intervaloEspecial', label: 'Intervalo especial', inicio: fim, fim: ivFim })
+        itensEspeciais.push({ isEspecial: true, isIntervalo: true, label: 'Intervalo especial', inicio: fim, fim: ivFim })
       })
   }
 
-  return [...itensRegulares, ...itensEspeciais]
+  return [...itensRegulares, ...itensEspeciais].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
 }
 
-// ─── PreviewLinhaTempo — barras proporcionais ao tempo de cada bloco ─────────
+// ─── PreviewVertical — lista vertical unificada de períodos regulares e especiais
 
-function PreviewLinhaTempo({ items }) {
+function PreviewVertical({ items }) {
   if (!items || items.length === 0) return null
-
-  const tempoTotalItems = items.reduce((acc, b) => acc + (toMin(b.fim) - toMin(b.inicio)), 0)
-
-  const styleByTipo = {
-    aula:             'bg-navy/10 border border-bdr rounded text-[10px]',
-    intervalo:        'bg-surf2 border border-bdr rounded text-[10px] text-t3',
-    aulaEspecial:     'bg-surf2 border-l-2 border-accent rounded text-[10px] font-semibold',
-    intervaloEspecial:'bg-surf2 border border-dashed border-bdr rounded text-[10px] text-t3',
-  }
 
   return (
     <div className="bg-surf2 rounded-xl p-3">
       <div className="text-[11px] font-bold text-t2 uppercase tracking-wide mb-2">Preview</div>
-      <div className="flex w-full gap-0.5 overflow-hidden">
+      <div className="flex flex-col gap-0.5">
         {items.map((b, i) => {
-          const dur = toMin(b.fim) - toMin(b.inicio)
-          const pct = tempoTotalItems > 0 ? (dur / tempoTotalItems) * 100 : 0
-          const cls = styleByTipo[b.tipo] ?? 'bg-surf2 border border-bdr rounded text-[10px]'
+          const dur = Math.max(0, toMin(b.fim) - toMin(b.inicio))
+          const isAulaEspecial = b.isEspecial && !b.isIntervalo
+          const isIntervaloEspecial = b.isEspecial && b.isIntervalo
+          const rowCls = [
+            'flex items-center gap-2 px-2 py-1 rounded text-[11px]',
+            isAulaEspecial
+              ? 'border-l-2 border-accent text-accent'
+              : isIntervaloEspecial
+                ? 'border-l-2 border-dashed border-accent text-t2'
+                : b.isIntervalo
+                  ? 'text-t3'
+                  : 'text-t2',
+          ].join(' ')
+          const icone = b.isIntervalo ? '⏸' : '▶'
           return (
-            <div
-              key={i}
-              className={`${cls} min-w-[2px] overflow-hidden flex flex-col items-center justify-center px-0.5 py-1 text-center`}
-              style={{ width: `${pct}%` }}
-              title={`${b.label} ${b.inicio}–${b.fim}`}
-            >
-              <span className="truncate leading-none w-full text-center">{b.label}</span>
-              <span className="truncate leading-none w-full text-center opacity-70">{b.inicio}</span>
+            <div key={i} className={rowCls}>
+              <span className="shrink-0 opacity-70">{icone}</span>
+              <span className="font-medium">{b.label}</span>
+              <span className="ml-auto shrink-0 font-mono opacity-80">{b.inicio}–{b.fim}</span>
+              {b.isIntervalo && (
+                <span className="shrink-0 text-[10px] opacity-60">({dur} min)</span>
+              )}
             </div>
           )
         })}
@@ -1772,7 +1763,14 @@ function CardPeriodo({ seg, store }) {
       setAlertaAberto(true)
       return
     }
-    store.savePeriodCfg(seg.id, turno, cfgLocal)
+    const cfgParaSalvar = {
+      ...cfgLocal,
+      gradeEspecial: {
+        ...localGradeEspecial,
+        itens: (localGradeEspecial.itens ?? []).filter(i => i.tipo !== 'aula'),
+      },
+    }
+    store.savePeriodCfg(seg.id, turno, cfgParaSalvar)
     toast('Configuração salva', 'ok')
   }
 
@@ -1906,7 +1904,7 @@ function CardPeriodo({ seg, store }) {
       </div>
 
       {/* Preview */}
-      <PreviewLinhaTempo items={preview} />
+      <PreviewVertical items={preview} />
 
       <AlertaImpeditivoModal
         open={alertaAberto}
@@ -2187,7 +2185,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                       return (
                         <tr key={`esp-${idx}`} className="border-b border-bdr/50 bg-surf2">
                           <td className="px-3 py-1.5 border-l-2 border-accent">
-                            <div className="font-bold font-mono">{aulaCount}ª Aula Esp.</div>
+                            <div className="font-bold font-mono">{p.label}</div>
                             <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
                           </td>
                           {DAYS.map(day => {

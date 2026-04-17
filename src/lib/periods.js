@@ -51,9 +51,14 @@ export function defaultCfg(turno = 'manha') {
 /**
  * Calcula o saldo de tempo de um turno com base na configuração de período.
  *
+ * Suporta dois modos para `gradeEspecial`:
+ * - **Novo modelo** (sem itens do tipo `'aula'`): `tempoEspecial = qtd * duracaoAula + soma(intervalos.duracao)`
+ * - **Modelo legado** (itens com `tipo === 'aula'`): soma `item.duracao` de todos os itens (comportamento anterior)
+ *
  * @param {{ inicioPeriodo?: string, fimPeriodo?: string, inicio?: string,
  *           duracao?: number, qtd?: number, intervalos?: Array,
- *           gradeEspecial?: { itens?: Array<{ tipo: string, duracao?: number }> } }} cfg
+ *           gradeEspecial?: { qtd?: number, duracaoAula?: number,
+ *             itens?: Array<{ tipo: string, duracao?: number }> } }} cfg
  * @returns {{ tempoTotal: number, tempoLetivo: number, tempoResidual: number, tempoEspecial: number }} — valores em minutos
  */
 export function calcSaldo(cfg) {
@@ -66,7 +71,21 @@ export function calcSaldo(cfg) {
   const tempoTotal    = toMin(fimPeriodo) - toMin(inicioPeriodo)
   const tempoLetivo   = (qtd || 0) * (duracao || 0)
   const somaIntervalos = intervalos.reduce((acc, iv) => acc + (iv.duracao || 0), 0)
-  const tempoEspecial = (gradeEspecial?.itens ?? []).reduce((acc, item) => acc + (item.duracao ?? 0), 0)
+
+  const itensEspeciais = gradeEspecial?.itens ?? []
+  const isNovoModelo   = !itensEspeciais.some(i => i.tipo === 'aula')
+  let tempoEspecial
+  if (isNovoModelo && gradeEspecial) {
+    const qtdEsp      = gradeEspecial.qtd ?? 0
+    const duracaoAula = gradeEspecial.duracaoAula ?? 0
+    const somaIvEsp   = itensEspeciais
+      .filter(i => i.tipo !== 'aula')
+      .reduce((acc, i) => acc + (i.duracao ?? 0), 0)
+    tempoEspecial = qtdEsp * duracaoAula + somaIvEsp
+  } else {
+    tempoEspecial = itensEspeciais.reduce((acc, item) => acc + (item.duracao ?? 0), 0)
+  }
+
   const tempoResidual = tempoTotal - tempoLetivo - somaIntervalos - tempoEspecial
 
   return { tempoTotal, tempoLetivo, tempoResidual, tempoEspecial }
@@ -74,6 +93,10 @@ export function calcSaldo(cfg) {
 
 /**
  * Valida se a grade especial cabe no tempo residual do turno.
+ *
+ * Suporta dois modos para `gradeEspecial`:
+ * - **Novo modelo** (sem itens do tipo `'aula'`): lê `qtdAulas = gradeEspecial.qtd` diretamente
+ * - **Modelo legado** (itens com `tipo === 'aula'`): conta `itens.filter(i => i.tipo === 'aula').length`
  *
  * @param {Object} cfg   — objeto de configuração de período com `gradeEspecial`
  * @param {Object} saldo — retorno de `calcSaldo(cfg)`
@@ -87,9 +110,12 @@ export function validarEncaixe(cfg, saldo) {
   const excedente = Math.abs(saldo.tempoResidual)
 
   const itens = cfg.gradeEspecial?.itens ?? []
-  const qtdAulas = itens.filter(i => i.tipo === 'aula').length
+  const isNovoModelo = !itens.some(i => i.tipo === 'aula')
+  const qtdAulas = isNovoModelo
+    ? (cfg.gradeEspecial.qtd ?? 0)
+    : itens.filter(i => i.tipo === 'aula').length
   const somaIntervalosEspeciais = itens
-    .filter(i => i.tipo === 'intervalo')
+    .filter(i => i.tipo !== 'aula')
     .reduce((acc, i) => acc + (i.duracao ?? 0), 0)
 
   // Recupera o saldo disponível para aulas (antes de descontar a grade especial,
@@ -166,38 +192,109 @@ export const makeEspecialSlot = (segId, turno, idx) => `${segId}|${turno}|e${idx
 
 /**
  * Gera os slots de uma grade especial a partir de `cfg.gradeEspecial`.
- * Retorna array vazio se `gradeEspecial` estiver ausente ou sem itens.
+ * Retorna array vazio se `gradeEspecial` estiver ausente ou vazio.
+ *
+ * Suporta dois modelos:
+ *
+ * **Novo modelo** (sem itens do tipo `'aula'`):
+ *   - Gera `gradeEspecial.qtd` tempos automaticamente com duração `duracaoAula`
+ *     a partir de `inicioEspecial`.
+ *   - Intercala intervalos (itens com `tipo !== 'aula'`) pelo campo `apos`:
+ *     `apos === 0` → antes do Tempo 1; `apos === N` → após o Tempo N.
+ *   - Intervalos com `apos > qtd` são ignorados silenciosamente.
+ *   - Dois intervalos com mesmo `apos` são ordenados por `id` (string).
+ *   - Cada aula retorna `{ label: 'Tempo N', inicio, fim, isEspecial: true, isIntervalo: false, aulaIdx: 'eN' }`.
+ *   - Cada intervalo retorna `{ label: 'Intervalo', inicio, fim, isEspecial: true, isIntervalo: true, aulaIdx: null }`.
+ *
+ * **Modelo legado** (itens com `tipo === 'aula'`):
+ *   - Comportamento anterior: ordena por `ordem`, processa sequencialmente.
+ *   - Itens do tipo `'aula'` legados NÃO recebem `aulaIdx`.
  *
  * @param {Object} cfg — objeto de configuração de período (pode ter ou não gradeEspecial)
  * @param {Object} [cfg.gradeEspecial]
  * @param {string} cfg.gradeEspecial.inicioEspecial — horário de início no formato "HH:mm"
- * @param {Array}  cfg.gradeEspecial.itens — lista de { tipo, ordem, duracao, label? }
- * @returns {Array<{ label: string, inicio: string, fim: string, isEspecial: boolean, isIntervalo: boolean }>}
+ * @param {number} [cfg.gradeEspecial.qtd]          — novo modelo: quantidade de tempos
+ * @param {number} [cfg.gradeEspecial.duracaoAula]  — novo modelo: duração em minutos de cada tempo
+ * @param {Array}  [cfg.gradeEspecial.itens]        — intervalos (novo) ou sequência completa (legado)
+ * @returns {Array<{ label: string, inicio: string, fim: string, isEspecial: boolean,
+ *                   isIntervalo: boolean, aulaIdx?: string|null }>}
  */
 export function gerarPeriodosEspeciais(cfg) {
   if (!cfg?.gradeEspecial) return []
-  const { inicioEspecial, itens } = cfg.gradeEspecial
-  if (!itens || itens.length === 0) return []
+  const { inicioEspecial, itens, qtd, duracaoAula } = cfg.gradeEspecial
+  const itensNorm = itens ?? []
 
-  const sorted = [...itens].sort((a, b) => a.ordem - b.ordem)
-  let minutos = toMin(inicioEspecial || '00:00')
-  let aulaCount = 0
-  const result = []
+  const hasLegacyAulas = itensNorm.some(i => i.tipo === 'aula')
 
-  for (const item of sorted) {
-    const duracao = item.duracao ?? 0
-    const inicio = fromMin(minutos)
-    const fim = fromMin(minutos + duracao)
-    const isIntervalo = item.tipo === 'intervalo'
+  // ── Modelo legado ─────────────────────────────────────────────────────────
+  if (hasLegacyAulas) {
+    if (itensNorm.length === 0) return []
+    const sorted = [...itensNorm].sort((a, b) => a.ordem - b.ordem)
+    let minutos = toMin(inicioEspecial || '00:00')
+    let aulaCount = 0
+    const result = []
 
-    if (!isIntervalo) {
-      aulaCount += 1
+    for (const item of sorted) {
+      const duracao = item.duracao ?? 0
+      const inicio = fromMin(minutos)
+      const fim = fromMin(minutos + duracao)
+      const isIntervalo = item.tipo === 'intervalo'
+
+      if (!isIntervalo) {
+        aulaCount += 1
+      }
+
+      const label = item.label || (isIntervalo ? 'Intervalo' : `Aula ${aulaCount}`)
+      result.push({ label, inicio, fim, isEspecial: true, isIntervalo })
+      minutos += duracao
     }
 
-    const label = item.label || (isIntervalo ? 'Intervalo' : `Aula ${aulaCount}`)
+    return result
+  }
 
-    result.push({ label, inicio, fim, isEspecial: true, isIntervalo })
-    minutos += duracao
+  // ── Novo modelo ───────────────────────────────────────────────────────────
+  const qtdNorm     = qtd ?? 0
+  const duracaoNorm = duracaoAula ?? 0
+  if (qtdNorm === 0) return []
+
+  // Apenas intervalos (tipo !== 'aula'); ordenados por apos asc, depois id asc
+  const intervalos = itensNorm
+    .filter(i => i.tipo !== 'aula' && (i.apos ?? 0) <= qtdNorm)
+    .sort((a, b) => {
+      const diff = (a.apos ?? 0) - (b.apos ?? 0)
+      if (diff !== 0) return diff
+      return String(a.id ?? '').localeCompare(String(b.id ?? ''))
+    })
+
+  let minutos = toMin(inicioEspecial || '00:00')
+  const result = []
+
+  // Emite os intervalos com apos === aposValue
+  const emitIntervalos = aposValue => {
+    intervalos
+      .filter(iv => (iv.apos ?? 0) === aposValue)
+      .forEach(iv => {
+        const ivDur = iv.duracao ?? 0
+        const ivIni = fromMin(minutos)
+        const ivFim = fromMin(minutos + ivDur)
+        result.push({ label: 'Intervalo', inicio: ivIni, fim: ivFim,
+          isEspecial: true, isIntervalo: true, aulaIdx: null })
+        minutos += ivDur
+      })
+  }
+
+  // Intervalos com apos === 0 aparecem antes do Tempo 1
+  emitIntervalos(0)
+
+  for (let n = 1; n <= qtdNorm; n++) {
+    const ini = fromMin(minutos)
+    const fim = fromMin(minutos + duracaoNorm)
+    result.push({ label: `Tempo ${n}`, inicio: ini, fim, isEspecial: true,
+      isIntervalo: false, aulaIdx: `e${n}` })
+    minutos += duracaoNorm
+
+    // Intervalos com apos === n aparecem após o Tempo n
+    emitIntervalos(n)
   }
 
   return result

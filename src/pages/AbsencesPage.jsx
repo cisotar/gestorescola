@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, weekStart, formatISO, parseDate } from '../lib/helpers'
-import { getAulas, slotLabel } from '../lib/periods'
+import { getAulas, slotLabel, getCfg, gerarPeriodosEspeciais } from '../lib/periods'
 import { toast } from '../hooks/useToast'
 import {
   openPDF,
@@ -110,8 +110,18 @@ function SlotRow({ sl, store, isAdmin, showTeacher = false, selectionMode = fals
   const { deleteAbsenceSlot } = useAppStore()
   const subj    = store.subjects.find(s => s.id === sl.subjectId)
   const sub     = sl.substituteId ? store.teachers.find(t => t.id === sl.substituteId) : null
-  const parts   = sl.timeSlot?.split('|') ?? []
-  const aula    = parts.length >= 3 ? getAulas(parts[0], parts[1], store.periodConfigs).find(p => p.aulaIdx === Number(parts[2])) : null
+  const parts      = sl.timeSlot?.split('|') ?? []
+  const isEspecial = parts.length >= 3 && parts[2].startsWith('e')
+  const aula = (() => {
+    if (parts.length < 3) return null
+    if (isEspecial) {
+      const n    = Number(parts[2].slice(1))
+      const cfg  = getCfg(parts[0], parts[1], store.periodConfigs)
+      const item = gerarPeriodosEspeciais(cfg).find(p => p.aulaIdx === parts[2])
+      return { label: `Tempo ${n}`, inicio: item?.inicio ?? '', fim: item?.fim ?? '' }
+    }
+    return getAulas(parts[0], parts[1], store.periodConfigs).find(p => p.aulaIdx === Number(parts[2])) ?? null
+  })()
   const teacher = showTeacher ? store.teachers.find(t => t.id === sl.teacherId) : null
 
   return (
