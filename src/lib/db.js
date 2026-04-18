@@ -202,11 +202,7 @@ export async function deleteDocById(colName, id) {
 // Usar em ações de UI: editar professor, horário, ausência, etc.
 // Nota: updateDoc() é mais eficiente que setDoc() para edições parciais
 export async function updateDocById(colName, id, changes) {
-  try {
-    await updateDoc(doc(db, colName, id), changes)
-  } catch (e) {
-    console.error(e)
-  }
+  await updateDoc(doc(db, colName, id), changes)
 }
 
 export async function saveConfig(state) {

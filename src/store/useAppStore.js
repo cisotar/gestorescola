@@ -313,15 +313,24 @@ const useAppStore = create((set, get) => {
   addTeacher: async (name, opts = {}) => {
     if (_isCoordinator()) return _submitApproval('addTeacher', { name, opts }, `Adicionar professor ${name.trim()}`)
     const teacher = { id: uid(), name: name.trim(), subjectIds: opts.subjectIds ?? [],
-      email: opts.email ?? '', whatsapp: '', celular: opts.celular ?? '', status: 'approved' }
+      email: opts.email ?? '', whatsapp: '', celular: opts.celular ?? '', status: 'approved',
+      profile: opts.profile ?? 'teacher' }
     set(s => ({ teachers: [...s.teachers, teacher] }))
     saveDoc('teachers', teacher)
   },
   updateTeacher: async (id, changes) => {
     const teacher = get().teachers.find(t => t.id === id)
     if (_isCoordinator()) return _submitApproval('updateTeacher', { id, changes }, `Editar professor ${teacher?.name ?? id}`)
+    const original = {}
+    Object.keys(changes).forEach(k => { original[k] = teacher?.[k] })
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
-    updateDocById('teachers', id, changes)
+    try {
+      await updateDocById('teachers', id, changes)
+    } catch (e) {
+      // Reverter apenas os campos alterados para evitar sobrescrever mudanças concorrentes
+      set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...original } : t) }))
+      throw e
+    }
   },
   updateTeacherProfile: async (id, changes) => {
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
@@ -362,8 +371,16 @@ const useAppStore = create((set, get) => {
     const myTeacher = useAuthStore.getState().teacher
     const isOwnSchedule = sched?.teacherId === myTeacher?.id
     if (_isCoordinator() && !isOwnSchedule) return _submitApproval('updateSchedule', { id, changes }, 'Atualizar horário')
+    const original = {}
+    Object.keys(changes).forEach(k => { original[k] = sched?.[k] })
     set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...changes } : x) }))
-    updateDocById('schedules', id, changes)
+    try {
+      await updateDocById('schedules', id, changes)
+    } catch (e) {
+      set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...original } : x) }))
+      console.error('[updateSchedule]', e)
+      throw e
+    }
   },
   migrateMultipleSubjects: (fromId, toId) => {
     set(s => ({
@@ -407,14 +424,14 @@ const useAppStore = create((set, get) => {
     set(s => ({ absences: _assignSubstitute(absenceId, slotId, substituteId, s.absences) }))
     const updated = get().absences.find(a => a.id === absenceId)
     if (updated) {
-      updateDocById('absences', absenceId, { slots: updated.slots, status: updated.status })
+      updateDocById('absences', absenceId, { slots: updated.slots, status: updated.status }).catch(e => { console.error('[assignSubstitute]', e); toast('Erro ao salvar substituição', 'err') })
     }
   },
   deleteAbsenceSlot: (absenceId, slotId) => {
     set(s => ({ absences: _deleteAbsenceSlot(absenceId, slotId, s.absences) }))
     const updated = get().absences.find(a => a.id === absenceId)
     if (updated) {
-      updateDocById('absences', absenceId, { slots: updated.slots, status: updated.status })
+      updateDocById('absences', absenceId, { slots: updated.slots, status: updated.status }).catch(e => { console.error('[deleteAbsenceSlot]', e); toast('Erro ao salvar', 'err') })
     }
   },
   deleteAbsence: (id) => {
@@ -457,7 +474,7 @@ const useAppStore = create((set, get) => {
         const slots = ab.slots.filter(sl => sl.date === date)
         if (slots.length > 0) {
           const updated = get().absences.find(a => a.id === ab.id)
-          if (updated) updateDocById('absences', ab.id, { slots: updated.slots, status: updated.status })
+          if (updated) updateDocById('absences', ab.id, { slots: updated.slots, status: updated.status }).catch(e => { console.error('[clearDaySubstitutes]', e); toast('Erro ao salvar', 'err') })
         }
       }
     })
@@ -486,7 +503,7 @@ const useAppStore = create((set, get) => {
     deletedIds.forEach(id => deleteDocById('absences', id))
     afterAbsences
       .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
-      .forEach(ab => updateDocById('absences', ab.id, { slots: ab.slots, status: ab.status }))
+      .forEach(ab => updateDocById('absences', ab.id, { slots: ab.slots, status: ab.status }).catch(e => { console.error('[clearDayAbsences]', e); toast('Erro ao salvar', 'err') }))
   },
 
   // ─── Histórico ────────────────────────────────────────────────────────────────

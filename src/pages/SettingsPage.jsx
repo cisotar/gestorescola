@@ -1221,12 +1221,17 @@ function TabTeachers() {
       if (newProfile === 'admin') {
         await addAdmin(t.email, t.name)
         setAdmins(a => [...a, (t.email ?? '').toLowerCase()])
+        // Se era coordinator/teacher-coordinator, limpar o profile no documento teachers/
+        const currentProfInTeachers = t.profile ?? 'teacher'
+        if (currentProfInTeachers !== 'teacher') {
+          await store.updateTeacher(t.id, { profile: 'teacher' })
+        }
       } else {
         if (oldProfile === 'admin') {
           await removeAdmin(t.email)
           setAdmins(a => a.filter(x => x !== (t.email ?? '').toLowerCase()))
         }
-        store.updateTeacher(t.id, { profile: newProfile })
+        await store.updateTeacher(t.id, { profile: newProfile })
       }
       const LABELS = { teacher: 'Professor', coordinator: 'Coord. Geral', 'teacher-coordinator': 'Prof. Coord.', admin: 'Admin' }
       toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')
