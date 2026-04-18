@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { auth, provider, db } from '../lib/firebase'
-import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
+import { signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'firebase/auth'
 import { onSnapshot, collection, query, where, doc } from 'firebase/firestore'
 import { isAdmin, getTeacherByEmail, requestTeacherAccess } from '../lib/db'
 import useAppStore from './useAppStore'
@@ -73,8 +73,8 @@ const useAuthStore = create((set, get) => ({
   },
 
   login: async () => {
-    try { await signInWithPopup(auth, provider) }
-    catch (e) { if (e.code !== 'auth/popup-closed-by-user') alert('Erro ao fazer login: ' + e.message) }
+    try { await signInWithRedirect(auth, provider) }
+    catch (e) { alert('Erro ao fazer login: ' + e.message) }
   },
 
   logout: () => {
