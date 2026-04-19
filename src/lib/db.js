@@ -4,7 +4,7 @@ import {
   collection, writeBatch, serverTimestamp, query, where, onSnapshot, orderBy, limit,
 } from 'firebase/firestore'
 import { uid } from './helpers'
-import { migrateSharedSeriesToNewFormat } from './migrations'
+import { migrateSharedSeriesToNewFormat, migrateSchedulesForSharedSeries } from './migrations'
 
 const LS_KEY = 'gestao_v8_cache'
 const DEFAULT_SHARED_SERIES = [
@@ -47,7 +47,18 @@ export async function loadFromFirestore() {
     if (wasMigrated) {
       await saveConfig(migratedConfig)
     }
-    return { ...migratedConfig, teachers, schedules, absences, history }
+
+    // Migra schedules de turmas compartilhadas (após migração de sharedSeries)
+    const { schedules: migratedSchedules, migratedCount, skippedCount } = migrateSchedulesForSharedSeries(
+      schedules,
+      migratedConfig.sharedSeries || []
+    )
+    if (migratedCount > 0) {
+      console.log(`[migrations] Migrou ${migratedCount} schedules de turmas compartilhadas (${skippedCount} já sem subject ID)`)
+      await _syncCol('schedules', migratedSchedules)
+    }
+
+    return { ...migratedConfig, teachers, schedules: migratedSchedules, absences, history }
   } catch (e) {
     console.warn('[db] Firestore falhou, usando cache:', e)
     // Sempre tem fallback: cache antigo (mesmo que expirado) é melhor que vazio
