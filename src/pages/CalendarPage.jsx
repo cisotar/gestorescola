@@ -427,9 +427,18 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                                 Desfazer
                               </button>
                             ) : (
-                              <button className="btn btn-dark btn-xs" onClick={() => handleMarkAbsent(p, sched)}>
-                                Marcar falta
-                              </button>
+                              <div className="flex flex-col items-end gap-1">
+                                <button
+                                  className={`btn btn-dark btn-xs ${isFormation ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                  disabled={isFormation}
+                                  onClick={() => !isFormation && handleMarkAbsent(p, sched)}
+                                >
+                                  Marcar falta
+                                </button>
+                                {isFormation && (
+                                  <span className="text-[10px] text-t3 italic">Slot de formação: falta não aplicável</span>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}

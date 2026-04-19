@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { uid } from '../lib/helpers'
+import { uid, isFormationSlot } from '../lib/helpers'
 import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener, saveConfig, submitPendingAction } from '../lib/db'
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
@@ -454,7 +454,13 @@ const useAppStore = create((set, get) => {
 
   // ─── Ausências ───────────────────────────────────────────────────────────────
   createAbsence: (teacherId, rawSlots) => {
-    set(s => ({ absences: _createAbsence(teacherId, rawSlots, s.absences) }))
+    const sharedSeries = get().sharedSeries
+    const regularSlots = rawSlots.filter(s => !isFormationSlot(s.turma, s.subjectId, sharedSeries))
+    if (regularSlots.length === 0) {
+      toast('Slots de formação não permitem marcação de falta', 'warn')
+      return
+    }
+    set(s => ({ absences: _createAbsence(teacherId, regularSlots, s.absences) }))
     const newAbsence = get().absences[get().absences.length - 1]
     saveDoc('absences', newAbsence)
   },

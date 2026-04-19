@@ -4,7 +4,17 @@ service cloud.firestore {
 
     // ── Leitura pública ─────────────────────────────────────────────────────
     match /meta/{doc}     { allow read: if true; allow write: if isAdmin(); }
-    match /absences/{doc} { allow read: if true; allow write: if isAuthenticated(); }
+    // ── Ausências: leitura pública; create/update bloqueados para slots de formação ──
+    // CONTRATO OBRIGATÓRIO: qualquer sharedSeries de type === 'formation' criada
+    // futuramente DEVE usar subjectId prefixado com "formation-" (ex: "formation-atpcg").
+    // Essa convenção é a única garantia de que slots de formação nunca sejam gravados
+    // como ausências substituíveis, independentemente do cliente ou do role do usuário.
+    match /absences/{doc} {
+      allow read: if true;
+      allow create: if isAuthenticated() && !hasFormationSlot(request.resource.data.slots);
+      allow update: if isAuthenticated() && !hasFormationSlot(request.resource.data.slots);
+      allow delete: if isAuthenticated();
+    }
     match /history/{doc}  { allow read: if true; allow write: if isAdmin(); }
 
     // ── Professores: leitura pública; admin escreve; professor edita próprio perfil ──
@@ -82,6 +92,13 @@ service cloud.firestore {
         request.auth.token.email == 'fernandamarquesi@prof.educacao.sp.gov.br' ||
         exists(/databases/$(database)/documents/admins/$(emailToKey(request.auth.token.email)))
       );
+    }
+
+    // Retorna true se o primeiro slot possui subjectId prefixado com "formation-".
+    // Usado para bloquear create/update de absences com slots de formação.
+    function hasFormationSlot(slots) {
+      return slots.size() > 0
+        && slots[0].subjectId.matches('formation-.*');
     }
   }
 }

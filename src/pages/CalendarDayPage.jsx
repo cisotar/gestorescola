@@ -436,6 +436,9 @@ export default function CalendarDayPage() {
                             <>
                               <div className={`font-bold text-sm ${abs ? 'text-[#7F1A06]' : ''}`}>{sched.turma}</div>
                               <div className={`text-xs ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
+                              {!abs && isFormation && (
+                                <span className="text-xs text-t3 italic mt-0.5 block">Slot de formação</span>
+                              )}
                               {abs && isFormation ? (
                                 <span className="badge-formation">Dispensa de Substituição</span>
                               ) : abs && (
@@ -482,7 +485,11 @@ export default function CalendarDayPage() {
                                 Desfazer
                               </button>
                             ) : (
-                              <button className="btn btn-dark btn-xs" onClick={() => handleMarkAbsent(p, sched)}>
+                              <button
+                                className="btn btn-dark btn-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={isFormation}
+                                onClick={() => handleMarkAbsent(p, sched)}
+                              >
                                 Marcar falta
                               </button>
                             )}
