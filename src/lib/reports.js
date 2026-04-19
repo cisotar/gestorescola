@@ -478,15 +478,24 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
     return { ...item, slotKey: null }
   })
 
-  // ── Verificar se há itens especiais (para inserir separador) ────────────────
-  const hasEspecial = itemsWithSlot.some(i => i._tipo === 'especial')
-  let firstEspecialEmitted = false
+  // ── Pre-calcular separadores: inserir traço duplo na transição regular↔especial ─
+  const baseType = t => t._tipo?.startsWith('especial') || t._tipo?.startsWith('intervalo-especial') ? 'especial' : 'regular'
+  const separatorBefore = new Set()
+  for (let i = 1; i < itemsWithSlot.length; i++) {
+    if (baseType(itemsWithSlot[i]) !== baseType(itemsWithSlot[i - 1])) {
+      separatorBefore.add(i)
+    }
+  }
 
   // ── Gerar HTML de cada linha ──────────────────────────────────────────────
-  const allRows = itemsWithSlot.map(item => {
+  const allRows = itemsWithSlot.map((item, i) => {
+    const sep = separatorBefore.has(i)
+      ? `<tr><td colspan="6" style="border-top:3px double #1a1814;padding:0;height:0"></td></tr>`
+      : ''
+
     // Linha de intervalo (regular ou especial)
     if (item.isIntervalo) {
-      return `<tr>
+      return sep + `<tr>
       <td style="width:90px;white-space:nowrap;color:#1a1814;font-size:10px">${item.inicio}–${item.fim}<br>${item.label}</td>
       <td colspan="5" style="border:1px solid #e5e2d9"></td>
     </tr>`
@@ -519,17 +528,10 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
         }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
         return `<td>${lines}</td>`
       }).join('')
-      return `<tr>
+      return sep + `<tr>
       <td style="width:90px;white-space:nowrap;color:#1a1814"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
       ${cells}
     </tr>`
-    }
-
-    // _tipo === 'especial' — inserir separador duplo antes do primeiro
-    let separator = ''
-    if (!firstEspecialEmitted) {
-      firstEspecialEmitted = true
-      separator = `<tr><td colspan="6" style="border-top:3px double #1a1814;padding:0;height:0"></td></tr>`
     }
 
     const { slotKey, label, inicio, fim } = item
@@ -562,7 +564,7 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
       return `<td>${lines}</td>`
     }).join('')
 
-    return separator + `<tr>
+    return sep + `<tr>
       <td style="${labelStyle}"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
       ${cells}
     </tr>`
