@@ -189,7 +189,6 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                   {!readOnly && (teacherConflict ? (
                                     <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
                                       title="Professor já tem aula neste horário">
-                                      🔒
                                     </div>
                                   ) : freeTurmas.length === 0 ? (
                                     <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg bg-surf2 border border-dashed border-bdr"
@@ -271,7 +270,6 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                 {!readOnly && (teacherConflict ? (
                                   <div className="w-full text-center text-[10px] text-amber-600 py-1 rounded-lg bg-amber-50 border border-amber-200"
                                     title="Professor já tem aula neste horário">
-                                    🔒
                                   </div>
                                 ) : freeTurmas.length === 0 ? (
                                   <div className="w-full text-center text-[10px] text-t3 py-1 rounded-lg border border-dashed border-bdr"
