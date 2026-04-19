@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
-import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeries, getSharedSeriesActivity } from '../lib/helpers'
+import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeries } from '../lib/helpers'
 import { getCfg, gerarPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, defaultCfg, toMin, fromMin, calcSaldo, validarEncaixe } from '../lib/periods'
 import { COLOR_PALETTE, DAYS } from '../lib/constants'
 import Modal from '../components/ui/Modal'
@@ -715,35 +715,6 @@ function AddAreaRow({ segId, store }) {
   )
 }
 
-function sharedSeriesTypeBadge(tipo) {
-  if (tipo === 'fixo') {
-    return 'bg-blue-100 text-blue-700'
-  }
-  if (tipo === 'variavel') {
-    return 'bg-amber-100 text-amber-700'
-  }
-  return ''
-}
-
-function normalizeSharedSeriesActivities(activities) {
-  const seen = new Set()
-  const normalized = []
-
-  activities.forEach((activity) => {
-    const name = activity.name.trim()
-    const key = name.toLowerCase()
-    if (!name || seen.has(key)) return
-    seen.add(key)
-    normalized.push({
-      id: activity.id || uid(),
-      name,
-      tipo: activity.tipo || null,
-      order: normalized.length,
-    })
-  })
-
-  return normalized
-}
 
 function TabSharedSeries() {
   const store = useAppStore()
@@ -777,7 +748,7 @@ function TabSharedSeries() {
         <div>
           <h2 className="text-base font-bold text-t1">Turmas Compartilhadas</h2>
           <p className="text-sm text-t2 mt-1">
-            Gerencie turmas especiais que aceitam mapeamentos simultâneos no mesmo horário.
+            Gerencie turmas especiais que aceitam múltiplos professores no mesmo horário.
           </p>
         </div>
         <button className="btn btn-dark" onClick={openCreate}>+ Nova turma compartilhada</button>
@@ -788,23 +759,30 @@ function TabSharedSeries() {
           <div className="text-4xl mb-2">🧩</div>
           <div className="font-bold text-sm text-t1">Nenhuma turma compartilhada cadastrada</div>
           <p className="text-sm text-t2 mt-1 mb-4">
-            Crie a primeira turma para liberar atividades como FORMAÇÃO sem precisar de deploy.
+            Crie turmas de Formação ou Eletiva para uso em múltiplos professores simultâneos.
           </p>
           <button className="btn btn-dark" onClick={openCreate}>Criar primeira turma</button>
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {store.sharedSeries.map(series => {
-            const activities = [...(series.activities ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
             const affected = store.schedules.filter(s => s.turma === series.name).length
+            const typeBadgeClass = series.type === 'formation'
+              ? 'bg-blue-100 text-blue-700'
+              : 'bg-amber-100 text-amber-700'
+            const typeLabel = series.type === 'formation' ? 'Formação' : 'Eletiva'
             return (
               <div key={series.id} className="card">
                 <div className="flex items-start gap-3 justify-between mb-4">
-                  <div className="min-w-0">
-                    <div className="font-bold text-base text-t1 truncate">{series.name}</div>
-                    <div className="text-xs text-t3 mt-1">
-                      {activities.length} atividade{activities.length !== 1 ? 's' : ''}
-                      {affected > 0 ? ` · ${affected} horário${affected !== 1 ? 's' : ''} vinculado${affected !== 1 ? 's' : ''}` : ''}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 gap-y-1 flex-wrap">
+                      <div className="font-bold text-base text-t1">{series.name}</div>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide ${typeBadgeClass}`}>
+                        {typeLabel}
+                      </span>
+                    </div>
+                    <div className="text-xs text-t3 mt-2">
+                      {affected > 0 ? `${affected} horário${affected !== 1 ? 's' : ''} vinculado${affected !== 1 ? 's' : ''}` : 'Sem horários vinculados'}
                     </div>
                   </div>
                   <div className="flex gap-2 shrink-0">
@@ -812,28 +790,11 @@ function TabSharedSeries() {
                     <button className="btn btn-ghost btn-xs text-err" onClick={() => handleDeleteSeries(series)}>Excluir</button>
                   </div>
                 </div>
-
-                {activities.length === 0 ? (
-                  <p className="text-xs text-t3">Nenhuma atividade cadastrada.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {activities.map(activity => (
-                      <div key={activity.id} className="flex items-center justify-between gap-3 rounded-xl border border-bdr bg-surf2 px-3 py-2">
-                        <div className="min-w-0">
-                          <div className="font-semibold text-sm text-t1 truncate">{activity.name}</div>
-                          <div className="text-[10px] text-t3 mt-0.5">ID: {activity.id}</div>
-                        </div>
-                        {activity.tipo ? (
-                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wide ${sharedSeriesTypeBadge(activity.tipo)}`}>
-                            {activity.tipo === 'fixo' ? 'Fixo' : 'Variável'}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-t3">Sem tipo</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <p className="text-xs text-t3">
+                  {series.type === 'formation'
+                    ? 'Ausência não requer substituto. Professores escolhem matérias da lista.'
+                    : 'Ausência requer substituto. Professores escolhem matérias da lista.'}
+                </p>
               </div>
             )
           })}
@@ -852,57 +813,13 @@ function TabSharedSeries() {
 
 function SharedSeriesModal({ open, onClose, store, editingSeries }) {
   const [name, setName] = useState('')
-  const [activities, setActivities] = useState([])
+  const [type, setType] = useState('formation')
 
   useEffect(() => {
     if (!open) return
     setName(editingSeries?.name ?? '')
-    setActivities(
-      (editingSeries?.activities ?? [])
-        .slice()
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-        .map((activity, idx) => ({
-          id: activity.id,
-          name: activity.name ?? '',
-          tipo: activity.tipo ?? null,
-          order: activity.order ?? idx,
-        }))
-    )
+    setType(editingSeries?.type ?? 'formation')
   }, [open, editingSeries])
-
-  const setActivityField = (id, field, value) => {
-    setActivities(current => current.map(activity =>
-      activity.id === id ? { ...activity, [field]: value } : activity
-    ))
-  }
-
-  const addActivity = () => {
-    setActivities(current => [
-      ...current,
-      { id: uid(), name: '', tipo: null, order: current.length },
-    ])
-  }
-
-  const moveActivity = (index, direction) => {
-    const nextIndex = index + direction
-    if (nextIndex < 0 || nextIndex >= activities.length) return
-    const next = activities.slice()
-    ;[next[index], next[nextIndex]] = [next[nextIndex], next[index]]
-    setActivities(next.map((activity, idx) => ({ ...activity, order: idx })))
-  }
-
-  const removeActivity = (activity) => {
-    const affected = store.schedules.filter(s => s.subjectId === activity.id).length
-    if (affected > 0) {
-      alert(`Não é possível remover: ${affected} horário(s) usam esta atividade.`)
-      return
-    }
-    setActivities(current =>
-      current
-        .filter(item => item.id !== activity.id)
-        .map((item, idx) => ({ ...item, order: idx }))
-    )
-  }
 
   const save = () => {
     const trimmedName = name.trim()
@@ -919,10 +836,9 @@ function SharedSeriesModal({ open, onClose, store, editingSeries }) {
       return
     }
 
-    const normalizedActivities = normalizeSharedSeriesActivities(activities)
     const payload = {
       name: trimmedName,
-      activities: normalizedActivities,
+      type: type,
     }
 
     if (editingSeries) {
@@ -940,7 +856,7 @@ function SharedSeriesModal({ open, onClose, store, editingSeries }) {
       open={open}
       onClose={onClose}
       title={editingSeries ? 'Editar turma compartilhada' : 'Nova turma compartilhada'}
-      size="md"
+      size="sm"
     >
       <div className="space-y-5">
         <div>
@@ -954,79 +870,27 @@ function SharedSeriesModal({ open, onClose, store, editingSeries }) {
         </div>
 
         <div>
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <div className="lbl !mb-0">Atividades</div>
-              <p className="text-xs text-t3 mt-1">Defina nome, tipo e ordem de exibição.</p>
-            </div>
-            <button className="btn btn-ghost btn-sm" type="button" onClick={addActivity}>+ Adicionar atividade</button>
+          <label className="lbl">Tipo *</label>
+          <div className="flex gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                value="formation"
+                checked={type === 'formation'}
+                onChange={e => setType(e.target.value)}
+              />
+              <span className="text-sm">Formação (não requer substituto)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                value="elective"
+                checked={type === 'elective'}
+                onChange={e => setType(e.target.value)}
+              />
+              <span className="text-sm">Eletiva (requer substituto)</span>
+            </label>
           </div>
-
-          {activities.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-bdr bg-surf2 px-4 py-5 text-sm text-t3 text-center">
-              Nenhuma atividade adicionada ainda.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {activities.map((activity, index) => (
-                <div key={activity.id} className="rounded-xl border border-bdr bg-surf2 p-3 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="text-xs font-bold text-t3 uppercase tracking-wide">
-                      Atividade {index + 1}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs"
-                        disabled={index === 0}
-                        onClick={() => moveActivity(index, -1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs"
-                        disabled={index === activities.length - 1}
-                        onClick={() => moveActivity(index, 1)}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs text-err"
-                        onClick={() => removeActivity(activity)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="lbl">Nome</label>
-                    <input
-                      className="inp"
-                      value={activity.name}
-                      onChange={e => setActivityField(activity.id, 'name', e.target.value)}
-                      placeholder="Ex: ATPCG"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="lbl">Tipo</label>
-                    <select
-                      className="inp"
-                      value={activity.tipo ?? ''}
-                      onChange={e => setActivityField(activity.id, 'tipo', e.target.value || null)}
-                    >
-                      <option value="">Sem tipo</option>
-                      <option value="fixo">Fixo</option>
-                      <option value="variavel">Variável</option>
-                    </select>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="flex gap-2 pt-1">
@@ -2280,16 +2144,14 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                 <div className="space-y-1">
                                   {mine.map(s => {
                                     const isShared  = isSharedSeries(s.turma, store.sharedSeries)
-                                    const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
-                                    const subj      = isShared ? sharedAct : store.subjects.find(x => x.id === s.subjectId)
-                                    const isFixed   = sharedAct?.tipo === 'fixo'
-                                    const showBadge = Boolean(sharedAct?.tipo)
+                                    const subj      = store.subjects.find(x => x.id === s.subjectId)
+                                    const sharedSeriesInfo = isShared ? store.sharedSeries.find(ss => ss.name === s.turma) : null
                                     return (
                                       <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
                                         <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                        {isShared && showBadge && (
-                                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${isFixed ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                            {isFixed ? 'Fixo' : 'Variável'}
+                                        {isShared && sharedSeriesInfo && (
+                                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${sharedSeriesInfo.type === 'formation' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                            {sharedSeriesInfo.type === 'formation' ? 'Formação' : 'Eletiva'}
                                           </span>
                                         )}
                                         <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
@@ -2498,7 +2360,7 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
       }
     }
     if (isShared && !subjId)
-      { alert('Selecione a atividade.'); return }
+      { alert('Selecione a matéria.'); return }
     onSave({ teacherId: teacher.id, subjectId: subjId || null, turma, day, timeSlot: slot })
   }
 
@@ -2577,18 +2439,16 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
 
             {selectedSharedSeries && (
               <div className="mt-3">
-                <div className="text-[10px] font-bold text-t3 uppercase tracking-wider mb-2">Atividade</div>
+                <div className="text-[10px] font-bold text-t3 uppercase tracking-wider mb-2">Matéria</div>
                 <div className="flex flex-wrap gap-2">
-                  {[...(selectedSharedSeries.activities ?? [])]
-                    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-                    .map(act => (
+                  {mySubjs.map(subj => (
                       <button
-                        key={act.id}
+                        key={subj.id}
                         type="button"
-                        className={subjId === act.id ? pillOn : pillOff}
-                        onClick={() => setSubjId(act.id)}
+                        className={subjId === subj.id ? pillOn : pillOff}
+                        onClick={() => setSubjId(subj.id)}
                       >
-                        {act.name}
+                        {subj.name}
                       </button>
                     ))}
                 </div>
