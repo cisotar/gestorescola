@@ -1,4 +1,4 @@
-import { uid, dateToDayLabel, formatISO, parseDate, weekStart, businessDaysBetween, isSharedSeries, getSharedSeriesActivity } from './helpers'
+import { uid, dateToDayLabel, formatISO, parseDate, weekStart, businessDaysBetween, isSharedSeries } from './helpers'
 export { dateToDayLabel, formatISO, formatBR, parseDate, weekStart, businessDaysBetween } from './helpers'
 import { resolveSlot } from './periods'
 
@@ -9,9 +9,8 @@ export function monthlyLoad(teacherId, referenceDate, schedules, absences, share
   const monthStart = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2,'0')}-01`
   const days       = businessDaysBetween(monthStart, referenceDate)
 
-  const isFormacao = (turma, subjectId) =>
-    isSharedSeries(turma ?? '', sharedSeries) ||
-    !!getSharedSeriesActivity(subjectId, sharedSeries)
+  const isFormacao = (turma) =>
+    isSharedSeries(turma ?? '', sharedSeries)
 
   // FORMAÇÃO e ELETIVA contam como aulas dadas (scheduled)
   const scheduledLoad = days.reduce((acc, d) => {
@@ -29,7 +28,7 @@ export function monthlyLoad(teacherId, referenceDate, schedules, absences, share
     return acc + ab.slots.filter(sl =>
       sl.date >= monthStart &&
       sl.date <= referenceDate &&
-      !isFormacao(sl.turma, sl.subjectId)
+      !isFormacao(sl.turma)
     ).length
   }, 0)
 
@@ -75,24 +74,17 @@ export function weeklyLimitStatus(teacher, date, schedules, absences, sharedSeri
   const weekDays   = businessDaysBetween(ws, date)
   const weekDaySet = new Set(weekDays.map(d => dateToDayLabel(d)).filter(Boolean))
 
-  const isFormacao = (sched) =>
-    isSharedSeries(sched.turma, sharedSeries) ||
-    !!getSharedSeriesActivity(sched.subjectId, sharedSeries)
-
   const ownAulas = schedules.filter(s =>
     s.teacherId === teacher.id &&
     weekDaySet.has(s.day) &&
-    !isFormacao(s)
+    !isSharedSeries(s.turma, sharedSeries)
   ).length
 
   const subsAulas = (absences || []).reduce((acc, ab) => {
     return acc + ab.slots.filter(sl => {
       if (sl.substituteId !== teacher.id) return false
       if (!weekDays.includes(sl.date))    return false
-      const isFormacaoSlot =
-        isSharedSeries(sl.turma, sharedSeries) ||
-        !!getSharedSeriesActivity(sl.subjectId, sharedSeries)
-      return !isFormacaoSlot
+      return !isSharedSeries(sl.turma, sharedSeries)
     }).length
   }, 0)
 
@@ -116,7 +108,7 @@ export function isUnderWeeklyLimit(teacher, date, schedules, absences, sharedSer
  *   4 — outra área / turmas compartilhadas (pior compatibilidade, mas aceitável)
  *
  * COMPORTAMENTO ESPECIAL PARA TURMAS COMPARTILHADAS:
- * - Turmas de FORMAÇÃO e ELETIVA têm subjectId === null (ou referem activities não-mapeadas)
+ * - Turmas de FORMAÇÃO e ELETIVA têm subjectId apontando para subjects[].id normalmente
  * - Resultado: todos os candidatos recebem score 4 (igualmente compatíveis)
  * - Desempate: menor carga mensal (monthlyLoad) vence
  * - Isso é INTENCIONAL — em turmas compartilhadas, competência pedagógica é idêntica

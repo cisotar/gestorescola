@@ -2,7 +2,6 @@ import { useState } from 'react'
 import useAppStore from '../store/useAppStore'
 import { getAulas, getCfg, gerarPeriodosEspeciais, makeEspecialSlot, toMin } from '../lib/periods'
 import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
-import { isSharedSeries, getSharedSeriesActivity } from '../lib/helpers'
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
@@ -76,11 +75,6 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                           {matches.map(s => {
                             const teacher = store.teachers.find(t => t.id === s.teacherId)
                             const subject = store.subjects?.find(sub => sub.id === s.subjectId)
-                            const isShared = isSharedSeries(s.turma, store.sharedSeries)
-                            const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
-                            const displayLabel = isShared
-                              ? `${s.turma} · ${sharedAct?.name ?? '?'}`
-                              : s.turma
                             return (
                               <div key={s.id} className="leading-tight">
                                 {showTeacher ? (
@@ -90,7 +84,7 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                                   </>
                                 ) : (
                                   <>
-                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{displayLabel ?? '—'}</div>
+                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{s.turma ?? '—'}</div>
                                     <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
                                   </>
                                 )}
@@ -126,11 +120,6 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                           {matches.map(s => {
                             const teacher = store.teachers.find(t => t.id === s.teacherId)
                             const subject = store.subjects?.find(sub => sub.id === s.subjectId)
-                            const isShared = isSharedSeries(s.turma, store.sharedSeries)
-                            const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
-                            const displayLabel = isShared
-                              ? `${s.turma} · ${sharedAct?.name ?? '?'}`
-                              : s.turma
                             return (
                               <div key={s.id} className="leading-tight">
                                 {showTeacher ? (
@@ -140,7 +129,7 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                                   </>
                                 ) : (
                                   <>
-                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{displayLabel ?? '—'}</div>
+                                    <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{s.turma ?? '—'}</div>
                                     <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
                                   </>
                                 )}

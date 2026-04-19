@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
-import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeries, getSharedSeriesActivity } from '../lib/helpers'
+import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeries } from '../lib/helpers'
 import { getCfg, gerarPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, defaultCfg, toMin, fromMin, calcSaldo, validarEncaixe } from '../lib/periods'
 import { COLOR_PALETTE, DAYS } from '../lib/constants'
 import Modal from '../components/ui/Modal'
@@ -2143,15 +2143,10 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                               <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                                 <div className="space-y-1">
                                   {mine.map(s => {
-                                    const subj      = store.subjects.find(x => x.id === s.subjectId)
-                                    const isShared  = isSharedSeries(s.turma, store.sharedSeries)
-                                    const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
-                                    const displayLabel = isShared
-                                      ? `${s.turma} · ${sharedAct?.name ?? '?'}`
-                                      : s.turma
+                                    const subj = store.subjects.find(x => x.id === s.subjectId)
                                     return (
                                       <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
-                                        <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{displayLabel}</div>
+                                        <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
                                         <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
                                         {!readOnly && (
                                           <button
@@ -2222,15 +2217,10 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                             <td key={day} className={`px-1.5 py-1.5 align-top bg-surf2 ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                               <div className="space-y-1">
                                 {mine.map(s => {
-                                  const subj      = store.subjects.find(x => x.id === s.subjectId)
-                                  const isShared  = isSharedSeries(s.turma, store.sharedSeries)
-                                  const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
-                                  const displayLabel = isShared
-                                    ? `${s.turma} · ${sharedAct?.name ?? '?'}`
-                                    : s.turma
+                                  const subj = store.subjects.find(x => x.id === s.subjectId)
                                   return (
                                     <div key={s.id} className="relative bg-white border border-bdr rounded-lg p-1.5 text-[11px] group">
-                                      <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{displayLabel}</div>
+                                      <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
                                       <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
                                       {!readOnly && (
                                         <button

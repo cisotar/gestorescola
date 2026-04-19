@@ -103,89 +103,27 @@ export function getSharedSeriesForTurma(turma, sharedSeries = []) {
   return getSharedSeriesByName(turma, sharedSeries)
 }
 
-export function getSharedSeriesActivity(subjectId, sharedSeries = []) {
-  for (const ss of sharedSeries) {
-    const act = (ss.activities ?? []).find(a => a.id === subjectId)
-    if (act) return act
-  }
-  return null
-}
-
 /**
  * Detecta se um slot é de aula de formação (type === "formation").
  *
- * Verifica dois caminhos:
- * 1. Turma é uma turma compartilhada de tipo "formation"
- * 2. SubjectId é uma atividade dentro de turma compartilhada de tipo "formation"
+ * Verifica se a turma é uma turma compartilhada de tipo "formation".
+ * O subjectId agora aponta para subjects[].id normalmente (matéria da grade),
+ * portanto não é mais usado para detectar o tipo de formação.
  *
  * @param {string|null} turma - Nome da turma (ex: "FORMAÇÃO", "6º Ano A", null)
- * @param {string|null} subjectId - ID da matéria/atividade (ex: "subj-bio", "act-id", null)
- * @param {Array<{id: string, name: string, type: 'formation'|'elective', activities?: Array<{id: string, name: string}>}>} [sharedSeries=[]]
- *   - Lista de turmas compartilhadas com metadados de tipo
+ * @param {string|null} _subjectId - Ignorado (mantido por compatibilidade de assinatura)
+ * @param {Array<{id: string, name: string, type: 'formation'|'elective'}>} [sharedSeries=[]]
  * @returns {boolean} true se slot pertence a turma de formação, false caso contrário
  *
  * @example
- * // Turma de formação — retorna true
- * isFormationSlot("FORMAÇÃO", null, [{id: '1', name: 'FORMAÇÃO', type: 'formation'}])
- * // → true
- *
- * @example
- * // Activity que é de formação — retorna true
- * isFormationSlot("ATPCG", "act-1", [
- *   {id: '1', name: 'FORMAÇÃO', type: 'formation', activities: [{id: 'act-1', name: 'ATPCG'}]}
- * ])
- * // → true
- *
- * @example
- * // Turma de eletiva — retorna false
- * isFormationSlot("Eletiva 2024", null, [{id: '2', name: 'Eletiva 2024', type: 'elective'}])
- * // → false
- *
- * @example
- * // Turma regular (não compartilhada) — retorna false
- * isFormationSlot("6º Ano A", "subj-bio", [{id: '1', name: 'FORMAÇÃO', type: 'formation'}])
- * // → false
- *
- * @example
- * // Ambos nulos — retorna false
- * isFormationSlot(null, null, [{id: '1', name: 'FORMAÇÃO', type: 'formation'}])
- * // → false
- *
- * @example
- * // sharedSeries vazio — retorna false
- * isFormationSlot("FORMAÇÃO", null, [])
- * // → false
- *
- * @example
- * // Activity em turma de eletiva (não-formação) — retorna false
- * isFormationSlot(null, "act-2", [{id: '2', name: 'Eletiva 2024', type: 'elective', activities: [{id: 'act-2', name: 'Prática'}]}])
- * // → false
- *
- * @example
- * // sharedSeries undefined (default) — retorna false
- * isFormationSlot("FORMAÇÃO", null)
- * // → false
+ * isFormationSlot("FORMAÇÃO", null, [{id: '1', name: 'FORMAÇÃO', type: 'formation'}]) // → true
+ * isFormationSlot("Eletiva 2024", null, [{id: '2', name: 'Eletiva 2024', type: 'elective'}]) // → false
+ * isFormationSlot("6º Ano A", "subj-bio", [{id: '1', name: 'FORMAÇÃO', type: 'formation'}]) // → false
  */
-export function isFormationSlot(turma, subjectId, sharedSeries = []) {
-  // Verificar se turma é uma turma compartilhada de tipo "formation"
-  if (turma) {
-    const sharedTurma = sharedSeries.find(ss => ss.name === turma)
-    if (sharedTurma && sharedTurma.type === 'formation') {
-      return true
-    }
-  }
-
-  // Verificar se subjectId é uma atividade de uma turma compartilhada de tipo "formation"
-  if (subjectId) {
-    for (const ss of sharedSeries) {
-      if (ss.type === 'formation') {
-        const activity = (ss.activities ?? []).find(a => a.id === subjectId)
-        if (activity) return true
-      }
-    }
-  }
-
-  return false
+export function isFormationSlot(turma, _subjectId, sharedSeries = []) {
+  if (!turma) return false
+  const sharedTurma = sharedSeries.find(ss => ss.name === turma)
+  return !!(sharedTurma && sharedTurma.type === 'formation')
 }
 
 export function teacherSubjectNames(teacher, subjects) {
