@@ -68,8 +68,39 @@ export function isSharedSeries(turmaName, sharedSeries = []) {
   return sharedSeries.some(ss => ss.name === turmaName)
 }
 
+/**
+ * Retorna o objeto completo de uma turma compartilhada pelo nome.
+ *
+ * Busca uma turma compartilhada na lista por match exato de nome,
+ * retornando seus campos `id`, `name` e `type`. Usado para decidir
+ * se uma ausência demanda substituto (baseado no `type`).
+ *
+ * @param {string} name - Nome da turma compartilhada (ex: "FORMAÇÃO", "Eletiva 2024")
+ * @param {Array<{id: string, name: string, type: 'formation'|'elective'}>} [sharedSeries=[]] - Lista de turmas compartilhadas
+ * @returns {{id: string, name: string, type: string} | null} Objeto completo se encontrado, null caso contrário
+ *
+ * @example
+ * // Encontra turma de formação
+ * getSharedSeriesByName('FORMAÇÃO', [{id: '1', name: 'FORMAÇÃO', type: 'formation'}])
+ * // → { id: '1', name: 'FORMAÇÃO', type: 'formation' }
+ *
+ * @example
+ * // Turma regular ou não encontrada
+ * getSharedSeriesByName('6º Ano A', [{id: '1', name: 'FORMAÇÃO', type: 'formation'}])
+ * // → null
+ *
+ * @example
+ * // Array vazio
+ * getSharedSeriesByName('FORMAÇÃO', [])
+ * // → null
+ */
+export function getSharedSeriesByName(name, sharedSeries = []) {
+  return sharedSeries.find(ss => ss.name === name) ?? null
+}
+
+// Backward compatibility alias
 export function getSharedSeriesForTurma(turma, sharedSeries = []) {
-  return sharedSeries.find(ss => ss.name === turma) ?? null
+  return getSharedSeriesByName(turma, sharedSeries)
 }
 
 export function getSharedSeriesActivity(subjectId, sharedSeries = []) {
