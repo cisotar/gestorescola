@@ -6,7 +6,7 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
-import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, formatMonthlyAulas } from '../lib/helpers'
+import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, formatMonthlyAulas, isFormationSlot } from '../lib/helpers'
 import { getPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, toMin, getCfg } from '../lib/periods'
 import { rankCandidates, suggestSubstitutes, monthlyLoad } from '../lib/absences'
 import { generateDayHTML, generateSlotCertificateHTML, openPDF } from '../lib/reports'
@@ -415,11 +415,12 @@ export default function CalendarDayPage() {
                     const abs    = sched ? dayAbsMap[p.slot] : null
                     const sub    = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
                     const subj   = store.subjects.find(x => x.id === sched?.subjectId)
+                    const isFormation = sched ? isFormationSlot(sched.turma, sched.subjectId, store.sharedSeries) : false
 
                     return (
                       <div key={p.slot} className={`flex items-start gap-3 px-4 py-3
                         ${abs
-                          ? 'bg-[#FFF1EE]'
+                          ? isFormation ? 'bg-surf2 opacity-75' : 'bg-[#FFF1EE]'
                           : `${!sched ? 'opacity-60' : ''}`
                         }`}
                       >
@@ -435,7 +436,9 @@ export default function CalendarDayPage() {
                             <>
                               <div className={`font-bold text-sm ${abs ? 'text-[#7F1A06]' : ''}`}>{sched.turma}</div>
                               <div className={`text-xs ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
-                              {abs && (
+                              {abs && isFormation ? (
+                                <span className="badge-formation">Dispensa de Substituição</span>
+                              ) : abs && (
                                 <div className="mt-1.5">
                                   {sub ? (
                                     <div className="flex items-center gap-2 flex-wrap">
