@@ -333,6 +333,16 @@ const useAppStore = create((set, get) => {
     saveConfig(get())
   },
 
+  /**
+   * Conta quantas aulas (schedules) referenciam uma turma compartilhada específica.
+   * Função pura — retorna contagem sem efeitos colaterais.
+   * @param {string} name - Nome da turma compartilhada (ex: "FORMAÇÃO")
+   * @returns {number} Quantidade de schedules com turma === name
+   */
+  countSchedulesForSharedSeries: (name) => {
+    return get().schedules.filter(s => s.turma === name).length
+  },
+
   // ─── Professores ─────────────────────────────────────────────────────────────
   setTeachers: (teachers) => set({ teachers }),
   setSchedules: (schedules) => set({ schedules }),
