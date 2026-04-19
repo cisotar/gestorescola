@@ -52,7 +52,12 @@ service cloud.firestore {
     }
 
     // ── Somente admins ───────────────────────────────────────────────────────
-    match /admins/{doc} { allow read, write: if isAdmin(); }
+    // Leitura do próprio doc permitida para qualquer autenticado (bootstrap de role)
+    match /admins/{doc} {
+      allow read: if isAdmin()
+        || (request.auth != null && doc == emailToKey(request.auth.token.email));
+      allow write: if isAdmin();
+    }
 
     // ── Funções auxiliares ───────────────────────────────────────────────────
     function isAuthenticated() {

@@ -41,6 +41,9 @@ self.addEventListener('fetch', event => {
 
   // Same-origin static assets without hash (manifest, icons): cache-first
   event.respondWith(
-    caches.match(request).then(cached => cached || fetch(request))
+    caches.match(request).then(cached => cached || fetch(request)).catch(() => {
+      // Return a generic error response if both cache and network fail
+      return new Response('Offline', { status: 503 })
+    })
   )
 })

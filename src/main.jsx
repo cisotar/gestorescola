@@ -6,7 +6,7 @@ import './index.css'
 
 // PWA Handler: Register Service Worker
 function PWAHandler() {
-  if ('serviceWorker' in navigator) {
+  if ('serviceWorker' in navigator && !import.meta.env.DEV) {
     navigator.serviceWorker
       .register('/sw.js')
       .then(registration => {
