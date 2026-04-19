@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
-import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
+import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeries, getSharedSeriesActivity } from '../lib/helpers'
 import { getCfg, gerarPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, defaultCfg, toMin, fromMin, calcSaldo, validarEncaixe } from '../lib/periods'
 import { COLOR_PALETTE, DAYS } from '../lib/constants'
 import Modal from '../components/ui/Modal'
@@ -2267,7 +2267,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                             const occupiedSchedules = store.schedules
                               .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
                             const hardBlockedTurmas = occupiedSchedules
-                              .filter(s => !isSharedSchedule(s, store) && !isSharedSeriesTurma(s.turma, store.sharedSeries))
+                              .filter(s => !isSharedSchedule(s, store) && !isSharedSeries(s.turma, store.sharedSeries))
                               .map(s => s.turma)
                             const allTurmas = seg.grades.flatMap(g =>
                               g.classes.map(c => `${g.name} ${c.letter}`)
@@ -2279,7 +2279,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                               <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                                 <div className="space-y-1">
                                   {mine.map(s => {
-                                    const isShared  = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                                    const isShared  = isSharedSeries(s.turma, store.sharedSeries)
                                     const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
                                     const subj      = isShared ? sharedAct : store.subjects.find(x => x.id === s.subjectId)
                                     const isFixed   = sharedAct?.tipo === 'fixo'
@@ -2351,7 +2351,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                           const occupiedSchedules = store.schedules
                             .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
                           const hardBlockedTurmas = occupiedSchedules
-                            .filter(s => !isSharedSchedule(s, store) && !isSharedSeriesTurma(s.turma, store.sharedSeries))
+                            .filter(s => !isSharedSchedule(s, store) && !isSharedSeries(s.turma, store.sharedSeries))
                             .map(s => s.turma)
                           const allTurmas = seg.grades.flatMap(g =>
                             g.classes.map(c => `${g.name} ${c.letter}`)
@@ -2362,7 +2362,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                             <td key={day} className={`px-1.5 py-1.5 align-top bg-surf2 ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                               <div className="space-y-1">
                                 {mine.map(s => {
-                                  const isShared  = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                                  const isShared  = isSharedSeries(s.turma, store.sharedSeries)
                                   const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
                                   const subj      = isShared ? sharedAct : store.subjects.find(x => x.id === s.subjectId)
                                   const isFixed   = sharedAct?.tipo === 'fixo'
@@ -2466,7 +2466,7 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
   const hardBlockedTurmas = new Set(
     store.schedules
       .filter(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
-      .filter(s => !isSharedSchedule(s, store) && !isSharedSeriesTurma(s.turma, store.sharedSeries))
+      .filter(s => !isSharedSchedule(s, store) && !isSharedSeries(s.turma, store.sharedSeries))
       .map(s => s.turma)
   )
   // Mapa turma → primeiro nome do professor que a ocupa (para exibição)
@@ -2480,7 +2480,7 @@ export function AddScheduleModal({ open, onClose, teacher, segId, turno, aulaIdx
 
   const save = () => {
     if (!turma) return
-    const isShared = isSharedSeriesTurma(turma, store.sharedSeries)
+    const isShared = isSharedSeries(turma, store.sharedSeries)
     if (store.schedules.find(s => s.teacherId === teacher.id && s.day === day && s.timeSlot === slot))
       { alert('Conflito: professor já tem aula neste horário.'); return }
     if (!isShared && hardBlockedTurmas.has(turma))

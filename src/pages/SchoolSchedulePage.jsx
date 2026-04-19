@@ -2,7 +2,7 @@ import { useState } from 'react'
 import useAppStore from '../store/useAppStore'
 import { getAulas, getCfg, gerarPeriodosEspeciais, makeEspecialSlot, toMin } from '../lib/periods'
 import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
-import { isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
+import { isSharedSeries, getSharedSeriesActivity } from '../lib/helpers'
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
@@ -76,7 +76,7 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                           {matches.map(s => {
                             const teacher = store.teachers.find(t => t.id === s.teacherId)
                             const subject = store.subjects?.find(sub => sub.id === s.subjectId)
-                            const isShared = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                            const isShared = isSharedSeries(s.turma, store.sharedSeries)
                             const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
                             const displayLabel = isShared
                               ? `${s.turma} · ${sharedAct?.name ?? '?'}`
@@ -126,7 +126,7 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                           {matches.map(s => {
                             const teacher = store.teachers.find(t => t.id === s.teacherId)
                             const subject = store.subjects?.find(sub => sub.id === s.subjectId)
-                            const isShared = isSharedSeriesTurma(s.turma, store.sharedSeries)
+                            const isShared = isSharedSeries(s.turma, store.sharedSeries)
                             const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
                             const displayLabel = isShared
                               ? `${s.turma} · ${sharedAct?.name ?? '?'}`

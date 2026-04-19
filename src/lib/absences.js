@@ -1,4 +1,4 @@
-import { uid, dateToDayLabel, formatISO, parseDate, weekStart, businessDaysBetween, isSharedSeriesTurma, getSharedSeriesActivity } from './helpers'
+import { uid, dateToDayLabel, formatISO, parseDate, weekStart, businessDaysBetween, isSharedSeries, getSharedSeriesActivity } from './helpers'
 export { dateToDayLabel, formatISO, formatBR, parseDate, weekStart, businessDaysBetween } from './helpers'
 import { resolveSlot } from './periods'
 
@@ -10,7 +10,7 @@ export function monthlyLoad(teacherId, referenceDate, schedules, absences, share
   const days       = businessDaysBetween(monthStart, referenceDate)
 
   const isFormacao = (turma, subjectId) =>
-    isSharedSeriesTurma(turma ?? '', sharedSeries) ||
+    isSharedSeries(turma ?? '', sharedSeries) ||
     !!getSharedSeriesActivity(subjectId, sharedSeries)
 
   const scheduledLoad = days.reduce((acc, d) => {
@@ -75,7 +75,7 @@ export function weeklyLimitStatus(teacher, date, schedules, absences, sharedSeri
   const weekDaySet = new Set(weekDays.map(d => dateToDayLabel(d)).filter(Boolean))
 
   const isFormacao = (sched) =>
-    isSharedSeriesTurma(sched.turma, sharedSeries) ||
+    isSharedSeries(sched.turma, sharedSeries) ||
     !!getSharedSeriesActivity(sched.subjectId, sharedSeries)
 
   const ownAulas = schedules.filter(s =>
@@ -89,7 +89,7 @@ export function weeklyLimitStatus(teacher, date, schedules, absences, sharedSeri
       if (sl.substituteId !== teacher.id) return false
       if (!weekDays.includes(sl.date))    return false
       const isFormacaoSlot =
-        isSharedSeriesTurma(sl.turma, sharedSeries) ||
+        isSharedSeries(sl.turma, sharedSeries) ||
         !!getSharedSeriesActivity(sl.subjectId, sharedSeries)
       return !isFormacaoSlot
     }).length

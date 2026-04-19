@@ -41,8 +41,31 @@ export function findTurma(label, segments) {
   return allTurmaObjects(segments).find(t => t.label === label) ?? null
 }
 
-export function isSharedSeriesTurma(turma, sharedSeries = []) {
-  return sharedSeries.some(ss => ss.name === turma)
+/**
+ * Detecta se um nome de turma refere-se a uma turma compartilhada.
+ *
+ * Compara o nome da turma exatamente contra a lista de turmas compartilhadas,
+ * retornando verdadeiro apenas se houver match exato no campo `name`.
+ *
+ * @param {string} turmaName - Nome da turma a verificar (ex: "FORMAÇÃO", "6º Ano A")
+ * @param {Array<{id: string, name: string, type: string}>} sharedSeries - Lista de turmas compartilhadas do banco
+ * @returns {boolean} true se turmaName existe em sharedSeries[].name, false caso contrário
+ *
+ * @example
+ * // Detecta turma compartilhada pelo nome exato
+ * isSharedSeries('FORMAÇÃO', [{id: '1', name: 'FORMAÇÃO', type: 'formation'}]) // → true
+ *
+ * @example
+ * // Case-sensitive: não detecta caso mude maiúscula/minúscula
+ * isSharedSeries('formação', [{id: '1', name: 'FORMAÇÃO', type: 'formation'}]) // → false
+ *
+ * @example
+ * // Retorna false para turmas regulares ou array vazio
+ * isSharedSeries('6º Ano A', [{id: '1', name: 'FORMAÇÃO', type: 'formation'}]) // → false
+ * isSharedSeries('FORMAÇÃO', []) // → false
+ */
+export function isSharedSeries(turmaName, sharedSeries = []) {
+  return sharedSeries.some(ss => ss.name === turmaName)
 }
 
 export function getSharedSeriesForTurma(turma, sharedSeries = []) {
