@@ -57,9 +57,6 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
                 })
               })
 
-              const isEmpty = daySlots.every(ds => ds.length === 0)
-              if (isEmpty) return null
-
               const stripe = regIdx % 2 === 0 ? 'bg-bg' : 'bg-surf'
               regIdx += 1
 

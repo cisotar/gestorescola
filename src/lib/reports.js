@@ -494,10 +494,10 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
         // RN-01: verificar se a célula está fora do expediente
         if (horariosSemana !== null) {
           const horarioDia = horariosSemana[day]
-          const foraDoExpediente = !horarioDia?.entrada || !horarioDia?.saida
-            || (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida)))
-          if (foraDoExpediente) {
-            return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px));background-color:#F4F2EE"></td>`
+          if (horarioDia?.entrada && horarioDia?.saida) {
+            if (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida))) {
+              return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px));background-color:#F4F2EE"></td>`
+            }
           }
         }
         const matches = schedules.filter(s =>
@@ -529,10 +529,10 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
       // RN-01: verificar se a célula está fora do expediente
       if (horariosSemana !== null) {
         const horarioDia = horariosSemana[day]
-        const foraDoExpediente = !horarioDia?.entrada || !horarioDia?.saida
-          || (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida)))
-        if (foraDoExpediente) {
-          return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px));background-color:#F4F2EE"></td>`
+        if (horarioDia?.entrada && horarioDia?.saida) {
+          if (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida))) {
+            return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px));background-color:#F4F2EE"></td>`
+          }
         }
       }
       if (!slotKey) {
@@ -643,28 +643,24 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
     if (sections.length === 0) {
       bodyHTML = scheduleHeaderHTML + '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
     } else {
-      bodyHTML = scheduleHeaderHTML + sections.join('<div style="page-break-after:always"></div>')
+      bodyHTML = scheduleHeaderHTML + sections.join('')
     }
   } else {
-    // ── Turno simples: comportamento original (segmentos derivados das matérias) ─
-    const teacherSegIds = [...new Set(
-      (teacher.subjectIds ?? []).flatMap(sid => {
-        const subj = store.subjects.find(s => s.id === sid)
-        const area = subj ? store.areas.find(a => a.id === subj.areaId) : null
-        return area?.segmentIds ?? []
-      })
-    )]
-    const relevantSegments = store.segments.filter(s => teacherSegIds.includes(s.id))
-
-    const gridsHTML = relevantSegments.length === 0
+    // ── Turno simples: usar pares reais (segmento/turno) derivados dos schedules ─
+    const gridsHTML = allPairs.length === 0
       ? '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
-      : relevantSegments.map(seg => {
-          const turno = seg.turno ?? 'manha'
-          const turnoLabel = turno === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
+      : allPairs.map(({ segmentId, turno }) => {
+          const seg = store.segments.find(s => s.id === segmentId)
+          if (!seg) return ''
+          const turnoLabel = TURNO_LABELS_PDF[turno] ?? turno
+          const filteredSchedules = teacherSchedules.filter(s => {
+            const parsed = parseSlot(s.timeSlot)
+            return parsed && parsed.segmentId === segmentId && parsed.turno === turno
+          })
           return `
             <div class="section">
               <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
-              ${_scheduleGrid(seg, turno, teacherSchedules, store, false, useApelido, horariosSemanaParam)}
+              ${_scheduleGrid(seg, turno, filteredSchedules, store, false, useApelido, horariosSemanaParam)}
             </div>`
         }).join('')
     bodyHTML = scheduleHeaderHTML + gridsHTML

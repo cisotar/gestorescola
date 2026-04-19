@@ -2147,10 +2147,9 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                           {DAYS.map(day => {
                             if (horariosSemana !== null) {
                               const horarioDia = horariosSemana[day]
-                              if (!horarioDia) return <CelulaFora key={day} />
-                              if (horarioDia.entrada && horarioDia.saida) {
-                                if (!p.inicio || !p.fim) { /* período malformado — cai no normal */ }
-                                else if (toMin(p.inicio) < toMin(horarioDia.entrada) || toMin(p.fim) > toMin(horarioDia.saida)) {
+                              if (horarioDia?.entrada && horarioDia?.saida) {
+                                if (p.inicio && p.fim &&
+                                  (toMin(p.inicio) < toMin(horarioDia.entrada) || toMin(p.fim) > toMin(horarioDia.saida))) {
                                   return <CelulaFora key={day} />
                                 }
                               }
@@ -2234,10 +2233,9 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                         {DAYS.map(day => {
                           if (horariosSemana !== null) {
                             const horarioDia = horariosSemana[day]
-                            if (!horarioDia) return <CelulaFora key={day} />
-                            if (horarioDia.entrada && horarioDia.saida) {
-                              if (!p.inicio || !p.fim) { /* período malformado — cai no normal */ }
-                              else if (toMin(p.inicio) < toMin(horarioDia.entrada) || toMin(p.fim) > toMin(horarioDia.saida)) {
+                            if (horarioDia?.entrada && horarioDia?.saida) {
+                              if (p.inicio && p.fim &&
+                                (toMin(p.inicio) < toMin(horarioDia.entrada) || toMin(p.fim) > toMin(horarioDia.saida))) {
                                 return <CelulaFora key={day} />
                               }
                             }
