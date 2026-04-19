@@ -15,7 +15,9 @@ import SubstitutionsPage from './pages/SubstitutionsPage'
 import SettingsPage from './pages/SettingsPage'
 import WorkloadPage from './pages/WorkloadPage'
 import SchedulePage from './pages/SchedulePage'
-import SchoolSchedulePage from './pages/SchoolSchedulePage'
+import ScheduleRedirect from './pages/ScheduleRedirect'
+import SchoolScheduleRedirect from './pages/SchoolScheduleRedirect'
+import GradesPage from './pages/GradesPage'
 import RankingPage from './pages/RankingPage'
 import Toast from './components/ui/Toast'
 import Spinner from './components/ui/Spinner'
@@ -91,8 +93,9 @@ export default function App() {
           <Route path="/substitutions/ranking" element={<RankingPage />} />
           <Route path="/settings"  element={<SettingsPage />} />
           <Route path="/workload"  element={<WorkloadPage />} />
-          <Route path="/schedule"  element={<SchedulePage />} />
-          <Route path="/school-schedule" element={<SchoolSchedulePage />} />
+          <Route path="/schedule"  element={<ScheduleRedirect />} />
+          <Route path="/school-schedule" element={<SchoolScheduleRedirect />} />
+          <Route path="/grades"  element={<GradesPage />} />
           <Route path="*"          element={<Navigate to="/home" replace />} />
         </Route>
       </Routes>

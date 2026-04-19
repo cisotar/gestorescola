@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
@@ -9,23 +9,38 @@ import { allTurmaObjects } from '../lib/helpers'
 
 export default function GradesPage() {
   const navigate = useNavigate()
-  const { role, isCoordinator } = useAuthStore()
+  const { role, teacher: myTeacher, isCoordinator } = useAuthStore()
   const store = useAppStore()
   const [activeTab, setActiveTab] = useState('professor')
   const [selectedTeacherId, setSelectedTeacherId] = useState(null)
   const [selectedTurma, setSelectedTurma] = useState(null)
   const [professorFilter, setProfessorFilter] = useState(null)
 
+  // Guard: pending users → redirect to home
+  if (role === 'pending') {
+    navigate('/home', { replace: true })
+    return null
+  }
+
   // Guard: only admin, coordinator, teacher-coordinator, and teacher can access
-  // If role is not set or is 'pending', this shouldn't happen (Layout guards it)
-  // but we ensure it here anyway
   if (!role) {
     return null
   }
 
+  // Determine if user is a restricted teacher (can only see "Por Professor" tab)
+  const isRestrictedTeacher = role === 'teacher'
+  const myTeacherId = isRestrictedTeacher ? myTeacher?.id : null
+
+  // Initialize selectedTeacherId with myTeacherId for restricted teachers
+  useEffect(() => {
+    if (isRestrictedTeacher && myTeacherId) {
+      setSelectedTeacherId(myTeacherId)
+    }
+  }, [isRestrictedTeacher, myTeacherId])
+
   // Determine if user can access "Por Turma" tab
   // Only admin and coordinators can access it
-  const canAccessTurma = role === 'admin' || isCoordinator()
+  const canAccessTurma = !isRestrictedTeacher && (role === 'admin' || isCoordinator())
 
   // If teacher tries to access turma tab, prevent it by resetting to professor
   if (!canAccessTurma && activeTab === 'turma') {
@@ -143,20 +158,36 @@ export default function GradesPage() {
       <div className="card">
         {activeTab === 'professor' && (
           <div className="space-y-4">
+            {/* Warning message for restricted teachers */}
+            {isRestrictedTeacher && (
+              <div className="p-4 rounded-lg bg-accent-l border border-accent text-accent font-semibold text-sm">
+                ℹ️ Você está visualizando sua própria grade horária.
+              </div>
+            )}
+
             {/* Professor dropdown */}
-            <div>
-              <label className="lbl">Professor</label>
-              <select
-                value={selectedTeacherId ?? ''}
-                onChange={(e) => setSelectedTeacherId(e.target.value || null)}
-                className="inp w-full md:w-96"
-              >
-                <option value="">Selecione um professor...</option>
-                {approvedTeachers.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
+            {isRestrictedTeacher ? (
+              <div>
+                <label className="lbl">Professor</label>
+                <div className="inp w-full md:w-96 bg-surf2 cursor-not-allowed opacity-75 flex items-center">
+                  {selectedTeacher?.name ?? 'Você'}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="lbl">Professor</label>
+                <select
+                  value={selectedTeacherId ?? ''}
+                  onChange={(e) => setSelectedTeacherId(e.target.value || null)}
+                  className="inp w-full md:w-96"
+                >
+                  <option value="">Selecione um professor...</option>
+                  {approvedTeachers.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* No teacher selected message */}
             {selectedTeacherId === null && (

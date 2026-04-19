@@ -100,9 +100,9 @@ export default function HomePage() {
       to: '/settings?tab=teachers',
     },
     {
-      icon: '🏫', label: 'Grade da Escola',
-      desc: 'Visualize a grade horária completa da escola.',
-      to: '/school-schedule',
+      icon: '🏫', label: 'Grades Horárias',
+      desc: 'Visualize a grade horária de professores e turmas.',
+      to: '/grades',
     },
     {
       icon: '📋', label: 'Relatórios de Faltas',
