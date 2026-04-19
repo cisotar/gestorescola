@@ -1,4 +1,4 @@
-import { formatBR, dateToDayLabel, parseDate, formatISO } from './helpers'
+import { formatBR, dateToDayLabel, parseDate, formatISO, isFormationSlot } from './helpers'
 import { slotFullLabel, getAulas, gerarPeriodosEspeciais, makeEspecialSlot, getCfg, parseSlot, toMin } from './periods'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
@@ -72,8 +72,23 @@ function _wrap(title, metaHTML, bodyHTML, docTitle = 'GestãoEscolar — Relató
 
 function _slotRow(sl, store) {
   const subj = store.subjects.find(s => s.id === sl.subjectId)
-  const sub  = sl.substituteId ? store.teachers.find(t => t.id === sl.substituteId) : null
   const period = slotFullLabel(sl.timeSlot, store.periodConfigs)
+
+  // Detectar se slot é FORMAÇÃO
+  const isFormation = isFormationSlot(sl.turma, sl.subjectId, store.sharedSeries ?? [])
+
+  if (isFormation) {
+    // Marcar slot FORMAÇÃO como "Dispensa"
+    return `<tr>
+      <td>${period}</td>
+      <td>${sl.turma ?? '—'}</td>
+      <td>${subj?.name ?? '—'}</td>
+      <td class="ok"><span class="badge-formation">Dispensa</span></td>
+    </tr>`
+  }
+
+  // Comportamento normal para slots regulares
+  const sub  = sl.substituteId ? store.teachers.find(t => t.id === sl.substituteId) : null
   return `<tr>
     <td>${period}</td>
     <td>${sl.turma ?? '—'}</td>
@@ -93,7 +108,11 @@ export function generateDayHTML(date, teacherId, store) {
     .flatMap(ab => ab.slots.filter(sl => sl.date === date).map(sl => ({ ...sl, absenceId: ab.id })))
     .sort((a, b) => (a.timeSlot ?? '').localeCompare(b.timeSlot ?? ''))
 
-  const covered = allSlots.filter(s => s.substituteId).length
+  // Filtrar slots não-FORMAÇÃO para totalizadores
+  const nonFormationSlots = allSlots.filter(s => !isFormationSlot(s.turma, s.subjectId, store.sharedSeries ?? []))
+  const covered = nonFormationSlots.filter(s => s.substituteId).length
+  const hasFormation = allSlots.length > nonFormationSlots.length
+  const coverageNote = hasFormation ? ' (sem FORMAÇÃO)' : ''
 
   const metaHTML = `
     <div class="m-blk"><span class="m-lbl">Professor Ausente</span><span class="m-val">${teacher?.name ?? '—'}</span></div>
@@ -101,7 +120,7 @@ export function generateDayHTML(date, teacherId, store) {
     <div class="m-blk"><span class="m-lbl">Dia</span><span class="m-val">${dayLabel ?? '—'}</span></div>
     <div class="m-blk" style="margin-left:auto;text-align:right">
       <span class="m-lbl">Cobertura</span>
-      <span class="m-val ${covered === allSlots.length ? 'ok' : 'err'}">${covered}/${allSlots.length} aulas</span>
+      <span class="m-val ${covered === nonFormationSlots.length ? 'ok' : 'err'}">${covered}/${nonFormationSlots.length} aulas${coverageNote}</span>
     </div>`
 
   const bodyHTML = allSlots.length ? `
@@ -127,18 +146,22 @@ export function generateTeacherHTML(teacherId, filter, store) {
   const byDate = {}
   allSlots.forEach(sl => { if (!byDate[sl.date]) byDate[sl.date] = []; byDate[sl.date].push(sl) })
 
-  const covered = allSlots.filter(s => s.substituteId).length
+  // Filtrar slots não-FORMAÇÃO para totalizadores
+  const nonFormationSlots = allSlots.filter(s => !isFormationSlot(s.turma, s.subjectId, store.sharedSeries ?? []))
+  const covered = nonFormationSlots.filter(s => s.substituteId).length
+  const hasFormation = allSlots.length > nonFormationSlots.length
+  const totalNote = hasFormation ? ` (sem FORMAÇÃO)` : ''
 
   const metaHTML = `
     <div class="m-blk"><span class="m-lbl">Professor</span><span class="m-val">${teacher?.name ?? '—'}</span></div>
     <div class="m-blk"><span class="m-lbl">Período</span><span class="m-val">${_filterLabel(filter)}</span></div>
     <div class="m-blk" style="margin-left:auto;text-align:right">
       <span class="m-lbl">Total</span>
-      <span class="m-val">${allSlots.length} aula${allSlots.length !== 1 ? 's' : ''}</span>
+      <span class="m-val">${nonFormationSlots.length} aula${nonFormationSlots.length !== 1 ? 's' : ''}${totalNote}</span>
     </div>
     <div class="m-blk" style="text-align:right">
       <span class="m-lbl">Cobertura</span>
-      <span class="m-val ${covered === allSlots.length ? 'ok' : 'err'}">${covered}/${allSlots.length}</span>
+      <span class="m-val ${covered === nonFormationSlots.length ? 'ok' : 'err'}">${covered}/${nonFormationSlots.length}</span>
     </div>`
 
   // Grade horária do professor (segmentos onde tem horários cadastrados)
@@ -194,17 +217,21 @@ export function generateByDayHTML(date, store) {
     byTeacher[sl.teacherId].push(sl)
   })
 
-  const covered = allSlots.filter(s => s.substituteId).length
+  // Filtrar slots não-FORMAÇÃO para totalizadores
+  const nonFormationSlots = allSlots.filter(s => !isFormationSlot(s.turma, s.subjectId, store.sharedSeries ?? []))
+  const covered = nonFormationSlots.filter(s => s.substituteId).length
+  const hasFormation = allSlots.length > nonFormationSlots.length
+  const absencesNote = hasFormation ? ` (sem FORMAÇÃO)` : ''
 
   const metaHTML = `
     <div class="m-blk"><span class="m-lbl">Data</span><span class="m-val">${formatBR(date)}</span></div>
     <div class="m-blk"><span class="m-lbl">Dia</span><span class="m-val">${dayLabel ?? '—'}</span></div>
     <div class="m-blk" style="margin-left:auto;text-align:right">
-      <span class="m-lbl">Ausências</span><span class="m-val">${allSlots.length} aula${allSlots.length !== 1 ? 's' : ''}</span>
+      <span class="m-lbl">Ausências</span><span class="m-val">${nonFormationSlots.length} aula${nonFormationSlots.length !== 1 ? 's' : ''}${absencesNote}</span>
     </div>
     <div class="m-blk" style="text-align:right">
       <span class="m-lbl">Cobertura</span>
-      <span class="m-val ${covered === allSlots.length ? 'ok' : 'err'}">${covered}/${allSlots.length}</span>
+      <span class="m-val ${covered === nonFormationSlots.length ? 'ok' : 'err'}">${covered}/${nonFormationSlots.length}</span>
     </div>`
 
   const bodyHTML = Object.entries(byTeacher).map(([tid, slots]) => {
@@ -242,17 +269,22 @@ export function generateByWeekHTML(monISO, teacherIdFilter, store) {
     )
 
   const teacher = teacherIdFilter ? store.teachers.find(t => t.id === teacherIdFilter) : null
-  const covered = allSlots.filter(s => s.substituteId).length
+
+  // Filtrar slots não-FORMAÇÃO para totalizadores
+  const nonFormationSlots = allSlots.filter(s => !isFormationSlot(s.turma, s.subjectId, store.sharedSeries ?? []))
+  const covered = nonFormationSlots.filter(s => s.substituteId).length
+  const hasFormation = allSlots.length > nonFormationSlots.length
+  const totalNote = hasFormation ? ` (sem FORMAÇÃO)` : ''
 
   const metaHTML = `
     <div class="m-blk"><span class="m-lbl">Semana</span><span class="m-val">${formatBR(monISO)} – ${formatBR(friISO)}</span></div>
     ${teacher ? `<div class="m-blk"><span class="m-lbl">Professor</span><span class="m-val">${teacher.name}</span></div>` : ''}
     <div class="m-blk" style="margin-left:auto;text-align:right">
-      <span class="m-lbl">Total</span><span class="m-val">${allSlots.length} aula${allSlots.length !== 1 ? 's' : ''}</span>
+      <span class="m-lbl">Total</span><span class="m-val">${nonFormationSlots.length} aula${nonFormationSlots.length !== 1 ? 's' : ''}${totalNote}</span>
     </div>
     <div class="m-blk" style="text-align:right">
       <span class="m-lbl">Cobertura</span>
-      <span class="m-val ${covered === allSlots.length ? 'ok' : 'err'}">${covered}/${allSlots.length}</span>
+      <span class="m-val ${covered === nonFormationSlots.length ? 'ok' : 'err'}">${covered}/${nonFormationSlots.length}</span>
     </div>`
 
   const bodyHTML = days.map(date => {
@@ -296,17 +328,22 @@ export function generateByMonthHTML(year, month, teacherIdFilter, store) {
     .sort((a, b) => a.date.localeCompare(b.date))
 
   const teacher = teacherIdFilter ? store.teachers.find(t => t.id === teacherIdFilter) : null
-  const covered = allSlots.filter(s => s.substituteId).length
+
+  // Filtrar slots não-FORMAÇÃO para totalizadores
+  const nonFormationSlots = allSlots.filter(s => !isFormationSlot(s.turma, s.subjectId, store.sharedSeries ?? []))
+  const covered = nonFormationSlots.filter(s => s.substituteId).length
+  const hasFormation = allSlots.length > nonFormationSlots.length
+  const totalNote = hasFormation ? ` (sem FORMAÇÃO)` : ''
 
   const metaHTML = `
     <div class="m-blk"><span class="m-lbl">Mês</span><span class="m-val">${MONTH_NAMES[month]} ${year}</span></div>
     ${teacher ? `<div class="m-blk"><span class="m-lbl">Professor</span><span class="m-val">${teacher.name}</span></div>` : ''}
     <div class="m-blk" style="margin-left:auto;text-align:right">
-      <span class="m-lbl">Total</span><span class="m-val">${allSlots.length} aula${allSlots.length !== 1 ? 's' : ''}</span>
+      <span class="m-lbl">Total</span><span class="m-val">${nonFormationSlots.length} aula${nonFormationSlots.length !== 1 ? 's' : ''}${totalNote}</span>
     </div>
     <div class="m-blk" style="text-align:right">
       <span class="m-lbl">Cobertura</span>
-      <span class="m-val ${covered === allSlots.length ? 'ok' : 'err'}">${covered}/${allSlots.length}</span>
+      <span class="m-val ${covered === nonFormationSlots.length ? 'ok' : 'err'}">${covered}/${nonFormationSlots.length}</span>
     </div>`
 
   const byDate = {}
