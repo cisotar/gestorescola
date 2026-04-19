@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import GradeTurnoCard from '../components/ui/GradeTurnoCard'
@@ -10,10 +10,11 @@ import { generateGradesProfessorHTML, generateSchoolScheduleHTML, openPDF } from
 
 export default function GradesPage() {
   const navigate = useNavigate()
+  const [params] = useSearchParams()
   const { role, teacher: myTeacher, isCoordinator } = useAuthStore()
   const store = useAppStore()
   const [activeTab, setActiveTab] = useState('professor')
-  const [selectedTeacherId, setSelectedTeacherId] = useState(null)
+  const [selectedTeacherId, setSelectedTeacherId] = useState(() => params.get('teacher') ?? null)
   const [selectedTurma, setSelectedTurma] = useState(null)
   const [professorFilter, setProfessorFilter] = useState(null)
 

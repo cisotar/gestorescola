@@ -1287,7 +1287,7 @@ function TabTeachers() {
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <span className="text-xs text-t2">{ct} aulas</span>
-                          <button className="btn btn-ghost btn-xs" title="Ver Grade" onClick={() => navigate(`/schedule?teacherId=${t.id}`)}>📅</button>
+                          <button className="btn btn-ghost btn-xs" title="Ver Grade" onClick={() => navigate(`/grades?teacher=${t.id}`)}>📅</button>
                           {isAdminUser && <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>}
                           {isAdminUser && <button className="btn btn-ghost btn-xs text-err" onClick={() => {
                             if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
