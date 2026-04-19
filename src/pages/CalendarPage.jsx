@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
-import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, businessDaysBetween, formatISO, formatMonthlyAulas } from '../lib/helpers'
+import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, businessDaysBetween, formatISO, formatMonthlyAulas, isFormationSlot } from '../lib/helpers'
 import { getPeriodos, slotLabel } from '../lib/periods'
 import { rankCandidates, suggestSubstitutes, monthlyLoad, createAbsence as _buildAbsence } from '../lib/absences'
 import { generateDayHTML, generateSlotCertificateHTML, openPDF } from '../lib/reports'
@@ -362,6 +362,7 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                   const abs   = sched ? absMap[p.slot] : null
                   const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
                   const subj  = store.subjects.find(x => x.id === sched?.subjectId)
+                  const isFormation = sched ? isFormationSlot(sched.turma, sched.subjectId, store.sharedSeries) : false
 
                   return (
                     <div key={p.slot} className={`p-3 rounded-xl border ${
@@ -383,7 +384,9 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                               <div className="text-xs text-t2">{subj?.name ?? '—'}</div>
                               {abs && (
                                 <div className="mt-1.5">
-                                  {sub ? (
+                                  {isFormation ? (
+                                    <span className="badge-formation">Dispensa de Substituição</span>
+                                  ) : sub ? (
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="text-[11px] font-bold text-ok">✓ {sub.name}</span>
                                       {isAdmin && (
@@ -593,17 +596,23 @@ export default function CalendarPage() {
                             const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
                             const subj  = store.subjects.find(x => x.id === sched?.subjectId)
                             const isToday = date === todayISO
+                            const isFormation = sched ? isFormationSlot(sched.turma, sched.subjectId, store.sharedSeries) : false
                             return (
                               <td key={date} className={`px-2 py-1.5 ${isToday ? 'bg-accent-l/30' : ''}`}>
                                 {sched ? (
                                   <button
-                                    onClick={() => setModalDate(date)}
+                                    onClick={() => !isFormation && setModalDate(date)}
+                                    disabled={isFormation}
                                     className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs transition-all hover:shadow-sm
-                                      ${abs ? 'bg-[#FFF1EE] border-[#FDB8A8]' : 'bg-surf2 border-bdr hover:border-t3'}`}
+                                      ${isFormation ? 'bg-surf2 border-bdr opacity-75 cursor-not-allowed' :
+                                        abs ? 'bg-[#FFF1EE] border-[#FDB8A8] hover:shadow-sm' : 'bg-surf2 border-bdr hover:border-t3 hover:shadow-sm'}`}
                                   >
-                                    <div className={`font-bold truncate ${abs ? 'text-[#7F1A06]' : 'text-t1'}`}>{sched.turma}</div>
-                                    <div className={`text-[10px] truncate mt-0.5 ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
-                                    {abs && (
+                                    <div className={`font-bold truncate flex items-center gap-2 ${abs && !isFormation ? 'text-[#7F1A06]' : 'text-t1'}`}>
+                                      {sched.turma}
+                                      {isFormation && <span className="badge-formation shrink-0">Dispensa</span>}
+                                    </div>
+                                    <div className={`text-[10px] truncate mt-0.5 ${abs && !isFormation ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
+                                    {abs && !isFormation && (
                                       <div className={`text-[10px] font-bold mt-0.5 ${sub ? 'text-ok' : 'text-err'}`}>
                                         {sub ? `↳ ${sub.name}` : '⚠ sem sub.'}
                                       </div>
