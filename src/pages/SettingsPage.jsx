@@ -161,14 +161,19 @@ export default function SettingsPage() {
   ]
 
   const COORDINATOR_TABS = [
+    { id: 'teachers',     label: '👩‍🏫 Professores' },
     { id: 'profile',      label: '👤 Meu Perfil' },
     { id: 'my-schedules', label: '🗓 Minhas Aulas' },
   ]
 
   const initialTab = (() => {
-    if (!isAdmin) return 'profile'
+    if (isAdmin) {
+      const param = new URLSearchParams(location.search).get('tab')
+      return ADMIN_TABS.some(t => t.id === param) ? param : 'segments'
+    }
     const param = new URLSearchParams(location.search).get('tab')
-    return ADMIN_TABS.some(t => t.id === param) ? param : 'segments'
+    const coordTabs = ['teachers', 'profile', 'my-schedules']
+    return coordTabs.includes(param) ? param : 'profile'
   })()
 
   const [tab, setTab] = useState(initialTab)
@@ -1309,9 +1314,9 @@ function TabTeachers() {
   return (
     <div>
       <div className="flex gap-2 mb-5 flex-wrap">
-        <button className="btn btn-dark" onClick={openAdd}>+ Novo Professor</button>
+        {isAdminUser && <button className="btn btn-dark" onClick={openAdd}>+ Novo Professor</button>}
 
-        {pendLoaded && pending.length > 0 && (
+        {isAdminUser && pendLoaded && pending.length > 0 && (
           <button
             className="btn btn-ghost btn-sm border border-amber-400 text-amber-700 hover:bg-amber-50"
             onClick={() => setShowPendingPanel(true)}
@@ -1370,12 +1375,12 @@ function TabTeachers() {
                   </td>
                   <td className="px-3 py-2.5">
                     {t._isPending ? (
-                      <div className="flex gap-1">
+                      isAdminUser && <div className="flex gap-1">
                         <button className="btn btn-dark btn-xs" onClick={() => handleApprove(t)}>Aprovar</button>
                         <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(t)}>✕</button>
                       </div>
                     ) : (
-                      <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
+                      isAdminUser && <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
                     )}
                   </td>
                 </tr>
@@ -1420,10 +1425,10 @@ function TabTeachers() {
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <span className="text-xs text-t2">{ct} aulas</span>
                           <button className="btn btn-ghost btn-xs" title="Ver Grade" onClick={() => navigate(`/schedule?teacherId=${t.id}`)}>📅</button>
-                          <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
-                          <button className="btn btn-ghost btn-xs text-err" onClick={() => {
+                          {isAdminUser && <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>}
+                          {isAdminUser && <button className="btn btn-ghost btn-xs text-err" onClick={() => {
                             if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
-                          }}>✕</button>
+                          }}>✕</button>}
                         </div>
                       </div>
                     )

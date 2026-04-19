@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
-import useAuthStore from '../store/useAuthStore'
 import { getAulas, getCfg, gerarPeriodosEspeciais, makeEspecialSlot, toMin } from '../lib/periods'
 import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
 import { isSharedSeriesTurma, getSharedSeriesActivity } from '../lib/helpers'
@@ -164,8 +162,6 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
 }
 
 export default function SchoolSchedulePage() {
-  const { role } = useAuthStore()
-  if (role !== 'admin') return <Navigate to="/home" replace />
 
   const store = useAppStore()
   const [filterTeacher,  setFilterTeacher]  = useState('')
