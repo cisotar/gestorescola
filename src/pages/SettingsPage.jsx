@@ -2143,17 +2143,10 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                               <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                                 <div className="space-y-1">
                                   {mine.map(s => {
-                                    const isShared  = isSharedSeries(s.turma, store.sharedSeries)
                                     const subj      = store.subjects.find(x => x.id === s.subjectId)
-                                    const sharedSeriesInfo = isShared ? store.sharedSeries.find(ss => ss.name === s.turma) : null
                                     return (
                                       <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
                                         <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                        {isShared && sharedSeriesInfo && (
-                                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${sharedSeriesInfo.type === 'formation' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                            {sharedSeriesInfo.type === 'formation' ? 'Formação' : 'Eletiva'}
-                                          </span>
-                                        )}
                                         <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
                                         {!readOnly && (
                                           <button
@@ -2224,17 +2217,10 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                             <td key={day} className={`px-1.5 py-1.5 align-top bg-surf2 ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
                               <div className="space-y-1">
                                 {mine.map(s => {
-                                  const isShared  = isSharedSeries(s.turma, store.sharedSeries)
                                   const subj      = store.subjects.find(x => x.id === s.subjectId)
-                                  const sharedSeriesInfo = isShared ? store.sharedSeries.find(ss => ss.name === s.turma) : null
                                   return (
                                     <div key={s.id} className="relative bg-white border border-bdr rounded-lg p-1.5 text-[11px] group">
                                       <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                      {isShared && sharedSeriesInfo && (
-                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${sharedSeriesInfo.type === 'formation' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                          {sharedSeriesInfo.type === 'formation' ? 'Formação' : 'Eletiva'}
-                                        </span>
-                                      )}
                                       <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
                                       {!readOnly && (
                                         <button
