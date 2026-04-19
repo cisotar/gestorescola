@@ -4,6 +4,7 @@ import {
   collection, writeBatch, serverTimestamp, query, where, onSnapshot, orderBy, limit,
 } from 'firebase/firestore'
 import { uid } from './helpers'
+import { migrateSharedSeriesToNewFormat } from './migrations'
 
 const LS_KEY = 'gestao_v8_cache'
 const DEFAULT_SHARED_SERIES = [
@@ -41,7 +42,12 @@ export async function loadFromFirestore() {
       _loadCol('absences'),
       _loadCol('history'),
     ])
-    return { ...config, teachers, schedules, absences, history }
+    const { config: migratedConfig, wasMigrated } = migrateSharedSeriesToNewFormat(config)
+    // Se dados foram migrados, persiste no Firestore
+    if (wasMigrated) {
+      await saveConfig(migratedConfig)
+    }
+    return { ...migratedConfig, teachers, schedules, absences, history }
   } catch (e) {
     console.warn('[db] Firestore falhou, usando cache:', e)
     // Sempre tem fallback: cache antigo (mesmo que expirado) é melhor que vazio
@@ -57,7 +63,9 @@ async function _loadConfig() {
     } catch (e) {
       console.warn('[db] Falha ao persistir seed de sharedSeries:', e)
     }
-    return { sharedSeries: DEFAULT_SHARED_SERIES }
+    const seedResult = { sharedSeries: DEFAULT_SHARED_SERIES }
+    const { config: migratedSeed } = migrateSharedSeriesToNewFormat(seedResult)
+    return migratedSeed
   }
   const data = snap.data()
   const keys = ['segments','periodConfigs','areas','subjects','sharedSeries','workloadWarn','workloadDanger']
@@ -71,7 +79,8 @@ async function _loadConfig() {
       console.warn('[db] Falha ao persistir seed de sharedSeries:', e)
     }
   }
-  return result
+  const { config: migratedResult } = migrateSharedSeriesToNewFormat(result)
+  return migratedResult
 }
 
 export async function _loadCol(name) {
