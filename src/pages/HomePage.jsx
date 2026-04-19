@@ -97,7 +97,7 @@ export default function HomePage() {
     {
       icon: '👥', label: 'Ver Professores',
       desc: 'Consulte o cadastro de professores da escola.',
-      to: '/settings',
+      to: '/settings?tab=teachers',
     },
     {
       icon: '🏫', label: 'Grade da Escola',

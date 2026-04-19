@@ -186,7 +186,7 @@ export default function SettingsPage() {
     <div>
       <div className="mb-5">
         <h1 className="text-xl font-extrabold tracking-tight">
-          {isAdmin ? 'Configurações' : 'Meu Perfil'}
+          {isAdmin ? 'Configurações' : tab === 'teachers' ? 'Professores' : 'Meu Perfil'}
         </h1>
       </div>
 
@@ -202,11 +202,9 @@ export default function SettingsPage() {
                 )}
               </button>
             ))
-          : isCoordinator()
-            ? COORDINATOR_TABS.map(t => (
-                <button key={t.id} className={tabClass(t.id)} onClick={() => setTab(t.id)}>{t.label}</button>
-              ))
-            : <button className={tabClass('profile')} onClick={() => setTab('profile')}>👤 Meu Perfil</button>}
+          : COORDINATOR_TABS.map(t => (
+              <button key={t.id} className={tabClass(t.id)} onClick={() => setTab(t.id)}>{t.label}</button>
+            ))}
       </div>
 
       {tab === 'segments'     && <TabSegments />}

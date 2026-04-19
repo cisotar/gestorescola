@@ -94,7 +94,7 @@ export default function DashboardPage() {
 
   const actionCards = [
     { icon: '📝', label: 'Marcar Substituições',        desc: 'Registre ausências e gerencie os substitutos da semana',         to: '/calendar',             primary: true },
-    { icon: '👩‍🏫', label: 'Ver Professores',               desc: 'Lista completa de professores e suas cargas horárias',           to: '/settings' },
+    { icon: '👩‍🏫', label: 'Ver Professores',               desc: 'Lista completa de professores e suas cargas horárias',           to: '/settings?tab=teachers' },
     { icon: '🗓️', label: 'Grade da Escola',              desc: 'Visualize e filtre os horários de toda a escola',                to: '/school-schedule' },
     { icon: '📊', label: 'Relatórios de Faltas',         desc: 'Acesse os relatórios consolidados de ausências',                 to: '/absences' },
     { icon: '📁', label: 'Relatórios de Substituições',  desc: 'Consulte os relatórios completos de substituições',              to: '/substitutions' },
