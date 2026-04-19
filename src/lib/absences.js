@@ -104,14 +104,40 @@ export function isUnderWeeklyLimit(teacher, date, schedules, absences, sharedSer
 }
 
 // ─── Ranking de candidatos ────────────────────────────────────────────────────
-// Critérios (em ordem de prioridade):
-//   0 — mesma matéria + mesmo segmento
-//   1 — mesma matéria + outro segmento
-//   2 — mesma área   + mesmo segmento
-//   3 — mesma área   + outro segmento
-//   4 — outra área
-// Desempate: menor carga horária mensal
 
+/**
+ * Classifica professores candidatos a substituto por compatibilidade com a aula ausente.
+ *
+ * Scoring (em ordem de prioridade):
+ *   0 — mesma matéria + mesmo segmento (melhor compatibilidade)
+ *   1 — mesma matéria + outro segmento
+ *   2 — mesma área + mesmo segmento
+ *   3 — mesma área + outro segmento
+ *   4 — outra área / turmas compartilhadas (pior compatibilidade, mas aceitável)
+ *
+ * COMPORTAMENTO ESPECIAL PARA TURMAS COMPARTILHADAS:
+ * - Turmas de FORMAÇÃO e ELETIVA têm subjectId === null (ou referem activities não-mapeadas)
+ * - Resultado: todos os candidatos recebem score 4 (igualmente compatíveis)
+ * - Desempate: menor carga mensal (monthlyLoad) vence
+ * - Isso é INTENCIONAL — em turmas compartilhadas, competência pedagógica é idêntica
+ *
+ * Desempates (mesmo score):
+ * 1. weeklyLimitStatus: candidatos não no limite vêm primeiro
+ * 2. monthlyLoad: menor carga mensal vence
+ *
+ * @param {string} absentTeacherId - ID do professor ausente
+ * @param {string} date - Data da ausência (ISO format)
+ * @param {string} timeSlot - Slot de tempo (ex: "seg-fund|manha|3")
+ * @param {string|null} subjectId - Matéria da aula (null para turmas compartilhadas)
+ * @param {Array} teachers - Lista de professores aprovados
+ * @param {Array} schedules - Grade horária
+ * @param {Array} absences - Ausências registradas
+ * @param {Array} subjects - Matérias do banco
+ * @param {Array} areas - Áreas de conhecimento
+ * @param {Object} [periodConfigs={}] - Configuração de períodos por segmento/turno
+ * @param {Array} [sharedSeries=[]] - Turmas compartilhadas (FORMAÇÃO, ELETIVA)
+ * @returns {Array<{teacher, load, match, sameSeg, score, atLimit}>} Candidatos ordenados por score e carga
+ */
 export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teachers, schedules, absences, subjects, areas, periodConfigs = {}, sharedSeries = []) {
   // Extrai o segmentId do timeSlot (formato: segmentId|turno|aulaIdx)
   const slotSegmentId = timeSlot?.split('|')[0] ?? null
@@ -130,6 +156,9 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
       : false
 
   const scoreOf = (t) => {
+    // Para turmas compartilhadas (FORMAÇÃO/ELETIVA), subjectId === null
+    // Isso resulta em sameSubj = false e sameArea = null (não encontra área)
+    // Logo, score será sempre 4 — qualquer professor é igualmente compatível
     const sameSubj = subjectId ? (t.subjectIds ?? []).includes(subjectId) : false
     const sameArea = absentAreaId
       ? (t.subjectIds ?? []).some(sid => subjects.find(s => s.id === sid)?.areaId === absentAreaId)
@@ -140,7 +169,7 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
     if (sameSubj)            return 1
     if (sameArea && sameSeg) return 2
     if (sameArea)            return 3
-    return 4
+    return 4  // Score 4: outras áreas E turmas compartilhadas (compatibilidade genérica)
   }
 
   const matchOf = (score) => {
@@ -214,6 +243,9 @@ export function suggestSubstitutes(absenceSlot, ruleType, store) {
         )) {
           hierarchyLevel = 2
         }
+        // Para turmas compartilhadas (subjectId === null):
+        // hierarchyLevel = 3 (outra área / sem especialização)
+        // Candidatos desempatam por carga — corretamente distribuindo substituições
 
         const load    = monthlyLoad(teacher.id, absenceSlot.date, store.schedules, store.absences, _sharedSeries)
         const atLimit = weeklyLimitStatus(teacher, absenceSlot.date, store.schedules, store.absences, _sharedSeries) === 'at_limit'
