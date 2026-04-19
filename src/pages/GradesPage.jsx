@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import GradeTurnoCard from '../components/ui/GradeTurnoCard'
+import SchoolGrid from '../components/ui/SchoolGrid'
 import { parseSlot } from '../lib/periods'
+import { allTurmaObjects } from '../lib/helpers'
 
 export default function GradesPage() {
   const navigate = useNavigate()
@@ -11,6 +13,8 @@ export default function GradesPage() {
   const store = useAppStore()
   const [activeTab, setActiveTab] = useState('professor')
   const [selectedTeacherId, setSelectedTeacherId] = useState(null)
+  const [selectedTurma, setSelectedTurma] = useState(null)
+  const [professorFilter, setProfessorFilter] = useState(null)
 
   // Guard: only admin, coordinator, teacher-coordinator, and teacher can access
   // If role is not set or is 'pending', this shouldn't happen (Layout guards it)
@@ -53,7 +57,7 @@ export default function GradesPage() {
     return result
   }
 
-  // Derived helpers
+  // Derived helpers for "Por Professor" tab
   const approvedTeachers = store.teachers
     .filter(t => t.status === 'approved')
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -67,6 +71,37 @@ export default function GradesPage() {
   const segmentTurnoList = selectedTeacherId
     ? extractSegmentTurno(professorSchedules)
     : []
+
+  // Derived helpers for "Por Turma" tab
+  const turmaObjects = allTurmaObjects(store.segments)
+
+  // Filter schedules by selected turma
+  const turmaSchedules = selectedTurma
+    ? store.schedules.filter(s => s.turma === selectedTurma)
+    : []
+
+  // Further filter by selected professor (optional)
+  const filteredTurmaSchedules = professorFilter
+    ? turmaSchedules.filter(s => s.teacherId === professorFilter)
+    : turmaSchedules
+
+  // Extract unique professores from turma schedules
+  const uniqueProfessores = turmaSchedules.length > 0
+    ? [...new Set(turmaSchedules.map(s => s.teacherId))]
+      .map(tid => store.teachers.find(t => t.id === tid))
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name))
+    : []
+
+  // Extract unique segments from filtered turma schedules
+  const filteredSegmentIds = filteredTurmaSchedules.length > 0
+    ? [...new Set(
+      filteredTurmaSchedules
+        .map(s => s.timeSlot?.split('|')[0])
+        .filter(Boolean)
+    )]
+    : []
+  const filteredSegments = store.segments.filter(s => filteredSegmentIds.includes(s.id))
 
   return (
     <div className="space-y-5">
@@ -155,8 +190,82 @@ export default function GradesPage() {
           </div>
         )}
         {activeTab === 'turma' && canAccessTurma && (
-          <div className="text-center py-16 text-t3">
-            Aba Turma (em desenvolvimento)
+          <div className="space-y-4">
+            {/* Turma dropdown */}
+            <div>
+              <label className="lbl">Turma</label>
+              <select
+                value={selectedTurma ?? ''}
+                onChange={(e) => {
+                  setSelectedTurma(e.target.value || null)
+                  setProfessorFilter(null)
+                }}
+                className="inp w-full md:w-96"
+              >
+                <option value="">Selecione uma turma...</option>
+                {turmaObjects.map(t => (
+                  <option key={t.label} value={t.label}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* No turma selected message */}
+            {selectedTurma === null && (
+              <p className="text-sm text-t3 italic">
+                Selecione uma turma para visualizar a grade
+              </p>
+            )}
+
+            {/* Professor filter dropdown - appears only if turma is selected */}
+            {selectedTurma !== null && uniqueProfessores.length > 0 && (
+              <div>
+                <label className="lbl">Filtrar por professor (opcional)</label>
+                <select
+                  value={professorFilter ?? ''}
+                  onChange={(e) => setProfessorFilter(e.target.value || null)}
+                  className="inp w-full md:w-96"
+                >
+                  <option value="">Todos os professores</option>
+                  {uniqueProfessores.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* No schedules message for turma */}
+            {selectedTurma !== null && turmaSchedules.length === 0 && (
+              <p className="text-sm text-t3 italic">
+                Nenhuma aula encontrada para esta turma
+              </p>
+            )}
+
+            {/* No schedules message after professor filter */}
+            {selectedTurma !== null && professorFilter !== null && filteredTurmaSchedules.length === 0 && (
+              <p className="text-sm text-t3 italic">
+                Nenhuma aula deste professor nesta turma
+              </p>
+            )}
+
+            {/* Grade Grid */}
+            {selectedTurma !== null && filteredTurmaSchedules.length > 0 && filteredSegments.length > 0 && (
+              <div className="space-y-6">
+                {filteredSegments.map(seg => (
+                  <div key={seg.id} className="space-y-3">
+                    <div className="text-sm font-bold text-t1">
+                      {seg.name} — {(seg.turno ?? 'manha') === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'}
+                    </div>
+                    <SchoolGrid
+                      seg={seg}
+                      schedules={filteredTurmaSchedules}
+                      store={store}
+                      showTeacher={true}
+                      useApelido={false}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
