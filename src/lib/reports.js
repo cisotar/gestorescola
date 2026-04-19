@@ -669,6 +669,102 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
   return _wrap(`Grade Horária — ${teacher?.name ?? '—'}`, metaHTML, bodyHTML, 'GestãoEscolar — Grade Horária')
 }
 
+// ─── 8.1 Grade horária — por professor com turnos específicos ─────────────────
+
+export function generateGradesProfessorHTML(teacher, turnos, store, useApelido = false) {
+  /**
+   * Gera HTML completo para PDF de grades de professor com suporte a turno duplo.
+   *
+   * teacher:    Objeto professor com id, name, apelido, horariosSemana
+   * turnos:     Array [{ segmentId, turno }, ...] — turnos a renderizar
+   * store:      useAppStore state com segments, subjects, periodConfigs, schedules
+   * useApelido: boolean — usar apelido vs nome completo
+   *
+   * Retorna:    HTML string completo com doctype, pronto para openPDF()
+   */
+
+  // ── Filtrar schedules do professor ──────────────────────────────────────────
+  const teacherSchedules = (store.schedules ?? []).filter(s => s.teacherId === teacher?.id)
+
+  // ── Validar entrada: se turnos vazio, retornar aviso ──────────────────────
+  if (!turnos || turnos.length === 0) {
+    const metaHTML = `
+      <div class="m-blk"><span class="m-lbl">Professor</span><span class="m-val">${teacher?.name ?? '—'}</span></div>
+      <div class="m-blk" style="margin-left:auto;text-align:right">
+        <span class="m-lbl">Aulas/semana</span>
+        <span class="m-val">0</span>
+      </div>`
+    const bodyHTML = '<p style="color:#a09d97;padding:20px 0">Nenhum período informado.</p>'
+    return _wrap(`Grade Horária — ${teacher?.name ?? '—'}`, metaHTML, bodyHTML, 'GestãoEscolar — Grade Horária')
+  }
+
+  // ── Metadados do cabeçalho ──────────────────────────────────────────────────
+  const metaHTML = `
+    <div class="m-blk"><span class="m-lbl">Professor</span><span class="m-val">${teacher?.name ?? '—'}</span></div>
+    <div class="m-blk" style="margin-left:auto;text-align:right">
+      <span class="m-lbl">Aulas/semana</span>
+      <span class="m-val">${teacherSchedules.length}</span>
+    </div>`
+
+  // ── Tabela de horários de entrada/saída ──────────────────────────────────────
+  const hs = teacher?.horariosSemana
+  const hsValido = hs && typeof hs === 'object' && Object.keys(hs).length > 0
+  const horariosSemanaParam = hsValido ? hs : null
+
+  let scheduleHeaderHTML
+  if (hsValido) {
+    const entradaRow = SCHED_DAYS.map(d => `<td style="text-align:center">${hs[d]?.entrada ?? '—'}</td>`).join('')
+    const saidaRow   = SCHED_DAYS.map(d => `<td style="text-align:center">${hs[d]?.saida   ?? '—'}</td>`).join('')
+    scheduleHeaderHTML = `<table style="margin-bottom:16px;table-layout:fixed;width:100%">
+      <thead><tr>
+        <th style="width:90px"></th>
+        ${SCHED_DAYS.map(d => `<th style="text-align:center">${d}</th>`).join('')}
+      </tr></thead>
+      <tbody>
+        <tr><td style="color:#6b6760;font-weight:700">Entrada</td>${entradaRow}</tr>
+        <tr><td style="color:#6b6760;font-weight:700">Saída</td>${saidaRow}</tr>
+      </tbody>
+    </table>`
+  } else {
+    scheduleHeaderHTML = ''
+  }
+
+  // ── Labels de turno para PDF ────────────────────────────────────────────────
+  const TURNO_LABELS_PDF = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
+
+  // ── Renderizar seções por turno (com page-break para turno duplo) ───────────
+  const sections = turnos.map(({ segmentId, turno }, idx) => {
+    const seg = store.segments?.find(s => s.id === segmentId)
+    const segName = seg?.name ?? segmentId
+    const turnoLabel = TURNO_LABELS_PDF[turno] ?? turno
+
+    // ── Filtrar schedules apenas para este segmento/turno do professor ────────
+    const filteredSchedules = teacherSchedules.filter(s => {
+      const parsed = parseSlot(s.timeSlot)
+      return parsed && parsed.segmentId === segmentId && parsed.turno === turno
+    })
+
+    // ── Renderizar grid principal ──────────────────────────────────────────────
+    const grid = seg ? _scheduleGrid(seg, turno, filteredSchedules, store, false, useApelido, horariosSemanaParam) : ''
+    const gridOrEmpty = grid || '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
+
+    // ── Subtitle com page-break se não for o primeiro ───────────────────────
+    const pageBreakStyle = idx === 0 ? '' : 'page-break-before:always;'
+
+    return `<section class="grade-section" style="${pageBreakStyle}">
+      <h2 style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#1a1814;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #1a1814">${segName} — ${turnoLabel}</h2>
+      ${gridOrEmpty}
+    </section>`
+  }).join('')
+
+  // ── Montar body final ──────────────────────────────────────────────────────
+  const bodyHTML = sections.length === 0
+    ? '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
+    : scheduleHeaderHTML + sections
+
+  return _wrap(`Grade Horária — ${teacher?.name ?? '—'}`, metaHTML, bodyHTML, 'GestãoEscolar — Grade Horária')
+}
+
 // ─── 9. Grade horária — escola (com filtros) ──────────────────────────────────
 
 export function generateSchoolScheduleHTML(filter = {}, store) {
