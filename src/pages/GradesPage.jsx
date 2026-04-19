@@ -6,6 +6,7 @@ import GradeTurnoCard from '../components/ui/GradeTurnoCard'
 import SchoolGrid from '../components/ui/SchoolGrid'
 import { parseSlot } from '../lib/periods'
 import { allTurmaObjects } from '../lib/helpers'
+import { generateGradesProfessorHTML, generateSchoolScheduleHTML, openPDF } from '../lib/reports'
 
 export default function GradesPage() {
   const navigate = useNavigate()
@@ -15,6 +16,20 @@ export default function GradesPage() {
   const [selectedTeacherId, setSelectedTeacherId] = useState(null)
   const [selectedTurma, setSelectedTurma] = useState(null)
   const [professorFilter, setProfessorFilter] = useState(null)
+
+  // Handler to export professor schedule as PDF
+  const handleExportProfessor = () => {
+    if (!selectedTeacherId || !selectedTeacher) return
+    const html = generateGradesProfessorHTML(selectedTeacher, segmentTurnoList, store, false)
+    openPDF(html)
+  }
+
+  // Handler to export turma schedule as PDF
+  const handleExportTurma = () => {
+    if (!selectedTurma) return
+    const html = generateSchoolScheduleHTML({ turma: selectedTurma, teacherId: professorFilter }, store)
+    openPDF(html)
+  }
 
   // Guard: pending users → redirect to home
   if (role === 'pending') {
@@ -189,6 +204,17 @@ export default function GradesPage() {
               </div>
             )}
 
+            {/* Export PDF button */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportProfessor}
+                disabled={selectedTeacherId === null}
+                className="btn btn-dark btn-sm"
+              >
+                📄 Exportar PDF
+              </button>
+            </div>
+
             {/* No teacher selected message */}
             {selectedTeacherId === null && (
               <p className="text-sm text-t3 italic">
@@ -261,6 +287,19 @@ export default function GradesPage() {
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {/* Export PDF button */}
+            {selectedTurma !== null && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportTurma}
+                  disabled={selectedTurma === null}
+                  className="btn btn-dark btn-sm"
+                >
+                  📄 Exportar PDF
+                </button>
               </div>
             )}
 
