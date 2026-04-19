@@ -12,6 +12,7 @@ export default function SuggestionPills({ suggestions, onSelect }) {
           key={teacher.id}
           teacher={teacher}
           monthlyAulas={teacher.monthlyAulas ?? 0}
+          atLimit={teacher.atLimit ?? false}
           onClick={() => onSelect(teacher)}
         />
       ))}

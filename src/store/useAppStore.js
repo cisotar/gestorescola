@@ -45,6 +45,13 @@ const INITIAL_STATE = {
   },
   areas:         [],
   subjects:      [],
+  /**
+   * Turmas compartilhadas (FORMAÇÃO, etc.)
+   * @type {Array<{id: string, name: string, type: 'formation'|'elective'}>}
+   *
+   * - type: 'formation' — não demanda substituto (ex: ATPCG, ATPCA)
+   * - type: 'elective' — demanda substituto como aulas regulares
+   */
   sharedSeries:  [],
   teachers:      [],
   schedules:     [],
@@ -291,11 +298,33 @@ const useAppStore = create((set, get) => {
   },
 
   // ─── Turmas compartilhadas ──────────────────────────────────────────────────
+  /**
+   * Adiciona nova turma compartilhada com validação de type.
+   * @param {Object} series - Turma a adicionar
+   * @param {string} series.id - Identificador único
+   * @param {string} series.name - Nome exibido
+   * @param {'formation'|'elective'} series.type - Tipo obrigatório
+   * @throws {Error} Se type não for 'formation' ou 'elective'
+   */
   addSharedSeries: (series) => {
+    if (!['formation', 'elective'].includes(series.type)) {
+      throw new Error(`Tipo inválido: ${series.type}. Aceitos: 'formation', 'elective'`)
+    }
     set(s => ({ sharedSeries: [...s.sharedSeries, series] }))
     saveConfig(get())
   },
+
+  /**
+   * Atualiza turma compartilhada existente com validação de type.
+   * @param {string} id - ID da turma a atualizar
+   * @param {Object} changes - Campos a atualizar
+   * @param {'formation'|'elective'} [changes.type] - Tipo (opcional), validado se presente
+   * @throws {Error} Se type for inválido
+   */
   updateSharedSeries: (id, changes) => {
+    if (changes.type && !['formation', 'elective'].includes(changes.type)) {
+      throw new Error(`Tipo inválido: ${changes.type}. Aceitos: 'formation', 'elective'`)
+    }
     set(s => ({ sharedSeries: s.sharedSeries.map(ss => ss.id === id ? { ...ss, ...changes } : ss) }))
     saveConfig(get())
   },

@@ -81,7 +81,7 @@ function AdminKPICards({ teachers, schedules }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const { teachers, schedules, absences, loaded } = useAppStore()
+  const { teachers, schedules, absences, sharedSeries, loaded } = useAppStore()
   const { user, role, teacher: myTeacher } = useAuthStore()
   const isAdmin = role === 'admin'
   const firstName = user?.displayName?.split(' ')[0] ?? 'Bem-vindo'
@@ -145,7 +145,7 @@ export default function DashboardPage() {
       {/* Tabelas lado a lado */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AulasAtribuidasCard teachers={teachers} schedules={schedules} />
-        <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} />
+        <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} sharedSeries={sharedSeries} />
       </div>
     </div>
   )

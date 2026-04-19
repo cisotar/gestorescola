@@ -318,9 +318,9 @@ Documento único em `meta/config`. Toda mutação usa `saveConfig(state)` (um `s
     {
       id: "shared-formacao",
       name: "FORMAÇÃO",
-      activities: [
-        { id: "formation-atpcg", name: "ATPCG", tipo: "fixo", order: 0 }
-      ]
+      type: "formation",         // "formation" | "elective" (formato após migração #224)
+                                 // formation: não demanda substituto (ex: ATPCG, ATPCA)
+                                 // elective: demanda substituto como aulas regulares
     }
   ],
 
@@ -1144,6 +1144,7 @@ Definidas via `@layer components` com `@apply`. Usar **sempre** essas classes an
 | `Layout` | — | `<Navbar>` + `<Outlet>` centralizado com `max-w-screen-xl` |
 | `SuggestionPills` | `candidates`, `onSelect` | Exibe top 3 candidatos com badge de score e carga mensal; click atribui substituto |
 | `ToggleRuleButtons` | `rule`, `onChange` | Toggle entre modo `qualitative` / `quantitative` de ranking |
+| `KPICards` | `teachers`, `schedules`, `absences` | Grid 2×4 com 4 KPIs globais (professores, aulas/semana, faltas totais, sem substituto); card 4 usa `bg-err-l text-err` quando há slots descobertos, `bg-ok-l text-ok` quando todos cobertos; sem acesso a store |
 
 ### Responsividade
 

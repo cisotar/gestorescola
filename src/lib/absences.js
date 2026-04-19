@@ -4,15 +4,32 @@ import { resolveSlot } from './periods'
 
 // ─── Carga mensal ─────────────────────────────────────────────────────────────
 
-export function monthlyLoad(teacherId, referenceDate, schedules, absences) {
+export function monthlyLoad(teacherId, referenceDate, schedules, absences, sharedSeries = []) {
   const ref        = parseDate(referenceDate)
   const monthStart = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2,'0')}-01`
   const days       = businessDaysBetween(monthStart, referenceDate)
 
+  const isFormacao = (turma, subjectId) =>
+    isSharedSeriesTurma(turma ?? '', sharedSeries) ||
+    !!getSharedSeriesActivity(subjectId, sharedSeries)
+
   const scheduledLoad = days.reduce((acc, d) => {
     const dayLabel = dateToDayLabel(d)
     if (!dayLabel) return acc
-    return acc + schedules.filter(s => s.teacherId === teacherId && s.day === dayLabel).length
+    return acc + schedules.filter(s =>
+      s.teacherId === teacherId &&
+      s.day === dayLabel &&
+      !isFormacao(s.turma, s.subjectId)
+    ).length
+  }, 0)
+
+  const absenceLoad = (absences || []).reduce((acc, ab) => {
+    if (ab.teacherId !== teacherId) return acc
+    return acc + ab.slots.filter(sl =>
+      sl.date >= monthStart &&
+      sl.date <= referenceDate &&
+      !isFormacao(sl.turma, sl.subjectId)
+    ).length
   }, 0)
 
   const subsLoad = (absences || []).reduce((acc, ab) => {
@@ -21,7 +38,7 @@ export function monthlyLoad(teacherId, referenceDate, schedules, absences) {
     ).length
   }, 0)
 
-  return scheduledLoad + subsLoad
+  return Math.max(0, scheduledLoad - absenceLoad) + subsLoad
 }
 
 // ─── Disponibilidade ──────────────────────────────────────────────────────────
@@ -49,9 +66,12 @@ export function isAvailableBySchedule(teacher, day, timeSlot, periodConfigs) {
   return horarioDia.entrada <= resolved.inicio && resolved.fim <= horarioDia.saida
 }
 
-export function isUnderWeeklyLimit(teacher, date, schedules, absences, sharedSeries = []) {
-  const ws = weekStart(date)
-  const weekDays = businessDaysBetween(ws, date)
+export function weeklyLimitStatus(teacher, date, schedules, absences, sharedSeries = []) {
+  // Apenas teacher-coordinator tem limite semanal
+  if (teacher.profile !== 'teacher-coordinator') return 'ok'
+
+  const ws         = weekStart(date)
+  const weekDays   = businessDaysBetween(ws, date)
   const weekDaySet = new Set(weekDays.map(d => dateToDayLabel(d)).filter(Boolean))
 
   const isFormacao = (sched) =>
@@ -67,7 +87,7 @@ export function isUnderWeeklyLimit(teacher, date, schedules, absences, sharedSer
   const subsAulas = (absences || []).reduce((acc, ab) => {
     return acc + ab.slots.filter(sl => {
       if (sl.substituteId !== teacher.id) return false
-      if (!weekDays.includes(sl.date)) return false
+      if (!weekDays.includes(sl.date))    return false
       const isFormacaoSlot =
         isSharedSeriesTurma(sl.turma, sharedSeries) ||
         !!getSharedSeriesActivity(sl.subjectId, sharedSeries)
@@ -75,7 +95,11 @@ export function isUnderWeeklyLimit(teacher, date, schedules, absences, sharedSer
     }).length
   }, 0)
 
-  return ownAulas + subsAulas < 32
+  return ownAulas + subsAulas < 10 ? 'ok' : 'at_limit'
+}
+
+export function isUnderWeeklyLimit(teacher, date, schedules, absences, sharedSeries = []) {
+  return weeklyLimitStatus(teacher, date, schedules, absences, sharedSeries) === 'ok'
 }
 
 // ─── Ranking de candidatos ────────────────────────────────────────────────────
@@ -129,22 +153,24 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
       t.id !== absentTeacherId &&
       t.profile !== 'coordinator' &&
       !isBusy(t.id, date, timeSlot, schedules, absences) &&
-      isAvailableBySchedule(t, dateToDayLabel(date), timeSlot, periodConfigs) &&
-      isUnderWeeklyLimit(t, date, schedules, absences, sharedSeries)
+      isAvailableBySchedule(t, dateToDayLabel(date), timeSlot, periodConfigs)
     )
     .map(t => {
-      const score = scoreOf(t)
+      const score       = scoreOf(t)
+      const limitStatus = weeklyLimitStatus(t, date, schedules, absences, sharedSeries)
       return {
         teacher: t,
-        load:    monthlyLoad(t.id, date, schedules, absences),
+        load:    monthlyLoad(t.id, date, schedules, absences, sharedSeries),
         match:   matchOf(score),
         sameSeg: score === 0 || score === 2,
         score,
+        atLimit: limitStatus === 'at_limit',
       }
     })
 
   return candidates.sort((a, b) => {
     if (a.score !== b.score) return a.score - b.score
+    if (a.atLimit !== b.atLimit) return a.atLimit ? 1 : -1
     return a.load - b.load
   })
 }
@@ -164,8 +190,7 @@ export function suggestSubstitutes(absenceSlot, ruleType, store) {
     t.status === 'approved' &&
     t.profile !== 'coordinator' &&
     !isBusy(t.id, absenceSlot.date, absenceSlot.slot, store.schedules, store.absences) &&
-    isAvailableBySchedule(t, dateToDayLabel(absenceSlot.date), absenceSlot.slot, _periodConfigs) &&
-    isUnderWeeklyLimit(t, absenceSlot.date, store.schedules, store.absences, _sharedSeries)
+    isAvailableBySchedule(t, dateToDayLabel(absenceSlot.date), absenceSlot.slot, _periodConfigs)
   )
 
   if (ruleType === 'qualitative') {
@@ -189,23 +214,26 @@ export function suggestSubstitutes(absenceSlot, ruleType, store) {
           hierarchyLevel = 2
         }
 
-        const load = monthlyLoad(teacher.id, absenceSlot.date, store.schedules, store.absences)
-        return { teacher, score: hierarchyLevel * 1000 + load }
+        const load    = monthlyLoad(teacher.id, absenceSlot.date, store.schedules, store.absences, _sharedSeries)
+        const atLimit = weeklyLimitStatus(teacher, absenceSlot.date, store.schedules, store.absences, _sharedSeries) === 'at_limit'
+        const score   = hierarchyLevel * 1000 + load + (atLimit ? 10000 : 0)
+        return { teacher, load, score, atLimit }
       })
       .sort((a, b) => a.score - b.score)
       .slice(0, 3)
-      .map(item => item.teacher)
+      .map(item => ({ teacher: item.teacher, load: item.load, score: item.score, atLimit: item.atLimit }))
   }
 
   if (ruleType === 'quantitative') {
     return baseCandidates
-      .map(teacher => ({
-        teacher,
-        load: monthlyLoad(teacher.id, absenceSlot.date, store.schedules, store.absences),
-      }))
-      .sort((a, b) => a.load - b.load)
+      .map(teacher => {
+        const load    = monthlyLoad(teacher.id, absenceSlot.date, store.schedules, store.absences, _sharedSeries)
+        const atLimit = weeklyLimitStatus(teacher, absenceSlot.date, store.schedules, store.absences, _sharedSeries) === 'at_limit'
+        return { teacher, load, atLimit }
+      })
+      .sort((a, b) => (a.load + (a.atLimit ? 99999 : 0)) - (b.load + (b.atLimit ? 99999 : 0)))
       .slice(0, 3)
-      .map(item => item.teacher)
+      .map(item => ({ teacher: item.teacher, load: item.load, atLimit: item.atLimit }))
   }
 
   return []

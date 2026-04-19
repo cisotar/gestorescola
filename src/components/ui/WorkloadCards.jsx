@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import { monthlyLoad } from '../../lib/absences'
 
-function getTeacherStats(teacherId, today, schedules, absences) {
-  const aulasDadas = monthlyLoad(teacherId, today, schedules, absences)
+function getTeacherStats(teacherId, today, schedules, absences, sharedSeries = []) {
+  const aulasDadas = monthlyLoad(teacherId, today, schedules, absences, sharedSeries)
   const faltas     = (absences || [])
     .filter(ab => ab.teacherId === teacherId)
     .reduce((acc, ab) => acc + ab.slots.length, 0)
@@ -56,7 +56,7 @@ export function AulasAtribuidasCard({ teachers, schedules }) {
   )
 }
 
-export function WorkloadTable({ teachers, schedules, absences }) {
+export function WorkloadTable({ teachers, schedules, absences, sharedSeries = [] }) {
   const navigate  = useNavigate()
   const lecturers = (teachers ?? []).filter(t => t.profile !== 'coordinator')
 
@@ -67,7 +67,7 @@ export function WorkloadTable({ teachers, schedules, absences }) {
   const today = new Date().toISOString().slice(0, 10)
 
   const rows = lecturers
-    .map(t => ({ t, ...getTeacherStats(t.id, today, schedules, absences) }))
+    .map(t => ({ t, ...getTeacherStats(t.id, today, schedules, absences, sharedSeries) }))
     .sort((a, b) => b.aulasDadas - a.aulasDadas)
 
   return (

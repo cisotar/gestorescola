@@ -72,7 +72,7 @@ function TeacherStats({ teacher, schedules, absences }) {
 
 export default function HomePage() {
   const { user, teacher: myTeacher } = useAuthStore()
-  const { schedules, absences, teachers, loaded } = useAppStore()
+  const { schedules, absences, teachers, sharedSeries, loaded } = useAppStore()
   const firstName = user?.displayName?.split(' ')[0] ?? 'Professor'
 
   if (!loaded) {
@@ -146,7 +146,7 @@ export default function HomePage() {
       {/* Tabelas de aulas — visão geral da escola */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <AulasAtribuidasCard teachers={teachers} schedules={schedules} />
-        <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} />
+        <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} sharedSeries={sharedSeries} />
       </div>
     </div>
   )

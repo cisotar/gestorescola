@@ -1,16 +1,22 @@
 /**
  * Migrações de dados e schema
  *
+ * Esta é a única migração permanente de sharedSeries necessária.
  * TODO: Remover migrateSharedSeriesToNewFormat após 2026-06-01,
- * quando todos os usuários tiverem migrado para o novo schema de sharedSeries
+ * quando todos os usuários tiverem migrado para o novo schema de sharedSeries.
+ * A partir dessa data, todos os documentos estarão no novo formato
+ * (id, name, type) sem activities[], tipo ou order.
  */
 
 /**
  * Migra sharedSeries do formato antigo (com activities[], tipo, order)
  * para o novo formato (apenas id, name, type).
  *
- * Detecção automática: se sharedSeries[0].activities existir, executa migração.
- * Se já estiver migrado, retorna config inalterado.
+ * Detecção automática (idempotente): se sharedSeries[0].activities estiver
+ * ausente, dados já estão migrados ou nunca tiveram o formato antigo.
+ * Neste caso, retorna config inalterado com wasMigrated: false.
+ *
+ * Se atividades estiverem presentes, executa migração única e persiste em Firestore.
  *
  * @param {object} config - Objeto de configuração contendo sharedSeries
  * @returns {object} { config: migratedConfig, wasMigrated: boolean }
@@ -29,8 +35,9 @@ export function migrateSharedSeriesToNewFormat(config) {
   }
 
   // Detecta dados antigos: verifica se o primeiro item tem activities[]
+  // Se activities[] ausente, dados já estão migrados ou nunca tiveram o formato antigo (idempotente)
   if (!sharedSeries[0]?.activities) {
-    // Dados já estão migrados (ou nunca tiveram activities)
+    // Dados já estão migrados ou nunca tiveram atividades
     return { config, wasMigrated: false }
   }
 

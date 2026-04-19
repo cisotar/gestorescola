@@ -74,9 +74,10 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
   }), [teacherId, date, slot, subjectId])
 
   const suggestions = useMemo(
-    () => suggestSubstitutes(absenceSlot, ruleType, store).map(t => ({
-      ...t,
-      monthlyAulas: monthlyLoad(t.id, date, store.schedules, store.absences),
+    () => suggestSubstitutes(absenceSlot, ruleType, store).map(({ teacher, load, atLimit }) => ({
+      ...teacher,
+      monthlyAulas: load,
+      atLimit,
     })),
     [absenceSlot, ruleType, store, date]
   )
@@ -123,6 +124,9 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
               className="flex-1 flex items-center gap-1.5 text-left px-2 py-1 rounded-lg bg-surf border border-bdr hover:border-navy hover:bg-surf2 transition-all text-[11px]"
             >
               <span className="font-bold truncate">{t.name}</span>
+              {t.atLimit && (
+                <span className="text-[10px] font-semibold text-warn shrink-0">lim.</span>
+              )}
               <span className="text-t3 shrink-0">{formatMonthlyAulas(t.monthlyAulas)}</span>
             </button>
           </div>
@@ -200,7 +204,14 @@ function FullCandidateList({ candidates, curSub, matchLabel, store, onSelect }) 
           >
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cv.dt }} />
             <div className="flex-1 min-w-0">
-              <div className="font-bold text-sm">{c.teacher.name}</div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-sm">{c.teacher.name}</span>
+                {c.atLimit && (
+                  <span className="text-[10px] font-semibold text-warn bg-warn/10 px-1.5 py-0.5 rounded border border-warn/30 leading-none">
+                    limite semanal
+                  </span>
+                )}
+              </div>
               <div className="text-[11px] text-t2">{matchLabel(c)} · {formatMonthlyAulas(c.load)}/mês</div>
             </div>
             {isCur && <span className="text-[11px] font-bold text-ok shrink-0">atual ✓</span>}

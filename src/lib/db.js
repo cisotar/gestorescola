@@ -7,17 +7,29 @@ import { uid } from './helpers'
 import { migrateSharedSeriesToNewFormat, migrateSchedulesForSharedSeries } from './migrations'
 
 const LS_KEY = 'gestao_v8_cache'
+
+/**
+ * Seed padrão de turmas compartilhadas.
+ *
+ * @typedef {Object} SharedSeries
+ * @property {string} id - Identificador único (ex: 'shared-formacao')
+ * @property {string} name - Nome exibido (ex: 'FORMAÇÃO')
+ * @property {'formation'|'elective'} type - Tipo de turma:
+ *   - 'formation' — turmas de formação (ex: ATPCG, ATPCA) que NÃO demandam substituto
+ *   - 'elective' — turmas eletivas que DEMANDAM substituto como aulas regulares
+ *
+ * @example
+ * {
+ *   id: 'shared-formacao',
+ *   name: 'FORMAÇÃO',
+ *   type: 'formation'  // não demanda substituto
+ * }
+ */
 const DEFAULT_SHARED_SERIES = [
   {
     id: 'shared-formacao',
     name: 'FORMAÇÃO',
-    activities: [
-      { id: 'formation-atpcg',       name: 'ATPCG',       tipo: 'fixo',     order: 0 },
-      { id: 'formation-atpca',       name: 'ATPCA',       tipo: 'fixo',     order: 1 },
-      { id: 'formation-multiplica',  name: 'Multiplica',  tipo: 'variavel', order: 2 },
-      { id: 'formation-pda',         name: 'PDA',         tipo: 'variavel', order: 3 },
-      { id: 'formation-alinhamento', name: 'Alinhamento', tipo: 'variavel', order: 4 },
-    ],
+    type: 'formation',
   },
 ]
 
