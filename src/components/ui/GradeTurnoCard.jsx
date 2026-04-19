@@ -11,10 +11,11 @@ const TURNO_LABELS = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
  * @param {Object} props.teacher — Documento teacher com `{id, name, horariosSemana?, ...}`
  * @param {Object} props.store — `useAppStore()` — acesso a segments, periodConfigs, subjects, schedules, sharedSeries
  * @param {Object|null} props.horariosSemana — Horários do professor por dia da semana (ex: `{Segunda: {entrada, saida}, ...}`) ou `null`
+ * @param {boolean} [props.readOnly=false] — Se true, oculta botões de adição (+) e remoção (✕) na grade
  *
  * @returns {JSX.Element}
  */
-function GradeTurnoCard({ segmentId, turno, teacher, store, horariosSemana }) {
+function GradeTurnoCard({ segmentId, turno, teacher, store, horariosSemana, readOnly = false }) {
   const seg = store.segments.find(s => s.id === segmentId)
   const segName = seg?.name ?? segmentId
   const turnoLabel = TURNO_LABELS[turno] ?? turno
@@ -43,6 +44,7 @@ function GradeTurnoCard({ segmentId, turno, teacher, store, horariosSemana }) {
         store={store}
         segmentFilter={{ segmentId, turno }}
         horariosSemana={horariosSemana ?? null}
+        readOnly={readOnly}
       />
     </div>
   )

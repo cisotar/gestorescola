@@ -5,7 +5,7 @@ import useAppStore from '../store/useAppStore'
 import GradeTurnoCard from '../components/ui/GradeTurnoCard'
 import SchoolGrid from '../components/ui/SchoolGrid'
 import { parseSlot } from '../lib/periods'
-import { allTurmaObjects } from '../lib/helpers'
+import { allTurmaObjects, canEditTeacher } from '../lib/helpers'
 import { generateGradesProfessorHTML, generateSchoolScheduleHTML, openPDF } from '../lib/reports'
 
 export default function GradesPage() {
@@ -231,18 +231,26 @@ export default function GradesPage() {
 
             {/* Grade Turno Cards */}
             {selectedTeacherId !== null && segmentTurnoList.length > 0 && (
-              <div className={`space-y-6 ${segmentTurnoList.length > 1 ? 'grid md:grid-cols-1 lg:grid-cols-2 gap-6' : ''}`}>
-                {segmentTurnoList.map(({ segmentId, turno }) => (
-                  <GradeTurnoCard
-                    key={`${segmentId}|${turno}`}
-                    segmentId={segmentId}
-                    turno={turno}
-                    teacher={selectedTeacher}
-                    store={store}
-                    horariosSemana={selectedTeacher?.horariosSemana ?? null}
-                  />
-                ))}
-              </div>
+              <>
+                {(() => {
+                  const canEdit = canEditTeacher(myTeacher, selectedTeacher, useAuthStore.getState())
+                  return (
+                    <div className={`space-y-6 ${segmentTurnoList.length > 1 ? 'grid md:grid-cols-1 lg:grid-cols-2 gap-6' : ''}`}>
+                      {segmentTurnoList.map(({ segmentId, turno }) => (
+                        <GradeTurnoCard
+                          key={`${segmentId}|${turno}`}
+                          segmentId={segmentId}
+                          turno={turno}
+                          teacher={selectedTeacher}
+                          store={store}
+                          horariosSemana={selectedTeacher?.horariosSemana ?? null}
+                          readOnly={!canEdit}
+                        />
+                      ))}
+                    </div>
+                  )
+                })()}
+              </>
             )}
           </div>
         )}
