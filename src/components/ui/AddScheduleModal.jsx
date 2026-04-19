@@ -134,7 +134,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
                         onClick={() => !locked && setTurma(t)}
                         title={locked ? `Ocupado por ${occupiedByTeacher[t] ?? '?'}` : undefined}
                       >
-                        {locked ? `🔒 ${t} · ${occupiedByTeacher[t] ?? '?'}` : t}
+                        {t}
                       </button>
                     )
                   })}
