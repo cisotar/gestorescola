@@ -478,13 +478,17 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
     return { ...item, slotKey: null }
   })
 
+  // ── Verificar se há itens especiais (para inserir separador) ────────────────
+  const hasEspecial = itemsWithSlot.some(i => i._tipo === 'especial')
+  let firstEspecialEmitted = false
+
   // ── Gerar HTML de cada linha ──────────────────────────────────────────────
   const allRows = itemsWithSlot.map(item => {
     // Linha de intervalo (regular ou especial)
     if (item.isIntervalo) {
       return `<tr>
-      <td style="width:90px;white-space:nowrap;color:#a09d97;font-size:10px">${item.inicio}–${item.fim}<br>${item.label}</td>
-      <td colspan="5" style="background:#f4f2ee;border:1px solid #e5e2d9"></td>
+      <td style="width:90px;white-space:nowrap;color:#1a1814;font-size:10px">${item.inicio}–${item.fim}<br>${item.label}</td>
+      <td colspan="5" style="border:1px solid #e5e2d9"></td>
     </tr>`
     }
 
@@ -496,7 +500,7 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
           const horarioDia = horariosSemana[day]
           if (horarioDia?.entrada && horarioDia?.saida) {
             if (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida))) {
-              return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px));background-color:#F4F2EE"></td>`
+              return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px))"></td>`
             }
           }
         }
@@ -521,9 +525,15 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
     </tr>`
     }
 
-    // _tipo === 'especial'
+    // _tipo === 'especial' — inserir separador duplo antes do primeiro
+    let separator = ''
+    if (!firstEspecialEmitted) {
+      firstEspecialEmitted = true
+      separator = `<tr><td colspan="6" style="border-top:3px double #1a1814;padding:0;height:0"></td></tr>`
+    }
+
     const { slotKey, label, inicio, fim } = item
-    const labelStyle = 'background:#F4F2EE;border-left:3px solid #C05621;width:90px;white-space:nowrap;color:#1a1814'
+    const labelStyle = 'border-left:3px solid #C05621;width:90px;white-space:nowrap;color:#1a1814'
 
     const cells = SCHED_DAYS.map(day => {
       // RN-01: verificar se a célula está fora do expediente
@@ -531,15 +541,15 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
         const horarioDia = horariosSemana[day]
         if (horarioDia?.entrada && horarioDia?.saida) {
           if (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida))) {
-            return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px));background-color:#F4F2EE"></td>`
+            return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px))"></td>`
           }
         }
       }
       if (!slotKey) {
-        return `<td style="background:#F4F2EE;color:#c8c4bb">—</td>`
+        return `<td style="color:#c8c4bb">—</td>`
       }
       const matches = schedules.filter(s => s.timeSlot === slotKey && s.day === day)
-      if (!matches.length) return `<td style="background:#F4F2EE;color:#c8c4bb">—</td>`
+      if (!matches.length) return `<td style="color:#c8c4bb">—</td>`
       const lines = matches.map(s => {
         const subj = store.subjects.find(x => x.id === s.subjectId)
         if (showTeacher) {
@@ -549,10 +559,10 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
         }
         return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${s.turma ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
       }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
-      return `<td style="background:#F4F2EE">${lines}</td>`
+      return `<td>${lines}</td>`
     }).join('')
 
-    return `<tr>
+    return separator + `<tr>
       <td style="${labelStyle}"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
       ${cells}
     </tr>`
@@ -624,7 +634,7 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
 
   if (isDupleTurno) {
     // ── Turno duplo: uma <section class="grade-section"> por turno ────────────
-    const sections = turnoPairs.map(({ segmentId, turno }) => {
+    const sections = turnoPairs.map(({ segmentId, turno }, idx) => {
       const seg = store.segments.find(s => s.id === segmentId)
       const segName = seg?.name ?? segmentId
       const turnoLabel = TURNO_LABELS_PDF[turno] ?? turno
@@ -634,7 +644,9 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
         return parsed && parsed.segmentId === segmentId && parsed.turno === turno
       })
       const grid = seg ? _scheduleGrid(seg, turno, filteredSchedules, store, false, useApelido, horariosSemanaParam) : ''
-      return `<section class="grade-section">
+      const repeatedHeader = idx === 0 ? '' : scheduleHeaderHTML
+      return `<section class="grade-section" style="${idx === 0 ? '' : 'page-break-before:always;'}">
+        ${repeatedHeader}
         <h2 style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#1a1814;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #1a1814">${segName} — ${turnoLabel}</h2>
         ${grid}
       </section>`
@@ -748,10 +760,12 @@ export function generateGradesProfessorHTML(teacher, turnos, store, useApelido =
     const grid = seg ? _scheduleGrid(seg, turno, filteredSchedules, store, false, useApelido, horariosSemanaParam) : ''
     const gridOrEmpty = grid || '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
 
-    // ── Subtitle com page-break se não for o primeiro ───────────────────────
+    // ── Subtitle com page-break e repetição de cabeçalho se não for o primeiro ─
     const pageBreakStyle = idx === 0 ? '' : 'page-break-before:always;'
+    const repeatedHeader = idx === 0 ? '' : scheduleHeaderHTML
 
     return `<section class="grade-section" style="${pageBreakStyle}">
+      ${repeatedHeader}
       <h2 style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#1a1814;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #1a1814">${segName} — ${turnoLabel}</h2>
       ${gridOrEmpty}
     </section>`
