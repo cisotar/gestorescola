@@ -300,6 +300,38 @@ export function gerarPeriodosEspeciais(cfg) {
   return result
 }
 
+/**
+ * Funde e ordena cronologicamente períodos regulares e especiais de um turno.
+ *
+ * Chama `gerarPeriodos(cfg)` e `gerarPeriodosEspeciais(cfg)`, adiciona o campo
+ * `_tipo` a cada item e retorna o array combinado ordenado por `toMin(inicio)`.
+ *
+ * Valores possíveis de `_tipo`:
+ * - `'regular'`           — aula da grade regular
+ * - `'intervalo-regular'` — intervalo da grade regular
+ * - `'especial'`          — aula da grade especial
+ * - `'intervalo-especial'`— intervalo da grade especial
+ *
+ * @param {Object} cfg — objeto de configuração de período (resultado de `getCfg`)
+ * @returns {Array<{ aulaIdx: number|string|null, label: string, inicio: string,
+ *                   fim: string, isIntervalo: boolean, isEspecial: boolean,
+ *                   _tipo: 'regular'|'intervalo-regular'|'especial'|'intervalo-especial' }>}
+ */
+export function mergeAndSortPeriodos(cfg) {
+  const regulares = gerarPeriodos(cfg).map(p => ({
+    ...p,
+    isEspecial: false,
+    _tipo: p.isIntervalo ? 'intervalo-regular' : 'regular',
+  }))
+
+  const especiais = gerarPeriodosEspeciais(cfg).map(p => ({
+    ...p,
+    _tipo: p.isIntervalo ? 'intervalo-especial' : 'especial',
+  }))
+
+  return [...regulares, ...especiais].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
+}
+
 export function resolveSlot(timeSlot, periodConfigs) {
   const parsed = parseSlot(timeSlot)
   if (!parsed) return null

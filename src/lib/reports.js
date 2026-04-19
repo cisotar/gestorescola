@@ -1,5 +1,5 @@
 import { formatBR, dateToDayLabel, parseDate, formatISO, isFormationSlot } from './helpers'
-import { slotFullLabel, getAulas, gerarPeriodosEspeciais, makeEspecialSlot, getCfg, parseSlot, toMin } from './periods'
+import { slotFullLabel, getAulas, gerarPeriodosEspeciais, makeEspecialSlot, getCfg, parseSlot, toMin, mergeAndSortPeriodos } from './periods'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -461,35 +461,45 @@ function _filterLabel(filter) {
 
 const SCHED_DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
-function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApelido = false) {
-  const aulas = getAulas(seg.id, turno, store.periodConfigs)
-  if (!aulas.length) return ''
+function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApelido = false, horariosSemana = null) {
+  const cfg = getCfg(seg.id, turno, store.periodConfigs)
+  const allItems = mergeAndSortPeriodos(cfg)
+  if (!allItems.length) return ''
 
   const header = `<tr><th style="width:90px;color:#1a1814"></th>${SCHED_DAYS.map(d => `<th style="color:#1a1814">${d}</th>`).join('')}</tr>`
 
-  // ── Montar lista regular ───────────────────────────────────────────────────
-  const regularItems = aulas.map(({ aulaIdx, label, inicio, fim }) =>
-    ({ tipo: 'regular', aulaIdx, label, inicio, fim })
-  )
-
-  // ── Montar lista especial (aulaCount atribuído antes do sort) ──────────────
-  const cfg = getCfg(seg.id, turno, store.periodConfigs)
-  const especiais = gerarPeriodosEspeciais(cfg)
-  let aulaCount = 0
-  const especialItems = especiais.map(p => {
-    if (!p.isIntervalo) aulaCount += 1
-    const slotKey = p.isIntervalo ? null : makeEspecialSlot(seg.id, turno, aulaCount)
-    return { tipo: 'especial', aulaCount, slotKey, label: p.label, inicio: p.inicio, fim: p.fim, isIntervalo: p.isIntervalo }
+  // ── Pré-calcular slotKey para itens especiais (índice 1-based) ─────────────
+  let aulaEspecialCount = 0
+  const itemsWithSlot = allItems.map(item => {
+    if (item._tipo === 'especial' && !item.isIntervalo) {
+      aulaEspecialCount += 1
+      return { ...item, slotKey: makeEspecialSlot(seg.id, turno, aulaEspecialCount) }
+    }
+    return { ...item, slotKey: null }
   })
 
-  // ── Mesclar e ordenar cronologicamente ────────────────────────────────────
-  const allItems = [...regularItems, ...especialItems].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
-
   // ── Gerar HTML de cada linha ──────────────────────────────────────────────
-  const allRows = allItems.map(item => {
-    if (item.tipo === 'regular') {
+  const allRows = itemsWithSlot.map(item => {
+    // Linha de intervalo (regular ou especial)
+    if (item.isIntervalo) {
+      return `<tr>
+      <td style="width:90px;white-space:nowrap;color:#a09d97;font-size:10px">${item.inicio}–${item.fim}<br>${item.label}</td>
+      <td colspan="5" style="background:#f4f2ee;border:1px solid #e5e2d9"></td>
+    </tr>`
+    }
+
+    if (item._tipo === 'regular') {
       const { aulaIdx, label, inicio, fim } = item
       const cells = SCHED_DAYS.map(day => {
+        // RN-01: verificar se a célula está fora do expediente
+        if (horariosSemana !== null) {
+          const horarioDia = horariosSemana[day]
+          const foraDoExpediente = !horarioDia?.entrada || !horarioDia?.saida
+            || (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida)))
+          if (foraDoExpediente) {
+            return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px));background-color:#F4F2EE"></td>`
+          }
+        }
         const matches = schedules.filter(s =>
           s.timeSlot === `${seg.id}|${turno}|${aulaIdx}` && s.day === day
         )
@@ -511,15 +521,22 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
     </tr>`
     }
 
-    // tipo === 'especial'
-    const { slotKey, label, inicio, fim, isIntervalo } = item
-    const labelStyle = isIntervalo
-      ? 'background:#F4F2EE;border-left:3px solid #C05621;border-style:dashed;width:90px;white-space:nowrap;color:#1a1814'
-      : 'background:#F4F2EE;border-left:3px solid #C05621;width:90px;white-space:nowrap;color:#1a1814'
+    // _tipo === 'especial'
+    const { slotKey, label, inicio, fim } = item
+    const labelStyle = 'background:#F4F2EE;border-left:3px solid #C05621;width:90px;white-space:nowrap;color:#1a1814'
 
     const cells = SCHED_DAYS.map(day => {
-      if (isIntervalo || !slotKey) {
-        return `<td style="background:#F4F2EE;border-style:dashed;color:#a09d97;font-style:italic">—</td>`
+      // RN-01: verificar se a célula está fora do expediente
+      if (horariosSemana !== null) {
+        const horarioDia = horariosSemana[day]
+        const foraDoExpediente = !horarioDia?.entrada || !horarioDia?.saida
+          || (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida)))
+        if (foraDoExpediente) {
+          return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px));background-color:#F4F2EE"></td>`
+        }
+      }
+      if (!slotKey) {
+        return `<td style="background:#F4F2EE;color:#c8c4bb">—</td>`
       }
       const matches = schedules.filter(s => s.timeSlot === slotKey && s.day === day)
       if (!matches.length) return `<td style="background:#F4F2EE;color:#c8c4bb">—</td>`
@@ -580,6 +597,29 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
 
   const TURNO_LABELS_PDF = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
 
+  // ── Tabela de horários de entrada/saída ──────────────────────────────────────
+  const hs = teacher.horariosSemana
+  const hsValido = hs && typeof hs === 'object' && Object.keys(hs).length > 0
+  const horariosSemanaParam = hsValido ? hs : null
+
+  let scheduleHeaderHTML
+  if (hsValido) {
+    const entradaRow = SCHED_DAYS.map(d => `<td style="text-align:center">${hs[d]?.entrada ?? '—'}</td>`).join('')
+    const saidaRow   = SCHED_DAYS.map(d => `<td style="text-align:center">${hs[d]?.saida   ?? '—'}</td>`).join('')
+    scheduleHeaderHTML = `<table style="margin-bottom:16px;table-layout:fixed;width:100%">
+      <thead><tr>
+        <th style="width:90px"></th>
+        ${SCHED_DAYS.map(d => `<th style="text-align:center">${d}</th>`).join('')}
+      </tr></thead>
+      <tbody>
+        <tr><td style="color:#6b6760;font-weight:700">Entrada</td>${entradaRow}</tr>
+        <tr><td style="color:#6b6760;font-weight:700">Saída</td>${saidaRow}</tr>
+      </tbody>
+    </table>`
+  } else {
+    scheduleHeaderHTML = `<p style="color:#a09d97;margin-bottom:16px">Horários de entrada e saída não informados</p>`
+  }
+
   let bodyHTML
 
   if (isDupleTurno) {
@@ -593,7 +633,7 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
         const parsed = parseSlot(s.timeSlot)
         return parsed && parsed.segmentId === segmentId && parsed.turno === turno
       })
-      const grid = seg ? _scheduleGrid(seg, turno, filteredSchedules, store, false, useApelido) : ''
+      const grid = seg ? _scheduleGrid(seg, turno, filteredSchedules, store, false, useApelido, horariosSemanaParam) : ''
       return `<section class="grade-section">
         <h2 style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#1a1814;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #1a1814">${segName} — ${turnoLabel}</h2>
         ${grid}
@@ -601,9 +641,9 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
     })
 
     if (sections.length === 0) {
-      bodyHTML = '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
+      bodyHTML = scheduleHeaderHTML + '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
     } else {
-      bodyHTML = sections.join('<div style="page-break-after:always"></div>')
+      bodyHTML = scheduleHeaderHTML + sections.join('<div style="page-break-after:always"></div>')
     }
   } else {
     // ── Turno simples: comportamento original (segmentos derivados das matérias) ─
@@ -616,7 +656,7 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
     )]
     const relevantSegments = store.segments.filter(s => teacherSegIds.includes(s.id))
 
-    bodyHTML = relevantSegments.length === 0
+    const gridsHTML = relevantSegments.length === 0
       ? '<p style="color:#a09d97;padding:20px 0">Nenhum horário cadastrado.</p>'
       : relevantSegments.map(seg => {
           const turno = seg.turno ?? 'manha'
@@ -624,9 +664,10 @@ export function generateTeacherScheduleHTML(teacher, store, useApelido = false) 
           return `
             <div class="section">
               <div class="sec-hdr">${seg.name} — ${turnoLabel}</div>
-              ${_scheduleGrid(seg, turno, teacherSchedules, store, false, useApelido)}
+              ${_scheduleGrid(seg, turno, teacherSchedules, store, false, useApelido, horariosSemanaParam)}
             </div>`
         }).join('')
+    bodyHTML = scheduleHeaderHTML + gridsHTML
   }
 
   return _wrap(`Grade Horária — ${teacher?.name ?? '—'}`, metaHTML, bodyHTML, 'GestãoEscolar — Grade Horária')

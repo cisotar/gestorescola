@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import { uid, colorOfTeacher, teacherSubjectNames, isSharedSeries } from '../lib/helpers'
-import { getCfg, gerarPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, defaultCfg, toMin, fromMin, calcSaldo, validarEncaixe } from '../lib/periods'
+import { getCfg, gerarPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, defaultCfg, toMin, fromMin, calcSaldo, validarEncaixe, mergeAndSortPeriodos } from '../lib/periods'
 import { COLOR_PALETTE, DAYS } from '../lib/constants'
 import Modal from '../components/ui/Modal'
 import { toast } from '../hooks/useToast'
@@ -2059,7 +2059,20 @@ export function ScheduleGridModal({ open, onClose, teacher, store, readOnly = fa
   )
 }
 
-export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap, segmentFilter = null }) {
+function CelulaFora({ day }) {
+  return (
+    <td
+      key={day}
+      className="border border-bdr"
+      style={{
+        backgroundColor: '#F4F2EE',
+        background: 'linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px))',
+      }}
+    />
+  )
+}
+
+export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap, segmentFilter = null, horariosSemana = null }) {
   const { addSchedule, removeSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
 
@@ -2080,18 +2093,15 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
       {relevantSegments.map(seg => {
         const turno = segmentFilter?.turno ?? seg.turno ?? 'manha'
         const cfg = getCfg(seg.id, turno, store.periodConfigs)
-        const aulas = gerarPeriodos(cfg).filter(p => !p.isIntervalo)
-        if (!aulas.length) return null
+        const periodos = mergeAndSortPeriodos(cfg)
+        if (!periodos.some(p => !p.isIntervalo)) return null
 
+        // Build _espIdx for especial aulas (1-based counter among non-interval especial items)
         let espCount = 0
-        const periodosEspeciais = gerarPeriodosEspeciais(cfg)
-          .filter(p => !p.isIntervalo)
-          .map(p => { espCount += 1; return { ...p, _tipo: 'especial', _espIdx: espCount } })
-
-        const periodos = [
-          ...aulas.map(p => ({ ...p, _tipo: 'regular' })),
-          ...periodosEspeciais,
-        ].sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
+        const periodosComIdx = periodos.map(p => {
+          if (p._tipo === 'especial') { espCount += 1; return { ...p, _espIdx: espCount } }
+          return p
+        })
 
         return (
           <div key={seg.id} className="mb-6">
@@ -2112,7 +2122,21 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                   </tr>
                 </thead>
                 <tbody>
-                  {periodos.map(p => {
+                  {periodosComIdx.map((p, i) => {
+                    if (p.isIntervalo) {
+                      return (
+                        <tr key={`intervalo-${i}`} className="bg-surf2 border-b border-bdr/50">
+                          <td className="px-3 py-1">
+                            <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
+                            <div className="text-xs font-semibold text-t2">{p.label}</div>
+                          </td>
+                          {DAYS.map(day => (
+                            <td key={day} className="bg-surf2" />
+                          ))}
+                        </tr>
+                      )
+                    }
+
                     if (p._tipo === 'regular') {
                       return (
                         <tr key={p.aulaIdx} className="border-b border-bdr/50">
@@ -2121,6 +2145,16 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                             <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
                           </td>
                           {DAYS.map(day => {
+                            if (horariosSemana !== null) {
+                              const horarioDia = horariosSemana[day]
+                              if (!horarioDia) return <CelulaFora key={day} />
+                              if (horarioDia.entrada && horarioDia.saida) {
+                                if (!p.inicio || !p.fim) { /* período malformado — cai no normal */ }
+                                else if (toMin(p.inicio) < toMin(horarioDia.entrada) || toMin(p.fim) > toMin(horarioDia.saida)) {
+                                  return <CelulaFora key={day} />
+                                }
+                              }
+                            }
                             const slot = `${seg.id}|${turno}|${p.aulaIdx}`
                             const mine = store.schedules.filter(s =>
                               s.teacherId === teacher.id && s.timeSlot === slot && s.day === day
@@ -2198,6 +2232,16 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                           <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
                         </td>
                         {DAYS.map(day => {
+                          if (horariosSemana !== null) {
+                            const horarioDia = horariosSemana[day]
+                            if (!horarioDia) return <CelulaFora key={day} />
+                            if (horarioDia.entrada && horarioDia.saida) {
+                              if (!p.inicio || !p.fim) { /* período malformado — cai no normal */ }
+                              else if (toMin(p.inicio) < toMin(horarioDia.entrada) || toMin(p.fim) > toMin(horarioDia.saida)) {
+                                return <CelulaFora key={day} />
+                              }
+                            }
+                          }
                           const slot = makeEspecialSlot(seg.id, turno, aulaCount)
                           const mine = store.schedules.filter(s =>
                             s.teacherId === teacher.id && s.timeSlot === slot && s.day === day

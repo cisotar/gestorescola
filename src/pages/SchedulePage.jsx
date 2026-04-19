@@ -8,10 +8,16 @@ import { parseSlot } from '../lib/periods'
 
 const TURNO_LABELS = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
 
-function GradeTurnoCard({ segmentId, turno, teacher, store }) {
+function GradeTurnoCard({ segmentId, turno, teacher, store, horariosSemana }) {
   const seg = store.segments.find(s => s.id === segmentId)
   const segName = seg?.name ?? segmentId
   const turnoLabel = TURNO_LABELS[turno] ?? turno
+
+  const semHorarios = horariosSemana !== undefined && (
+    horariosSemana === null ||
+    Object.keys(horariosSemana ?? {}).length === 0 ||
+    !Object.values(horariosSemana ?? {}).some(d => d?.entrada && d?.saida)
+  )
 
   return (
     <div className="space-y-2">
@@ -21,10 +27,16 @@ function GradeTurnoCard({ segmentId, turno, teacher, store }) {
           {turno === 'tarde' ? 'Tarde' : turno === 'noite' ? 'Noite' : 'Manhã'}
         </span>
       </div>
+      {semHorarios && (
+        <p className="text-xs text-t3 italic">
+          Horários de entrada e saída não cadastrados — grade exibida sem marcação de disponibilidade
+        </p>
+      )}
       <ScheduleGrid
         teacher={teacher}
         store={store}
         segmentFilter={{ segmentId, turno }}
+        horariosSemana={horariosSemana ?? null}
       />
     </div>
   )
@@ -107,11 +119,12 @@ export default function SchedulePage() {
               turno={turno}
               teacher={teacher}
               store={store}
+              horariosSemana={teacher.horariosSemana ?? null}
             />
           ))}
         </div>
       ) : (
-        <ScheduleGrid teacher={teacher} store={store} />
+        <ScheduleGrid teacher={teacher} store={store} horariosSemana={teacher.horariosSemana ?? null} />
       )}
     </div>
   )

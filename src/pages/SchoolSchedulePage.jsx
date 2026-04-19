@@ -1,33 +1,22 @@
 import { useState } from 'react'
 import useAppStore from '../store/useAppStore'
-import { getAulas, getCfg, gerarPeriodosEspeciais, makeEspecialSlot, toMin } from '../lib/periods'
+import { getCfg, makeEspecialSlot, mergeAndSortPeriodos } from '../lib/periods'
 import { openPDF, generateSchoolScheduleHTML } from '../lib/reports'
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
 function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = false }) {
   const turno = seg.turno ?? 'manha'
-  const aulas = getAulas(seg.id, turno, store.periodConfigs)
   const cfg = getCfg(seg.id, turno, store.periodConfigs)
-  const especiais = gerarPeriodosEspeciais(cfg)
 
-  if (aulas.length === 0) return null
+  if (!cfg) return null
 
-  // Atribuir espCount ANTES do sort para preservar os timeSlots do Firestore
-  let espCount = 0
-  const periodosEspeciais = especiais
-    .filter(p => !p.isIntervalo)
-    .map(p => {
-      espCount += 1
-      return { ...p, _tipo: 'especial', _espIdx: espCount, _slotKey: makeEspecialSlot(seg.id, turno, espCount) }
-    })
+  const periodos = mergeAndSortPeriodos(cfg)
 
-  const periodosRegulares = aulas.map(p => ({ ...p, _tipo: 'regular' }))
-
-  const periodos = [...periodosRegulares, ...periodosEspeciais]
-    .sort((a, b) => toMin(a.inicio) - toMin(b.inicio))
+  if (!periodos.some(p => !p.isIntervalo)) return null
 
   let regIdx = 0
+  let espCount = 0
 
   return (
     <div className="overflow-x-auto rounded-xl border border-bdr">
@@ -41,7 +30,23 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
           </tr>
         </thead>
         <tbody>
-          {periodos.map((p) => {
+          {periodos.map((p, pIdx) => {
+            if (p.isIntervalo) {
+              return (
+                <tr key={`intervalo-${pIdx}`} className="bg-surf2 border-b border-bdr/50">
+                  <td className="px-3 py-2 whitespace-nowrap align-top border-r border-bdr bg-surf2">
+                    <div className="text-xs font-semibold text-t2">{p.label}</div>
+                    {p.inicio && (
+                      <div className="font-mono text-[10px] text-t3">{p.inicio}–{p.fim}</div>
+                    )}
+                  </td>
+                  {DAYS.map(day => (
+                    <td key={day} className="px-2 py-2 align-top border-r border-bdr last:border-r-0 bg-surf2" />
+                  ))}
+                </tr>
+              )
+            }
+
             if (p._tipo === 'regular') {
               const aula = p
               const daySlots = DAYS.map(day => {
@@ -99,12 +104,14 @@ function SchoolGrid({ seg, schedules, store, showTeacher = true, useApelido = fa
               )
             } else {
               // _tipo === 'especial'
-              const slotKey = p._slotKey
+              espCount += 1
+              const espN = p.aulaIdx ? parseInt(p.aulaIdx.replace('e', ''), 10) : espCount
+              const slotKey = makeEspecialSlot(seg.id, turno, espN)
               const daySlots = DAYS.map(day =>
                 schedules.filter(s => s.timeSlot === slotKey && s.day === day)
               )
               return (
-                <tr key={`esp-${p._espIdx}`} className="bg-surf2 border-b border-bdr/50">
+                <tr key={`esp-${espN}`} className="bg-surf2 border-b border-bdr/50">
                   <td className="px-3 py-2 font-bold text-[#1a1814] whitespace-nowrap align-top border-r border-bdr border-l-2 border-accent bg-surf2">
                     <div>{p.label}</div>
                     {p.inicio && (
