@@ -2225,16 +2225,14 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                               <div className="space-y-1">
                                 {mine.map(s => {
                                   const isShared  = isSharedSeries(s.turma, store.sharedSeries)
-                                  const sharedAct = isShared ? getSharedSeriesActivity(s.subjectId, store.sharedSeries) : null
-                                  const subj      = isShared ? sharedAct : store.subjects.find(x => x.id === s.subjectId)
-                                  const isFixed   = sharedAct?.tipo === 'fixo'
-                                  const showBadge = Boolean(sharedAct?.tipo)
+                                  const subj      = store.subjects.find(x => x.id === s.subjectId)
+                                  const sharedSeriesInfo = isShared ? store.sharedSeries.find(ss => ss.name === s.turma) : null
                                   return (
                                     <div key={s.id} className="relative bg-white border border-bdr rounded-lg p-1.5 text-[11px] group">
                                       <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                      {isShared && showBadge && (
-                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${isFixed ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
-                                          {isFixed ? 'Fixo' : 'Variável'}
+                                      {isShared && sharedSeriesInfo && (
+                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase tracking-wide ${sharedSeriesInfo.type === 'formation' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                                          {sharedSeriesInfo.type === 'formation' ? 'Formação' : 'Eletiva'}
                                         </span>
                                       )}
                                       <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
