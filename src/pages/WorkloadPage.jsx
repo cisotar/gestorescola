@@ -23,7 +23,7 @@ export default function WorkloadPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/dashboard')} className="btn btn-ghost btn-sm">← Voltar</button>
+        <button onClick={() => navigate('/home')} className="btn btn-ghost btn-sm">← Voltar</button>
         <h1 className="text-xl font-extrabold tracking-tight">Carga Horária</h1>
       </div>
 

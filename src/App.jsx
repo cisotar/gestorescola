@@ -81,7 +81,7 @@ export default function App() {
     <>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<Navigate to={canAccessAdmin ? '/dashboard' : '/home'} replace />} />
+          <Route index element={<Navigate to="/home" replace />} />
           <Route path="/home"      element={<HomePage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/calendar"      element={<CalendarPage />} />
@@ -93,7 +93,7 @@ export default function App() {
           <Route path="/workload"  element={<WorkloadPage />} />
           <Route path="/schedule"  element={<SchedulePage />} />
           <Route path="/school-schedule" element={<SchoolSchedulePage />} />
-          <Route path="*"          element={<Navigate to={canAccessAdmin ? '/dashboard' : '/home'} replace />} />
+          <Route path="*"          element={<Navigate to="/home" replace />} />
         </Route>
       </Routes>
       <Toast />
