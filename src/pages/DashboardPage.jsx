@@ -2,20 +2,10 @@ import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { useState } from 'react'
-import { monthlyLoad, businessDaysBetween, dateToDayLabel } from '../lib/absences'
-
-// ─── Helpers locais ───────────────────────────────────────────────────────────
-
-function getTeacherStats(teacherId, today, schedules, absences) {
-  const aulasDadas = monthlyLoad(teacherId, today, schedules, absences)
-  const faltas     = (absences || [])
-    .filter(ab => ab.teacherId === teacherId)
-    .reduce((acc, ab) => acc + ab.slots.length, 0)
-  const subs       = (absences || [])
-    .flatMap(ab => ab.slots)
-    .filter(sl => sl.substituteId === teacherId).length
-  return { aulasDadas, absences: faltas, subsGiven: subs }
-}
+import { businessDaysBetween, dateToDayLabel } from '../lib/absences'
+import KPICards from '../components/ui/KPICards'
+import { AulasAtribuidasCard, WorkloadTable } from '../components/ui/WorkloadCards'
+import Spinner from '../components/ui/Spinner'
 
 // ─── Componentes ─────────────────────────────────────────────────────────────
 
@@ -59,46 +49,30 @@ function StatPill({ icon, value, label, warn = false, ok = false }) {
   )
 }
 
-function AulasAtribuidasCard({ teachers, schedules }) {
+function AdminKPICards({ teachers, schedules }) {
+  const today    = new Date().toISOString().slice(0, 10)
+  const fromDate = `${today.slice(0, 7)}-01`
   const lecturers = (teachers ?? []).filter(t => t.profile !== 'coordinator')
+  const days      = businessDaysBetween(fromDate, today)
 
-  if (!lecturers.length) return (
-    <div className="card text-center text-t3 py-10">Nenhum professor cadastrado.</div>
-  )
-
-  const rows = lecturers
-    .map(t => ({
-      t,
-      // Contagem exaustiva: inclui regulares e formation-* (spec v2)
-      count: (schedules ?? []).filter(s => s.teacherId === t.id).length,
-    }))
-    .sort((a, b) => b.count - a.count)
+  const aulasDadasTotal = lecturers.reduce((total, t) => {
+    return total + days.reduce((acc, d) => {
+      const dl = dateToDayLabel(d)
+      return acc + (dl ? (schedules ?? []).filter(s => s.teacherId === t.id && s.day === dl).length : 0)
+    }, 0)
+  }, 0)
 
   return (
-    <div className="card p-0 overflow-hidden">
-      <div className="px-4 py-3 border-b border-bdr">
-        <div className="font-bold text-sm">Aulas Atribuídas</div>
+    <div className="grid grid-cols-2 gap-4">
+      <div className="card flex flex-col gap-1">
+        <div className="text-[11px] font-bold text-t3 uppercase tracking-wide">Total de Aulas Atribuídas</div>
+        <div className="text-3xl font-extrabold text-navy leading-none">{(schedules ?? []).length}</div>
+        <div className="text-xs text-t2 mt-0.5">na grade da escola</div>
       </div>
-      <div className="overflow-y-auto max-h-[360px] scroll-thin">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="bg-surf2">
-              {['Professor', 'Aulas Atribuídas'].map(h => (
-                <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-t3 uppercase tracking-wide">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ t, count }) => (
-              <tr key={t.id} className="border-b border-bdr/50">
-                <td className="px-3 py-2.5">
-                  <div className="font-semibold text-xs">{t.name}</div>
-                </td>
-                <td className="px-3 py-2.5 text-center font-bold">{count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="card flex flex-col gap-1">
+        <div className="text-[11px] font-bold text-t3 uppercase tracking-wide">Total de Aulas Dadas no Mês</div>
+        <div className="text-3xl font-extrabold text-navy leading-none">{aulasDadasTotal}</div>
+        <div className="text-xs text-t2 mt-0.5">por todos os professores</div>
       </div>
     </div>
   )
@@ -107,14 +81,25 @@ function AulasAtribuidasCard({ teachers, schedules }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const { teachers, schedules, absences } = useAppStore()
+  const { teachers, schedules, absences, loaded } = useAppStore()
   const { user, role, teacher: myTeacher } = useAuthStore()
   const isAdmin = role === 'admin'
   const firstName = user?.displayName?.split(' ')[0] ?? 'Bem-vindo'
 
+  if (!loaded) return <div className="flex justify-center py-20"><Spinner size={32} /></div>
+
   const totalAbsences = (absences ?? []).reduce((acc, ab) => acc + ab.slots.length, 0)
   const uncovered     = (absences ?? []).reduce((acc, ab) =>
     acc + ab.slots.filter(s => !s.substituteId).length, 0)
+
+  const actionCards = [
+    { icon: '📝', label: 'Marcar Substituições',        desc: 'Registre ausências e gerencie os substitutos da semana',         to: '/calendar',             primary: true },
+    { icon: '👩‍🏫', label: 'Ver Professores',               desc: 'Lista completa de professores e suas cargas horárias',           to: '/settings?tab=teachers' },
+    { icon: '🗓️', label: 'Grade da Escola',              desc: 'Visualize e filtre os horários de toda a escola',                to: '/school-schedule' },
+    { icon: '📊', label: 'Relatórios de Faltas',         desc: 'Acesse os relatórios consolidados de ausências',                 to: '/absences' },
+    { icon: '📁', label: 'Relatórios de Substituições',  desc: 'Consulte os relatórios completos de substituições',              to: '/substitutions' },
+    { icon: '📈', label: 'Carga Horária',                desc: 'Tabela de aulas, faltas e substituições por professor',          to: '/workload' },
+  ]
 
   return (
     <div className="space-y-6">
@@ -124,9 +109,8 @@ export default function DashboardPage() {
         <p className="text-sm text-t2 mt-1">O que você quer fazer hoje?</p>
       </div>
 
-
       {/* Stats rápidas */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 w-full">
         <StatPill icon="👩‍🏫" value={teachers.length}   label="professores" />
         <StatPill icon="📚" value={schedules.length}    label="aulas/semana" />
         <StatPill icon="📋" value={totalAbsences}       label="faltas registradas" />
@@ -136,108 +120,36 @@ export default function DashboardPage() {
         }
       </div>
 
-      {/* Cards de ação */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3.5">
-        <ActionCard
-          icon="📝" label="Marcar Substituições"
-          desc="Registre ausências e gerencie os substitutos da semana"
-          to="/calendar" primary
-        />
-        <ActionCard
-          icon="👩‍🏫" label="Ver Professores"
-          desc="Lista completa de professores e suas cargas horárias"
-          to="/settings?tab=teachers"
-        />
-        <ActionCard
-          icon="🗓️" label="Grade da Escola"
-          desc="Visualize e filtre os horários de toda a escola"
-          to="/school-schedule"
-        />
-      </div>
+      {/* KPICards globais — visão geral da escola */}
+      <KPICards teachers={teachers} schedules={schedules} absences={absences} />
 
-      {/* Tabelas (admin) */}
-      {isAdmin && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          <AulasAtribuidasCard teachers={teachers} schedules={schedules} />
-          <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} />
-        </div>
-      )}
-
-      {/* Stats do professor */}
+      {/* Stats pessoais — coordinator/teacher-coordinator */}
       {!isAdmin && myTeacher && (
-        <>
-          <TeacherStats teacher={myTeacher} schedules={schedules} absences={absences} />
-          <ActionCard
-            icon="🔄" label="Minhas Substituições"
-            desc="Veja o histórico completo das substituições que você realizou"
-            to="/substitutions"
-          />
-        </>
+        <TeacherStats teacher={myTeacher} schedules={schedules} absences={absences} />
       )}
-    </div>
-  )
-}
 
-// ─── Workload table ───────────────────────────────────────────────────────────
+      {/* Grid de action cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {actionCards.map(card => (
+          <ActionCard
+            key={card.to}
+            icon={card.icon}
+            label={card.label}
+            desc={card.desc}
+            to={card.to}
+            primary={card.primary}
+          />
+        ))}
+      </div>
 
-function WorkloadTable({ teachers, schedules, absences }) {
-  const navigate  = useNavigate()
-  const lecturers = (teachers ?? []).filter(t => t.profile !== 'coordinator')
-
-  if (!lecturers.length) return (
-    <div className="card text-center text-t3 py-10">Nenhum professor cadastrado.</div>
-  )
-
-  const today = new Date().toISOString().slice(0, 10)
-
-  const rows = lecturers
-    .map(t => ({ t, ...getTeacherStats(t.id, today, schedules, absences) }))
-    .sort((a, b) => b.aulasDadas - a.aulasDadas)
-
-  return (
-    <div className="card p-0 overflow-hidden">
-      <button
-        onClick={() => navigate('/workload')}
-        className="w-full px-4 py-3 border-b border-bdr text-left hover:bg-surf2 transition-colors flex items-center justify-between"
-      >
-        <div>
-          <div className="font-bold text-sm">Aulas dadas até o presente</div>
-        </div>
-        <span className="text-t3 text-lg">›</span>
-      </button>
-      <div className="overflow-y-auto max-h-[360px] scroll-thin">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="bg-surf2">
-              {['Professor','Aulas Dadas','Faltas','Subs','Saldo'].map(h => (
-                <th key={h} className="px-3 py-2 text-left text-[10px] font-bold text-t3 uppercase tracking-wide">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ t, aulasDadas, absences: ab, subsGiven }) => {
-              const saldo = aulasDadas - ab + subsGiven
-              return (
-                <tr key={t.id} className="border-b border-bdr/50">
-                  <td className="px-3 py-2.5">
-                    <div className="font-semibold text-xs">{t.name}</div>
-                  </td>
-                  <td className="px-3 py-2.5 text-center">
-                    <div className="font-bold">{aulasDadas}</div>
-                  </td>
-                  <td className="px-3 py-2.5 text-center font-bold text-err text-xs">{ab || '—'}</td>
-                  <td className="px-3 py-2.5 text-center font-bold text-ok text-xs">{subsGiven || '—'}</td>
-                  <td className={`px-3 py-2.5 text-center font-bold text-xs ${saldo < 0 ? 'text-err' : 'text-t1'}`}>{saldo}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+      {/* Tabelas lado a lado */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AulasAtribuidasCard teachers={teachers} schedules={schedules} />
+        <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} />
       </div>
     </div>
   )
 }
-
 
 // ─── Teacher stats ────────────────────────────────────────────────────────────
 
