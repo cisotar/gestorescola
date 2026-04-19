@@ -4,7 +4,7 @@
   import useAuthStore from '../store/useAuthStore'
   import { updatePendingData } from '../lib/db'
   import { db } from '../lib/firebase'
-  import { ScheduleGrid } from './SettingsPage'
+  import { ScheduleGrid } from '../components/ui/ScheduleGrid'
   import { DAYS } from '../lib/constants'
 
   const PHONE_REGEX = /^[1-9][0-9]9[0-9]{7,8}$/

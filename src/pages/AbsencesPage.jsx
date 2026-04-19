@@ -13,7 +13,7 @@ import {
   buildWhatsAppMessage,
 } from '../lib/reports'
 import Modal from '../components/ui/Modal'
-import { ScheduleGrid } from './SettingsPage'
+import { ScheduleGrid } from '../components/ui/ScheduleGrid'
 
 const MONTH_NAMES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']

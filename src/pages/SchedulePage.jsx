@@ -2,45 +2,10 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
-import { ScheduleGrid } from './SettingsPage'
+import { ScheduleGrid } from '../components/ui/ScheduleGrid'
+import GradeTurnoCard from '../components/ui/GradeTurnoCard'
 import { openPDF, generateTeacherScheduleHTML } from '../lib/reports'
 import { parseSlot } from '../lib/periods'
-
-const TURNO_LABELS = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' }
-
-function GradeTurnoCard({ segmentId, turno, teacher, store, horariosSemana }) {
-  const seg = store.segments.find(s => s.id === segmentId)
-  const segName = seg?.name ?? segmentId
-  const turnoLabel = TURNO_LABELS[turno] ?? turno
-
-  const semHorarios = horariosSemana !== undefined && (
-    horariosSemana === null ||
-    Object.keys(horariosSemana ?? {}).length === 0 ||
-    !Object.values(horariosSemana ?? {}).some(d => d?.entrada && d?.saida)
-  )
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-bold text-t1">{segName}</span>
-        <span className="text-xs text-t2 px-2 py-0.5 rounded-full bg-surf2 border border-bdr">
-          {turno === 'tarde' ? 'Tarde' : turno === 'noite' ? 'Noite' : 'Manhã'}
-        </span>
-      </div>
-      {semHorarios && (
-        <p className="text-xs text-t3 italic">
-          Horários de entrada e saída não cadastrados — grade exibida sem marcação de disponibilidade
-        </p>
-      )}
-      <ScheduleGrid
-        teacher={teacher}
-        store={store}
-        segmentFilter={{ segmentId, turno }}
-        horariosSemana={horariosSemana ?? null}
-      />
-    </div>
-  )
-}
 
 export default function SchedulePage() {
   const navigate = useNavigate()
