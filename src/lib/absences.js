@@ -13,16 +13,17 @@ export function monthlyLoad(teacherId, referenceDate, schedules, absences, share
     isSharedSeries(turma ?? '', sharedSeries) ||
     !!getSharedSeriesActivity(subjectId, sharedSeries)
 
+  // FORMAÇÃO e ELETIVA contam como aulas dadas (scheduled)
   const scheduledLoad = days.reduce((acc, d) => {
     const dayLabel = dateToDayLabel(d)
     if (!dayLabel) return acc
     return acc + schedules.filter(s =>
       s.teacherId === teacherId &&
-      s.day === dayLabel &&
-      !isFormacao(s.turma, s.subjectId)
+      s.day === dayLabel
     ).length
   }, 0)
 
+  // Ausências: FORMAÇÃO não deduz (sem cobertura obrigatória), ELETIVA deduz
   const absenceLoad = (absences || []).reduce((acc, ab) => {
     if (ab.teacherId !== teacherId) return acc
     return acc + ab.slots.filter(sl =>
