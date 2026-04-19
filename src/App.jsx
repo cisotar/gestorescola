@@ -6,6 +6,7 @@ import { loadFromFirestore, setupRealtimeListeners } from './lib/db'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
 import PendingPage from './pages/PendingPage'
+import LandingPage from './pages/LandingPage'
 import DashboardPage from './pages/DashboardPage'
 import HomePage from './pages/HomePage'
 import CalendarPage from './pages/CalendarPage'
@@ -63,7 +64,11 @@ export default function App() {
   // Não logado → tela de login
   if (!role) return (
     <>
-      <LoginPage />
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="*" element={<LandingPage />} />
+      </Routes>
       <Toast />
     </>
   )
