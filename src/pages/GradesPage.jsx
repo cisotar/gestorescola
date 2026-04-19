@@ -235,7 +235,7 @@ export default function GradesPage() {
                 {(() => {
                   const canEdit = canEditTeacher(myTeacher, selectedTeacher, useAuthStore.getState())
                   return (
-                    <div className={`space-y-6 ${segmentTurnoList.length > 1 ? 'grid md:grid-cols-1 lg:grid-cols-2 gap-6' : ''}`}>
+                    <div className="space-y-6">
                       {segmentTurnoList.map(({ segmentId, turno }) => (
                         <GradeTurnoCard
                           key={`${segmentId}|${turno}`}
