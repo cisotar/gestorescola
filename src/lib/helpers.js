@@ -111,6 +111,83 @@ export function getSharedSeriesActivity(subjectId, sharedSeries = []) {
   return null
 }
 
+/**
+ * Detecta se um slot é de aula de formação (type === "formation").
+ *
+ * Verifica dois caminhos:
+ * 1. Turma é uma turma compartilhada de tipo "formation"
+ * 2. SubjectId é uma atividade dentro de turma compartilhada de tipo "formation"
+ *
+ * @param {string|null} turma - Nome da turma (ex: "FORMAÇÃO", "6º Ano A", null)
+ * @param {string|null} subjectId - ID da matéria/atividade (ex: "subj-bio", "act-id", null)
+ * @param {Array<{id: string, name: string, type: 'formation'|'elective', activities?: Array<{id: string, name: string}>}>} [sharedSeries=[]]
+ *   - Lista de turmas compartilhadas com metadados de tipo
+ * @returns {boolean} true se slot pertence a turma de formação, false caso contrário
+ *
+ * @example
+ * // Turma de formação — retorna true
+ * isFormationSlot("FORMAÇÃO", null, [{id: '1', name: 'FORMAÇÃO', type: 'formation'}])
+ * // → true
+ *
+ * @example
+ * // Activity que é de formação — retorna true
+ * isFormationSlot("ATPCG", "act-1", [
+ *   {id: '1', name: 'FORMAÇÃO', type: 'formation', activities: [{id: 'act-1', name: 'ATPCG'}]}
+ * ])
+ * // → true
+ *
+ * @example
+ * // Turma de eletiva — retorna false
+ * isFormationSlot("Eletiva 2024", null, [{id: '2', name: 'Eletiva 2024', type: 'elective'}])
+ * // → false
+ *
+ * @example
+ * // Turma regular (não compartilhada) — retorna false
+ * isFormationSlot("6º Ano A", "subj-bio", [{id: '1', name: 'FORMAÇÃO', type: 'formation'}])
+ * // → false
+ *
+ * @example
+ * // Ambos nulos — retorna false
+ * isFormationSlot(null, null, [{id: '1', name: 'FORMAÇÃO', type: 'formation'}])
+ * // → false
+ *
+ * @example
+ * // sharedSeries vazio — retorna false
+ * isFormationSlot("FORMAÇÃO", null, [])
+ * // → false
+ *
+ * @example
+ * // Activity em turma de eletiva (não-formação) — retorna false
+ * isFormationSlot(null, "act-2", [{id: '2', name: 'Eletiva 2024', type: 'elective', activities: [{id: 'act-2', name: 'Prática'}]}])
+ * // → false
+ *
+ * @example
+ * // sharedSeries undefined (default) — retorna false
+ * isFormationSlot("FORMAÇÃO", null)
+ * // → false
+ */
+export function isFormationSlot(turma, subjectId, sharedSeries = []) {
+  // Verificar se turma é uma turma compartilhada de tipo "formation"
+  if (turma) {
+    const sharedTurma = sharedSeries.find(ss => ss.name === turma)
+    if (sharedTurma && sharedTurma.type === 'formation') {
+      return true
+    }
+  }
+
+  // Verificar se subjectId é uma atividade de uma turma compartilhada de tipo "formation"
+  if (subjectId) {
+    for (const ss of sharedSeries) {
+      if (ss.type === 'formation') {
+        const activity = (ss.activities ?? []).find(a => a.id === subjectId)
+        if (activity) return true
+      }
+    }
+  }
+
+  return false
+}
+
 export function teacherSubjectNames(teacher, subjects) {
   return (teacher?.subjectIds ?? [])
     .map(sid => subjects.find(s => s.id === sid)?.name)
