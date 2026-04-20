@@ -165,28 +165,7 @@ export function generateTeacherHTML(teacherId, filter, store) {
       <span class="m-val ${covered === nonFormationSlots.length ? 'ok' : 'err'}">${covered}/${nonFormationSlots.length}</span>
     </div>`
 
-  // Grade horária do professor (segmentos onde tem horários cadastrados)
-  const teacherSchedules = (store.schedules ?? []).filter(s => s.teacherId === teacherId)
-  const schedSegIds = [...new Set(teacherSchedules.map(s => s.timeSlot?.split('|')[0]).filter(Boolean))]
-  const schedSegments = store.segments.filter(s => schedSegIds.includes(s.id))
-
-  const scheduleGridHTML = schedSegments.length === 0 ? '' :
-    `<div class="section">
-      <div class="sec-hdr">Grade Horária</div>
-      ${schedSegments.map(seg => {
-        const turno = seg.turno ?? 'manha'
-        const turnoLabel = turno === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
-        return `
-          <div style="margin-bottom:16px">
-            <div style="font-size:11px;font-weight:700;color:#6b6860;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">
-              ${seg.name} — ${turnoLabel}
-            </div>
-            ${_scheduleGrid(seg, turno, teacherSchedules, store, false)}
-          </div>`
-      }).join('')}
-    </div>`
-
-  const absencesHTML = Object.keys(byDate).map(date => `
+  const bodyHTML = Object.keys(byDate).map(date => `
     <div class="section">
       <div class="sec-hdr">${dateToDayLabel(date) ?? ''} — ${formatBR(date)}</div>
       <table>
@@ -194,8 +173,6 @@ export function generateTeacherHTML(teacherId, filter, store) {
         <tbody>${byDate[date].map(sl => _slotRow(sl, store)).join('')}</tbody>
       </table>
     </div>`).join('')
-
-  const bodyHTML = scheduleGridHTML + absencesHTML
 
   return _wrap(`Ausências — ${teacher?.name ?? '—'} — ${_filterLabel(filter)}`, metaHTML, bodyHTML)
 }
