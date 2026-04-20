@@ -1,0 +1,187 @@
+{
+  "timestamp": "2026-04-20T01:24:52.801Z",
+  "date": "19/04/2026",
+  "buildDate": "2026-04-20",
+  "nodeVersion": "v24.14.1",
+  "npmVersion": "11.11.0",
+  "targets": {
+    "uncompressed": {
+      "current": "874.41 KB",
+      "target": "< 500 KB"
+    },
+    "gzipped": {
+      "current": "~179.71 KB",
+      "target": "< 140 KB"
+    }
+  },
+  "dist": {
+    "totalSize": {
+      "bytes": 928382,
+      "formatted": "906.62 KB",
+      "kb": "906.62"
+    },
+    "jsChunksTotal": {
+      "bytes": 895400,
+      "formatted": "874.41 KB",
+      "kb": "874.41"
+    },
+    "chunkCount": 17,
+    "jsChunkCount": 16,
+    "chunks": {
+      "AbsencesPage-vgxKU6uC.js": {
+        "bytes": 21246,
+        "formatted": "20.75 KB",
+        "kb": "20.75"
+      },
+      "CalendarDayPage-COYyy3VN.js": {
+        "bytes": 12552,
+        "formatted": "12.26 KB",
+        "kb": "12.26"
+      },
+      "CalendarPage-CZJPMeb6.js": {
+        "bytes": 18338,
+        "formatted": "17.91 KB",
+        "kb": "17.91"
+      },
+      "DashboardPage-CxYetApW.js": {
+        "bytes": 5518,
+        "formatted": "5.39 KB",
+        "kb": "5.39"
+      },
+      "GradesPage-DDT5qJck.js": {
+        "bytes": 10769,
+        "formatted": "10.52 KB",
+        "kb": "10.52"
+      },
+      "HomePage-c4ESsEYk.js": {
+        "bytes": 4483,
+        "formatted": "4.38 KB",
+        "kb": "4.38"
+      },
+      "RankingPage-Ys5CSGLZ.js": {
+        "bytes": 4435,
+        "formatted": "4.33 KB",
+        "kb": "4.33"
+      },
+      "ScheduleRedirect-HTlnMQ20.js": {
+        "bytes": 226,
+        "formatted": "226.00 B",
+        "kb": "0.22"
+      },
+      "SchoolScheduleRedirect-BlkSmaek.js": {
+        "bytes": 222,
+        "formatted": "222.00 B",
+        "kb": "0.22"
+      },
+      "SettingsPage-DG1vWG1h.js": {
+        "bytes": 67528,
+        "formatted": "65.95 KB",
+        "kb": "65.95"
+      },
+      "SubstitutionsPage-ATPFZ3c5.js": {
+        "bytes": 32844,
+        "formatted": "32.07 KB",
+        "kb": "32.07"
+      },
+      "ToggleRuleButtons-Uc-B8UcM.js": {
+        "bytes": 542,
+        "formatted": "542.00 B",
+        "kb": "0.53"
+      },
+      "WorkloadCards-Burq-ai_.js": {
+        "bytes": 4540,
+        "formatted": "4.43 KB",
+        "kb": "4.43"
+      },
+      "WorkloadPage-B7gBLIs3.js": {
+        "bytes": 2039,
+        "formatted": "1.99 KB",
+        "kb": "1.99"
+      },
+      "index-DObKovlT.js": {
+        "bytes": 680376,
+        "formatted": "664.43 KB",
+        "kb": "664.43"
+      },
+      "index-Dtyqmb7N.css": {
+        "bytes": 32982,
+        "formatted": "32.21 KB",
+        "kb": "32.21"
+      },
+      "reports-BkjVEGVs.js": {
+        "bytes": 29742,
+        "formatted": "29.04 KB",
+        "kb": "29.04"
+      }
+    }
+  },
+  "srcLib": {
+    "totalSize": {
+      "bytes": 119477,
+      "formatted": "116.68 KB",
+      "kb": "116.68"
+    },
+    "fileCount": 8,
+    "files": {
+      "absences.js": {
+        "bytes": 13851,
+        "formatted": "13.53 KB",
+        "kb": "13.53"
+      },
+      "constants.js": {
+        "bytes": 968,
+        "formatted": "968.00 B",
+        "kb": "0.95"
+      },
+      "db.js": {
+        "bytes": 19105,
+        "formatted": "18.66 KB",
+        "kb": "18.66"
+      },
+      "firebase.js": {
+        "bytes": 705,
+        "formatted": "705.00 B",
+        "kb": "0.69"
+      },
+      "helpers.js": {
+        "bytes": 9988,
+        "formatted": "9.75 KB",
+        "kb": "9.75"
+      },
+      "periods.js": {
+        "bytes": 14614,
+        "formatted": "14.27 KB",
+        "kb": "14.27"
+      },
+      "reports.js": {
+        "bytes": 52597,
+        "formatted": "51.36 KB",
+        "kb": "51.36"
+      },
+      "settingsHelpers.js": {
+        "bytes": 7649,
+        "formatted": "7.47 KB",
+        "kb": "7.47"
+      }
+    }
+  },
+  "largeChunks": {
+    "warning": "Some chunks are larger than 500 kB after minification",
+    "chunks": [
+      {
+        "name": "index-DObKovlT.js",
+        "size": "664.43 KB",
+        "bytes": 680376,
+        "kb": "664.43"
+      }
+    ]
+  },
+  "metrics": {
+    "totalBuildSize": "906.62 KB",
+    "mainBundleSize": "664.43 KB",
+    "mainBundleGzipSize": "179.71 KB",
+    "cssSize": "32.21 KB",
+    "avgChunkSize": "53.33 KB",
+    "htmlSize": "1.02 KB"
+  }
+}

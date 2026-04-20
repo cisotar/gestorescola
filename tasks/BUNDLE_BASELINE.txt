@@ -1,0 +1,120 @@
+===============================================
+BUNDLE SIZE BASELINE SNAPSHOT
+Generated: 2026-04-20T01:24:35.283Z (2026-04-20)
+Node Version: v24.14.1
+NPM Version: 11.11.0
+===============================================
+
+TARGET GOALS:
+- Uncompressed: 680 KB → < 500 KB
+- Gzipped: 179 KB → < 140 KB
+
+CURRENT STATUS:
+- Main Bundle (uncompressed): 664.43 KB ✗ EXCEEDS 500 KB TARGET
+- Main Bundle (gzipped): ~179.71 KB ✗ EXCEEDS 140 KB TARGET
+- Total Build Size: 906.62 KB
+
+===============================================
+CHUNK SIZE BREAKDOWN (Uncompressed)
+===============================================
+
+LARGE CHUNKS (> 500 KB warning):
+  • index-DObKovlT.js                   664.43 KB [MAIN BUNDLE - BLOCKER]
+
+MEDIUM CHUNKS (50-200 KB):
+  • SettingsPage-DG1vWG1h.js             65.95 KB
+  • SubstitutionsPage-ATPFZ3c5.js        32.07 KB
+
+SMALL CHUNKS (< 50 KB):
+  • reports-BkjVEGVs.js                  29.04 KB
+  • AbsencesPage-vgxKU6uC.js             20.75 KB
+  • CalendarPage-CZJPMeb6.js             17.91 KB
+  • CalendarDayPage-COYyy3VN.js          12.26 KB
+  • GradesPage-DDT5qJck.js               10.52 KB
+  • index-Dtyqmb7N.css                   32.21 KB
+  • HomePage-c4ESsEYk.js                  4.38 KB
+  • RankingPage-Ys5CSGLZ.js               4.33 KB
+  • WorkloadCards-Burq-ai_.js             4.43 KB
+  • DashboardPage-CxYetApW.js             5.39 KB
+  • WorkloadPage-B7gBLIs3.js              1.99 KB
+  • ToggleRuleButtons-Uc-B8UcM.js         0.53 KB
+  • ScheduleRedirect-HTlnMQ20.js          0.22 KB
+  • SchoolScheduleRedirect-BlkSmaek.js    0.22 KB
+
+TOTAL JS CHUNKS: 874.41 KB (16 files)
+TOTAL DIST SIZE: 906.62 KB (17 assets + HTML)
+
+===============================================
+SRC/LIB SOURCE FILES (Source Code)
+===============================================
+
+Total Size: 116.68 KB (8 files)
+
+Breakdown:
+  • reports.js                           51.36 KB [LARGEST SOURCE FILE]
+  • db.js                                18.66 KB
+  • periods.js                           14.27 KB
+  • absences.js                          13.53 KB
+  • helpers.js                            9.75 KB
+  • settingsHelpers.js                    7.47 KB
+  • constants.js                          0.95 KB
+  • firebase.js                           0.69 KB
+
+===============================================
+BUILD METRICS
+===============================================
+
+Total Build Size: 906.62 KB
+Average Chunk Size: 53.33 KB
+Total Chunks: 17
+JavaScript Chunks: 16
+CSS Files: 1
+HTML Size: 1.02 KB
+
+===============================================
+VITE BUILD WARNINGS
+===============================================
+
+⚠ Dynamic import conflict detected:
+  - src/lib/helpers.js dynamically imported by src/lib/db.js
+  - Statically imported by 11 other components
+  - Result: Dynamic import will not move module into another chunk
+
+⚠ Main Bundle Oversized:
+  - index-DObKovlT.js exceeds 500 KB warning limit (664.43 KB)
+  - Consider code splitting or manualChunks configuration
+
+===============================================
+OPTIMIZATION OPPORTUNITIES
+===============================================
+
+1. MAIN BUNDLE SPLITTING (Issue #285):
+   - Break src/lib/ into focused modules
+   - Extract helpers.js to separate chunk
+   - Split reports.js functionality
+
+2. LAZY LOADING:
+   - Implement dynamic imports for heavy pages
+   - Code-split reports functionality
+   - Deferred loading for settings UI
+
+3. TREE-SHAKING:
+   - Audit unused Firebase APIs
+   - Review React component dependencies
+   - Remove dead code
+
+4. DEPENDENCIES:
+   - Review Firebase bundle size (often largest)
+   - Audit Zustand usage
+   - Check react-router-dom tree-shaking
+
+===============================================
+NEXT STEPS
+===============================================
+
+→ Issue #285: Break src/lib/ into modular chunks
+→ Implement dynamic imports per page
+→ Monitor gzip sizes (currently ~179.71 KB)
+→ Target: Main bundle < 500 KB uncompressed
+
+===============================================
