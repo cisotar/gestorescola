@@ -1277,7 +1277,7 @@ Mobile-first com breakpoints padrão Tailwind:
 |---|---|---|
 | Listeners lazy para `absences` e `history` | Primeira abertura de AbsencesPage tem latência visível | ⚠️ Intencional — trade-off de não carregar tudo no boot |
 | Regras Firestore para `pending_actions` incompletas | Coordenadores podem criar docs mas regras de execução das actions precisam revisão | ⚠️ Revisão periódica necessária |
-| Main bundle ainda grande (~676 KB / 178 KB gzip) | Firebase SDK + Zustand stores carregados no boot; pages lazy-loaded mas core não | 🟡 Mitigado — pages lazy; reports/settings lazy; próximo passo: `manualChunks` para Firebase |
+| Main bundle (~227 KB / 72 KB gzip pós-manualChunks) | Firebase isolado em chunk paralelo (433 KB / 102 KB gzip); pages lazy-loaded | ✅ Resolvido — main < 500 KB; firebase baixa em paralelo sem bloquear first-paint |
 | Admins hardcoded em `db.js` (`HARDCODED_ADMINS`) | Adicionar admin requer alteração de código + deploy | 🔴 Aberto — migrar para coleção `admins/` exclusivamente |
 | Sem testes automatizados | Regressões difíceis de detectar sem suite de testes | 🔴 Aberto |
 | `window.innerWidth` para detecção de mobile | Não reativo a resize da janela | 🟡 Baixo impacto — uso é pontual em `CalendarPage` |
@@ -1374,11 +1374,21 @@ const cls = `bg-${color}-100`
 const cls = color === 'red' ? 'bg-red-100' : 'bg-blue-100'
 ```
 
-### Bundle size — números de referência (build 2026-04-19)
+### Bundle size — números de referência (build 2026-04-19, pós-manualChunks Firebase)
+
+#### Baseline pré-manualChunks (histórico)
+
+| Chunk | Tamanho (raw) | Gzip | Observação |
+|---|---|---|---|
+| `index` (main) | 676 KB | 178 KB | Firebase embutido |
+| demais páginas e CSS | — | — | Inalterados |
+
+#### Resultado pós-manualChunks (medido em 2026-04-19)
 
 | Chunk | Tamanho (raw) | Gzip | Quando carregado |
 |---|---|---|---|
-| `index` (main) | 676 KB | 178 KB | Sempre (boot) |
+| `index` (main) | 227 KB | 72 KB | Sempre (boot) |
+| `firebase` | 433 KB | 102 KB | Sempre (boot, paralelo ao main) |
 | `SettingsPage` | 67 KB | 17 KB | Ao navegar para /settings |
 | `SubstitutionsPage` | 34 KB | 9 KB | Ao navegar para /substitutions |
 | `reports` | 30 KB | 7 KB | Ao clicar "Exportar PDF" |
@@ -1387,25 +1397,32 @@ const cls = color === 'red' ? 'bg-red-100' : 'bg-blue-100'
 | demais páginas | 2–13 KB | 1–5 KB | Sob demanda |
 | `index.css` | 33 KB | 6 KB | Sempre (boot) |
 
-**Gzip total na inicialização (first load):** ~184 KB (main + CSS)
+**Delta do main bundle:** 676 KB → 227 KB (-449 KB raw, -106 KB gzip)
 
-### Próximo passo recomendado
+**Soma main + firebase:** 660 KB raw / 174 KB gzip (dentro da margem de integridade ±7% do baseline de 676 KB)
 
-Para reduzir o main bundle abaixo de 500 KB, o próximo passo seria configurar
-`manualChunks` no `vite.config.js` para isolar o Firebase SDK num chunk dedicado:
+**Gzip total na inicialização (first load):** ~80 KB (main + CSS); firebase é baixado em paralelo, não bloqueia first-paint
+
+**Configuração aplicada em `vite.config.js`:**
 
 ```javascript
-// vite.config.js
 build: {
   rollupOptions: {
     output: {
       manualChunks: {
-        'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-        'vendor':   ['react', 'react-dom', 'react-router-dom', 'zustand'],
+        firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
       }
     }
   }
 }
 ```
 
-Impacto estimado: -150 a -200 KB no main bundle (Firebase SDK representa ~200 KB do total).
+### Próximo passo recomendado
+
+O main bundle está abaixo de 500 KB (227 KB raw). O chunk `firebase` (433 KB raw)
+é baixado em paralelo ao boot — o browser inicia ambos os downloads simultaneamente,
+portanto o gargalo de first-paint é o menor dos dois (main = 72 KB gzip).
+
+Próximas otimizações opcionais:
+- Verificar carregamento no browser (DevTools Network) para confirmar paralelismo (issue 297)
+- Considerar `manualChunks` adicional para `vendor` (react + react-dom + react-router-dom + zustand) caso o main bundle precise ser reduzido ainda mais
