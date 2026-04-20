@@ -1,6 +1,6 @@
 # Arquitetura — GestãoEscolar
 
-**Versão:** 2.3.0 | **Atualizado:** 2026-04-14 | **Firebase Project:** `gestordesubstituicoes`
+**Versão:** 2.4.0 | **Atualizado:** 2026-04-19 | **Firebase Project:** `gestordesubstituicoes`
 
 > **Público-alvo:** Este documento é o guia técnico de onboarding para novos desenvolvedores. Ele explica **como o sistema funciona sob o capô**, não apenas o que existe. Leia do início ao fim antes de abrir o primeiro PR.
 
@@ -22,6 +22,7 @@
 12. [Padrões de UI e Componentização](#12-padrões-de-ui-e-componentização)
 13. [Convenções de Código](#13-convenções-de-código)
 14. [Débitos Técnicos e Limitações Conhecidas](#14-débitos-técnicos-e-limitações-conhecidas)
+15. [Otimizações de Bundle e Performance](#15-otimizações-de-bundle-e-performance)
 
 ---
 
@@ -51,8 +52,9 @@ GestãoEscolar é uma **SPA (Single-Page Application) reativa** construída sobr
 │         ▼                        │              │                      │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
 │  │                        src/lib/                                 │   │
-│  │  db.js (I/O + cache)  │  absences.js  │  reports.js            │   │
-│  │  helpers.js           │  periods.js   │  constants.js          │   │
+│  │  db/ (I/O + cache)    │  absences/    │  reports/ (lazy)       │   │
+│  │  helpers/             │  periods/     │  settings/ (lazy)      │   │
+│  │  firebase/            │  constants.js │  index.js (re-exports) │   │
 │  └───────────────────────┴───────────────┴────────────────────────┘   │
 │              │                                                         │
 │              │ onSnapshot / get / set / delete                         │
@@ -172,13 +174,41 @@ src/
 │   └── useAuthStore.js  #   Sessão: usuário, role, listeners de auth
 │
 ├── lib/                 # ► Lógica pura — sem React, sem estado, sem side-effects de UI
-│   ├── firebase.js      #   Inicialização do SDK Firebase (exporta db, auth, provider)
-│   ├── db.js            #   Toda I/O com Firestore + LocalStorage
-│   ├── helpers.js       #   Utilidades gerais (datas, IDs, cores, turmas)
+│   ├── index.js         #   Re-exports seletivos de todos os módulos (ponto de entrada único)
 │   ├── constants.js     #   DAYS[], COLOR_PALETTE[] — valores imutáveis
-│   ├── periods.js       #   Lógica de geração e serialização de períodos/slots
-│   ├── absences.js      #   Lógica de ausências: criação, ranking, queries
-│   └── reports.js       #   Geração de HTML para impressão (PDF via window.print)
+│   │
+│   ├── firebase/        #   SDK Firebase — inicialização isolada
+│   │   └── index.js     #     exporta: app, db, auth, provider
+│   │
+│   ├── db/              #   Toda I/O com Firestore + LocalStorage
+│   │   ├── index.js     #     loadFromFirestore, saveToFirestore, saveDoc, …
+│   │   ├── config.js    #     saveConfig — setDoc atômico para meta/config
+│   │   ├── cache.js     #     _saveToLS / _loadFromLS (gestao_v7_cache)
+│   │   └── listeners.js #     setupRealtimeListeners, registerAbsencesListener, …
+│   │
+│   ├── helpers/         #   Utilitários granulares por categoria
+│   │   ├── index.js     #     re-export agregado
+│   │   ├── dates.js     #     formatISO, formatBR, parseDate, weekStart, …
+│   │   ├── ids.js       #     uid() — gerador de IDs únicos
+│   │   ├── colors.js    #     colorOfTeacher, COLOR_PALETTE, COLOR_NEUTRAL
+│   │   ├── turmas.js    #     allTurmaObjects, isFormationSlot, …
+│   │   └── permissions.js #   canEditTeacher
+│   │
+│   ├── periods/         #   Geração e serialização de períodos/slots
+│   │   └── index.js     #     gerarPeriodos, resolveSlot, makeSlot, parseSlot, …
+│   │
+│   ├── absences/        #   Lógica de ausências: criação, ranking, queries
+│   │   ├── index.js     #     re-export agregado
+│   │   ├── validation.js #    isBusy, isAvailableBySchedule, weeklyLimitStatus
+│   │   ├── ranking.js   #     rankCandidates, suggestSubstitutes, monthlyLoad
+│   │   └── mutations.js #     createAbsence, assignSubstitute, deleteAbsenceSlot, …
+│   │
+│   ├── reports/         #   Geração de HTML para impressão (PDF via window.print)
+│   │   └── index.js     #     generateDayHTML, generateByDayHTML, openPDF, …
+│   │
+│   └── settings/        #   Helpers de configuração e UI de settings
+│       ├── index.js     #     re-export agregado
+│       └── helpers.js   #     PROFILE_OPTIONS, teacherSegmentIds, timeAgo, …
 │
 └── hooks/               # ► Custom hooks React
     └── useToast.js      #   Store do toast + helper global toast()
@@ -995,7 +1025,39 @@ const tab = new URLSearchParams(useLocation().search).get('tab') ?? 'profile'
 
 ## 11. Lógica de Negócio (`src/lib/`)
 
-### `periods.js` — Geração e Serialização de Períodos
+### Estrutura Modular
+
+`src/lib/` é organizado em subpastas temáticas. Cada subpasta tem um `index.js` que
+re-exporta seletivamente seus membros públicos. O arquivo `src/lib/index.js` agrega
+todos os módulos como ponto de entrada único — facilitando imports em partes do código
+que precisam de múltiplos domínios.
+
+**Padrão de importação granular vs monolítico:**
+
+```javascript
+// Evitar — importa todo o namespace do módulo
+import { formatISO, uid } from '../lib'
+
+// Preferir — import granular, favorece tree-shaking
+import { formatISO } from '../lib/helpers/dates'
+import { uid } from '../lib/helpers/ids'
+
+// Aceitável — quando precisa de múltiplas funções de domínios distintos
+import { uid, formatISO, colorOfTeacher } from '../lib/helpers'
+```
+
+**Quando usar cada forma:**
+
+| Situação | Import recomendado |
+|---|---|
+| 1 função de 1 sub-módulo específico | `from '../lib/helpers/dates'` |
+| 2–3 funções do mesmo domínio | `from '../lib/helpers'` |
+| Funções de vários domínios | `from '../lib'` (agregador) |
+| Reports em handlers de export | `await import('../lib/reports')` (dynamic) |
+
+---
+
+### `periods/` — Geração e Serialização de Períodos
 
 O sistema **não armazena horários fixos**. Em vez disso, deriva os horários em tempo de execução a partir da configuração em `periodConfigs`.
 
@@ -1032,25 +1094,29 @@ gerarPeriodosEspeciais(cfg)
 
 ---
 
-### `helpers.js` — Utilitários Gerais
+### `helpers/` — Utilitários Gerais (organizado por categoria)
 
-| Função | Descrição |
-|---|---|
-| `uid()` | `Date.now().toString(36) + random(5 chars)` — **sempre usar, nunca usar index de array** |
-| `colorOfTeacher(teacher, store)` | Cor baseada na 1ª matéria do professor via `COLOR_PALETTE[area.colorIdx]` |
-| `allTurmaObjects(segments)` | Flatten de `segments → grades → classes` em lista plana com metadata de contexto |
-| `formatISO(d)` | `Date → "YYYY-MM-DD"` |
-| `formatBR(s)` | `"YYYY-MM-DD" → "DD/MM/YYYY"` |
-| `parseDate(s)` | `"YYYY-MM-DD" → Date` (sem UTC shift — usa construtor local para evitar off-by-one) |
-| `dateToDayLabel(s)` | `"2026-04-14" → "Segunda"` (retorna `null` para fins de semana) |
-| `weekStart(s)` | Retorna a segunda-feira da semana da data informada |
-| `businessDaysBetween(from, to)` | Array de datas ISO de dias úteis (Seg–Sex) entre dois intervalos |
+| Sub-módulo | Função | Descrição |
+|---|---|---|
+| `helpers/ids` | `uid()` | `Date.now().toString(36) + random(5 chars)` — **sempre usar, nunca usar index de array** |
+| `helpers/colors` | `colorOfTeacher(teacher, store)` | Cor baseada na 1ª matéria do professor via `COLOR_PALETTE[area.colorIdx]` |
+| `helpers/turmas` | `allTurmaObjects(segments)` | Flatten de `segments → grades → classes` em lista plana com metadata de contexto |
+| `helpers/dates` | `formatISO(d)` | `Date → "YYYY-MM-DD"` |
+| `helpers/dates` | `formatBR(s)` | `"YYYY-MM-DD" → "DD/MM/YYYY"` |
+| `helpers/dates` | `parseDate(s)` | `"YYYY-MM-DD" → Date` (sem UTC shift — usa construtor local para evitar off-by-one) |
+| `helpers/dates` | `dateToDayLabel(s)` | `"2026-04-14" → "Segunda"` (retorna `null` para fins de semana) |
+| `helpers/dates` | `weekStart(s)` | Retorna a segunda-feira da semana da data informada |
+| `helpers/dates` | `businessDaysBetween(from, to)` | Array de datas ISO de dias úteis (Seg–Sex) entre dois intervalos |
+| `helpers/turmas` | `isFormationSlot(timeSlot, store)` | Retorna `true` se slot pertence a turma de formação (sem substituto) |
+| `helpers/permissions` | `canEditTeacher(viewer, target)` | Verifica se o usuário viewer pode editar o perfil de target |
 
 ---
 
-### `absences.js` — Lógica de Ausências
+### `absences/` — Lógica de Ausências (organizado por responsabilidade)
 
 Todas as funções são **puras** (recebem dados, retornam dados, sem side-effects). O `useAppStore` importa e usa os resultados para atualizar o estado.
+
+**`absences/mutations`** — operações de estado:
 
 | Função | Descrição |
 |---|---|
@@ -1058,24 +1124,54 @@ Todas as funções são **puras** (recebem dados, retornam dados, sem side-effec
 | `assignSubstitute(absenceId, slotId, subId, absences)` | Atualiza `substituteId` e recalcula `status` |
 | `deleteAbsenceSlot(absenceId, slotId, absences)` | Remove slot; deleta ausência inteira se ficar vazia |
 | `deleteAbsence(id, absences)` | Remove ausência inteira |
-| `rankCandidates(...)` | Ver seção 8.3 — retorna lista ordenada de candidatos |
-| `suggestSubstitutes(slot, ruleType, store)` | Top 3 sugestões rápidas para pills |
-| `isBusy(teacherId, date, timeSlot, ...)` | Detecta conflito de horário (aula ou substituição existente) |
-| `monthlyLoad(teacherId, referenceDate, ...)` | Carga total do mês: aulas regulares + substituições |
 | `absencesOf(teacherId, absences)` | Ausências de um professor, ordenadas por data desc |
 | `absenceSlotsInWeek(weekStart, absences)` | Todos os slots de ausência numa semana específica |
 
+**`absences/validation`** — verificações de disponibilidade:
+
+| Função | Descrição |
+|---|---|
+| `isBusy(teacherId, date, timeSlot, ...)` | Detecta conflito de horário (aula ou substituição existente) |
+| `isAvailableBySchedule(teacher, day, timeSlot)` | Verifica horariosSemana do professor |
+| `weeklyLimitStatus(teacherId, weekStart, store)` | Retorna status de limite semanal de substituições |
+
+**`absences/ranking`** — seleção de substitutos:
+
+| Função | Descrição |
+|---|---|
+| `rankCandidates(...)` | Ver seção 8.3 — retorna lista ordenada de candidatos |
+| `suggestSubstitutes(slot, ruleType, store)` | Top 3 sugestões rápidas para pills |
+| `monthlyLoad(teacherId, referenceDate, ...)` | Carga total do mês: aulas regulares + substituições |
+
 ---
 
-### `reports.js` — Geração de PDFs
+### `reports/` — Geração de PDFs
 
-Ver seção 8.2. Nunca importar `openPDF` direto em componentes sem chamar primeiro um `generateXxxHTML` — a função `openPDF` espera HTML completo com doctype.
+Ver seção 8.2. **Este módulo é carregado via dynamic import** — nunca importar estaticamente em componentes de página (o chunk reports só deve ser baixado quando o usuário clica em "Exportar").
+
+```javascript
+// Em AbsencesPage, SchedulePage, SubstitutionsPage
+const handleExport = async () => {
+  const { openPDF, generateByDayHTML } = await import('../lib/reports')
+  const html = generateByDayHTML(month, year, store)
+  openPDF(html)
+}
+```
+
+Nunca importar `openPDF` direto em componentes sem chamar primeiro um `generateXxxHTML` — a função `openPDF` espera HTML completo com doctype.
 
 ---
 
-### `db.js` — Toda I/O com Firebase
+### `db/` — Toda I/O com Firebase
 
-Ver seções 4 (modelo de dados) e 8.1 (cache). Funções exportadas por categoria:
+Ver seções 4 (modelo de dados) e 8.1 (cache). Organizado internamente em 4 arquivos:
+
+- `db/config.js` — `saveConfig()`: setDoc atômico para `meta/config`
+- `db/cache.js` — `_saveToLS()` / `_loadFromLS()`: gestão do cache `gestao_v7_cache`
+- `db/listeners.js` — listeners em tempo real (onSnapshot para config, teachers, schedules)
+- `db/index.js` — todas as funções exportadas publicamente
+
+Funções exportadas por categoria:
 
 | Categoria | Funções |
 |---|---|
@@ -1160,7 +1256,7 @@ Mobile-first com breakpoints padrão Tailwind:
 
 | Aspecto | Convenção | Motivo |
 |---|---|---|
-| **IDs** | Sempre `uid()` de `helpers.js` — nunca `Date.now()` puro ou index de array | Colisão improvável em inserts paralelos ou offline |
+| **IDs** | Sempre `uid()` de `helpers/ids` — nunca `Date.now()` puro ou index de array | Colisão improvável em inserts paralelos ou offline |
 | **Mutações de estado** | `set(s => { ... })` imutável + persistência granular ao final | Zustand requer imutabilidade; evita re-renders em cascata |
 | **Componentes de uso único** | Definidos no mesmo arquivo da página, sem `export` | Evita proliferação de arquivos; contexto co-localizado |
 | **Callbacks de evento** | Prefixo `handle` — `handleSave`, `handleMarkAbsent` | Consistência e legibilidade em toda a base |
@@ -1181,8 +1277,135 @@ Mobile-first com breakpoints padrão Tailwind:
 |---|---|---|
 | Listeners lazy para `absences` e `history` | Primeira abertura de AbsencesPage tem latência visível | ⚠️ Intencional — trade-off de não carregar tudo no boot |
 | Regras Firestore para `pending_actions` incompletas | Coordenadores podem criar docs mas regras de execução das actions precisam revisão | ⚠️ Revisão periódica necessária |
-| Bundle único sem code-splitting (~736KB) | Carregamento inicial mais lento em conexões lentas | 🔴 Aberto — avaliar `React.lazy()` por página |
+| Main bundle ainda grande (~676 KB / 178 KB gzip) | Firebase SDK + Zustand stores carregados no boot; pages lazy-loaded mas core não | 🟡 Mitigado — pages lazy; reports/settings lazy; próximo passo: `manualChunks` para Firebase |
 | Admins hardcoded em `db.js` (`HARDCODED_ADMINS`) | Adicionar admin requer alteração de código + deploy | 🔴 Aberto — migrar para coleção `admins/` exclusivamente |
 | Sem testes automatizados | Regressões difíceis de detectar sem suite de testes | 🔴 Aberto |
 | `window.innerWidth` para detecção de mobile | Não reativo a resize da janela | 🟡 Baixo impacto — uso é pontual em `CalendarPage` |
 | Histórico de solicitações para coordenadores | Coordenadores veem as últimas 20 ações na aba de perfil da SettingsPage | ✅ Parcialmente resolvido |
+
+---
+
+## 15. Otimizações de Bundle e Performance
+
+### Estratégia atual (Fases 285–293)
+
+O projeto usa três camadas de otimização de carregamento:
+
+**1. Lazy-loading de páginas** — `React.lazy()` + `Suspense`
+
+Todas as 12 páginas são carregadas sob demanda via dynamic import em `App.jsx`:
+
+```javascript
+const HomePage          = lazy(() => import('./pages/HomePage'))
+const CalendarPage      = lazy(() => import('./pages/CalendarPage'))
+const SettingsPage      = lazy(() => import('./pages/SettingsPage'))
+// … demais páginas
+```
+
+Resultado: cada página gera um chunk separado (2–67 KB) que só é baixado quando o
+usuário navega até ela pela primeira vez.
+
+**2. Lazy-loading de reports** — `dynamic import` em handlers
+
+`reports/` (~29 KB, 7.4 KB gzip) nunca bloqueia o carregamento inicial:
+
+```javascript
+// Em AbsencesPage, SchedulePage, SubstitutionsPage
+const handleExport = async () => {
+  const { openPDF, generateByDayHTML } = await import('../lib/reports')
+  const html = generateByDayHTML(month, year, store)
+  openPDF(html)
+}
+```
+
+O chunk `index-CYXUsAk1.js` (reports) só aparece na aba Network quando o usuário
+clica em "Exportar PDF".
+
+**3. Estrutura modular de src/lib/** — tree-shaking granular
+
+A reorganização em subpastas permite que o bundler aplique tree-shaking mais
+preciso. Imports granulares são preferidos:
+
+```javascript
+// Evitar (importa namespace completo)
+import { formatISO, uid } from '../lib'
+
+// Preferir (import granular — permite dead-code elimination)
+import { formatISO } from '../lib/helpers/dates'
+import { uid }       from '../lib/helpers/ids'
+```
+
+### Firebase SDK — tree-shaking
+
+O projeto usa a API modular do Firebase v10 (não o compat):
+
+```javascript
+// firebase/ usa imports específicos — NÃO o namespace completo
+import { initializeApp } from 'firebase/app'
+import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
+```
+
+```javascript
+// db/ usa apenas as funções necessárias
+import {
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
+  collection, writeBatch, serverTimestamp, query, where, onSnapshot, orderBy, limit,
+} from 'firebase/firestore'
+```
+
+Importações nominais garantem que o Firebase SDK aplique tree-shaking: apenas
+`auth` e `firestore` são incluídos no bundle final. Módulos como `storage`,
+`functions`, `analytics` e `database` são excluídos automaticamente.
+
+### Tailwind CSS — purge automático
+
+Tailwind 3.4 analisa todos os arquivos em `src/` para gerar apenas as classes
+utilizadas. O arquivo CSS final (index.css) tem 32 KB (6.4 KB gzip).
+
+Regra: nunca concatenar nomes de classes dinamicamente — o purge não consegue
+detectar classes geradas em runtime:
+
+```javascript
+// Errado — purge não detecta
+const cls = `bg-${color}-100`
+
+// Correto — classe completa no fonte
+const cls = color === 'red' ? 'bg-red-100' : 'bg-blue-100'
+```
+
+### Bundle size — números de referência (build 2026-04-19)
+
+| Chunk | Tamanho (raw) | Gzip | Quando carregado |
+|---|---|---|---|
+| `index` (main) | 676 KB | 178 KB | Sempre (boot) |
+| `SettingsPage` | 67 KB | 17 KB | Ao navegar para /settings |
+| `SubstitutionsPage` | 34 KB | 9 KB | Ao navegar para /substitutions |
+| `reports` | 30 KB | 7 KB | Ao clicar "Exportar PDF" |
+| `AbsencesPage` | 22 KB | 6 KB | Ao navegar para /absences |
+| `CalendarPage` | 18 KB | 6 KB | Ao navegar para /calendar |
+| demais páginas | 2–13 KB | 1–5 KB | Sob demanda |
+| `index.css` | 33 KB | 6 KB | Sempre (boot) |
+
+**Gzip total na inicialização (first load):** ~184 KB (main + CSS)
+
+### Próximo passo recomendado
+
+Para reduzir o main bundle abaixo de 500 KB, o próximo passo seria configurar
+`manualChunks` no `vite.config.js` para isolar o Firebase SDK num chunk dedicado:
+
+```javascript
+// vite.config.js
+build: {
+  rollupOptions: {
+    output: {
+      manualChunks: {
+        'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+        'vendor':   ['react', 'react-dom', 'react-router-dom', 'zustand'],
+      }
+    }
+  }
+}
+```
+
+Impacto estimado: -150 a -200 KB no main bundle (Firebase SDK representa ~200 KB do total).

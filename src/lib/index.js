@@ -15,10 +15,10 @@ export { submitPendingAction, getPendingActions, getMyPendingActions, approvePen
 export { toMin, fromMin, gerarPeriodos, defaultCfg, calcSaldo, validarEncaixe, getCfg, getPeriodos, getAulas, parseSlot, makeSlot, makeEspecialSlot, gerarPeriodosEspeciais, mergeAndSortPeriodos, resolveSlot, slotLabel, slotFullLabel, slotsForTurma } from './periods'
 
 // Helpers (funções utilitárias granulares)
-export { uid, h, subKey } from './helpers/ids'
+export { uid, h } from './helpers/ids'
 export { parseDate, formatISO, formatBR, dateToDayLabel, weekStart, businessDaysBetween, formatMonthlyAulas } from './helpers/dates'
 export { colorOfAreaId, colorOfTeacher, COLOR_PALETTE, COLOR_NEUTRAL } from './helpers/colors'
-export { allTurmaObjects, findTurma, isSharedSeries, getSharedSeriesByName, getSharedSeriesForTurma, isFormationSlot, teacherSubjectNames } from './helpers/turmas'
+export { allTurmaObjects, findTurma, isSharedSeries, isFormationSlot, teacherSubjectNames } from './helpers/turmas'
 export { canEditTeacher } from './helpers/permissions'
 
 // Absences (validação e ranking de substitutos)

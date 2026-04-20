@@ -1,5 +1,5 @@
 import { db } from '../firebase'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 
 /**
  * Seed padrão de turmas compartilhadas.
@@ -53,8 +53,6 @@ export async function _loadConfig() {
 
 export async function saveConfig(state) {
   try {
-    const { setDoc } = await import('firebase/firestore')
-    const { serverTimestamp } = await import('firebase/firestore')
     await setDoc(doc(db, 'meta', 'config'), {
       segments: state.segments, periodConfigs: state.periodConfigs,
       areas: state.areas, subjects: state.subjects, sharedSeries: state.sharedSeries ?? [],

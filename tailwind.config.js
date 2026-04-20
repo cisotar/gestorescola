@@ -32,5 +32,23 @@ export default {
       },
     },
   },
+  safelist: [
+    // Profile role pills — definidas em src/lib/settings/helpers.js (PROFILE_OPTIONS)
+    // e aplicadas via opt.pill em ProfilePillDropdown.jsx
+    'bg-blue-100', 'text-blue-700', 'border-blue-200',       // teacher
+    'bg-purple-100', 'text-purple-700', 'border-purple-200', // coordinator
+    'bg-indigo-100', 'text-indigo-700', 'border-indigo-200', // teacher-coordinator
+    'bg-red-100', 'text-red-700', 'border-red-200',          // admin
+
+    // Pending action status — src/lib/settings/helpers.js (STATUS_BADGE)
+    // aplicadas via sb.cls em componentes de solicitações
+    'bg-amber-100', 'text-amber-800', 'border-amber-300',    // pending
+    'bg-green-100', 'text-green-800', 'border-green-300',    // approved
+    'bg-red-100', 'text-red-800', 'border-red-300',          // rejected
+
+    // colorForPct em SubstitutionsPage.jsx linha 1099 — construída via função ternária
+    // text-amber-600 já aparece como literal em AbsencesPage.jsx, não precisa de safelist
+    'text-green-600', 'text-red-600',
+  ],
   plugins: [],
 }

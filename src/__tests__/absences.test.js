@@ -6,7 +6,7 @@ import {
   isAvailableBySchedule,
   weeklyLimitStatus,
   isUnderWeeklyLimit,
-} from '../lib/absences.js'
+} from '../lib/absences/index.js'
 
 // ─── Fixtures compartilhadas ──────────────────────────────────────────────────
 
