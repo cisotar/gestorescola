@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuthStore from './store/useAuthStore'
 import useAppStore from './store/useAppStore'
@@ -6,20 +6,22 @@ import { loadFromFirestore, setupRealtimeListeners } from './lib/db'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
 import PendingPage from './pages/PendingPage'
-import DashboardPage from './pages/DashboardPage'
-import HomePage from './pages/HomePage'
-import CalendarPage from './pages/CalendarPage'
-import CalendarDayPage from './pages/CalendarDayPage'
-import AbsencesPage from './pages/AbsencesPage'
-import SubstitutionsPage from './pages/SubstitutionsPage'
-import SettingsPage from './pages/SettingsPage'
-import WorkloadPage from './pages/WorkloadPage'
-import ScheduleRedirect from './pages/ScheduleRedirect'
-import SchoolScheduleRedirect from './pages/SchoolScheduleRedirect'
-import GradesPage from './pages/GradesPage'
-import RankingPage from './pages/RankingPage'
 import Toast from './components/ui/Toast'
 import Spinner from './components/ui/Spinner'
+
+// Lazy-load pages to reduce initial bundle size
+const HomePage = lazy(() => import('./pages/HomePage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const CalendarPage = lazy(() => import('./pages/CalendarPage'))
+const CalendarDayPage = lazy(() => import('./pages/CalendarDayPage'))
+const AbsencesPage = lazy(() => import('./pages/AbsencesPage'))
+const SubstitutionsPage = lazy(() => import('./pages/SubstitutionsPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const WorkloadPage = lazy(() => import('./pages/WorkloadPage'))
+const ScheduleRedirect = lazy(() => import('./pages/ScheduleRedirect'))
+const SchoolScheduleRedirect = lazy(() => import('./pages/SchoolScheduleRedirect'))
+const GradesPage = lazy(() => import('./pages/GradesPage'))
+const RankingPage = lazy(() => import('./pages/RankingPage'))
 
 export default function App() {
   const { loading, role, init, isCoordinator } = useAuthStore()
@@ -80,24 +82,33 @@ export default function App() {
   // App completo
   return (
     <>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<Navigate to="/home" replace />} />
-          <Route path="/home"      element={<HomePage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/calendar"      element={<CalendarPage />} />
-          <Route path="/calendar/day"  element={<CalendarDayPage />} />
-          <Route path="/absences"       element={<AbsencesPage />} />
-          <Route path="/substitutions"  element={<SubstitutionsPage />} />
-          <Route path="/substitutions/ranking" element={<RankingPage />} />
-          <Route path="/settings"  element={<SettingsPage />} />
-          <Route path="/workload"  element={<WorkloadPage />} />
-          <Route path="/schedule"  element={<ScheduleRedirect />} />
-          <Route path="/school-schedule" element={<SchoolScheduleRedirect />} />
-          <Route path="/grades"  element={<GradesPage />} />
-          <Route path="*"          element={<Navigate to="/home" replace />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={
+        <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg">
+          <Spinner size={40} />
+          <div className="mt-5 text-base font-bold text-t1">
+            <span className="text-accent">Gestão</span>Escolar
+          </div>
+        </div>
+      }>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<Navigate to="/home" replace />} />
+            <Route path="/home"      element={<HomePage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/calendar"      element={<CalendarPage />} />
+            <Route path="/calendar/day"  element={<CalendarDayPage />} />
+            <Route path="/absences"       element={<AbsencesPage />} />
+            <Route path="/substitutions"  element={<SubstitutionsPage />} />
+            <Route path="/substitutions/ranking" element={<RankingPage />} />
+            <Route path="/settings"  element={<SettingsPage />} />
+            <Route path="/workload"  element={<WorkloadPage />} />
+            <Route path="/schedule"  element={<ScheduleRedirect />} />
+            <Route path="/school-schedule" element={<SchoolScheduleRedirect />} />
+            <Route path="/grades"  element={<GradesPage />} />
+            <Route path="*"          element={<Navigate to="/home" replace />} />
+          </Route>
+        </Routes>
+      </Suspense>
       <Toast />
     </>
   )
