@@ -489,18 +489,30 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
   }
 
   // ── Gerar HTML de cada linha ──────────────────────────────────────────────
+  // rowDataIdx conta apenas linhas de dados (aulas), excluindo intervalos e separadores,
+  // para reproduzir a alternância par/ímpar correta independente do traço diagonal.
+  let rowDataIdx = 0
+
   const allRows = itemsWithSlot.map((item, i) => {
     const sep = separatorBefore.has(i)
       ? `<tr><td colspan="6" style="border-top:3px double #1a1814;padding:0;height:0"></td></tr>`
       : ''
 
-    // Linha de intervalo (regular ou especial)
+    // Linha de intervalo (regular ou especial) — não conta na alternância
     if (item.isIntervalo) {
       return sep + `<tr>
       <td style="width:90px;white-space:nowrap;color:#1a1814;font-size:10px">${item.inicio}–${item.fim}<br>${item.label}</td>
       <td colspan="5" style="border:1px solid #e5e2d9"></td>
     </tr>`
     }
+
+    // Linha de dados: incrementar contador e calcular cor de fundo par/ímpar
+    const isEven = (rowDataIdx % 2 === 1) // 0-based: posição 1, 3, 5… = linhas "pares" da tabela
+    rowDataIdx++
+    const rowBg = isEven ? '#f9f8f6' : '#ffffff'
+
+    // Traço diagonal (fora do expediente): gradiente + cor de fundo alternada como camadas múltiplas
+    const diagonalBg = `linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px)), ${rowBg}`
 
     if (item._tipo === 'regular') {
       const { aulaIdx, label, inicio, fim } = item
@@ -510,14 +522,14 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
           const horarioDia = horariosSemana[day]
           if (horarioDia?.entrada && horarioDia?.saida) {
             if (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida))) {
-              return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px))"></td>`
+              return `<td style="background:${diagonalBg}"></td>`
             }
           }
         }
         const matches = schedules.filter(s =>
           s.timeSlot === `${seg.id}|${turno}|${aulaIdx}` && s.day === day
         )
-        if (!matches.length) return '<td style="color:#c8c4bb">—</td>'
+        if (!matches.length) return `<td style="background:${rowBg};color:#c8c4bb">—</td>`
         const lines = matches.map(s => {
           const subj = store.subjects.find(x => x.id === s.subjectId)
           if (showTeacher) {
@@ -527,16 +539,16 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
           }
           return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${s.turma ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
         }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
-        return `<td>${lines}</td>`
+        return `<td style="background:${rowBg}">${lines}</td>`
       }).join('')
       return sep + `<tr>
-      <td style="width:90px;white-space:nowrap;color:#1a1814"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
+      <td style="width:90px;white-space:nowrap;color:#1a1814;background:${rowBg}"><strong>${label}</strong><br><span style="color:#4a4740;font-size:10px">${inicio}–${fim}</span></td>
       ${cells}
     </tr>`
     }
 
     const { slotKey, label, inicio, fim } = item
-    const labelStyle = 'border-left:3px solid #C05621;width:90px;white-space:nowrap;color:#1a1814'
+    const labelStyle = `border-left:3px solid #C05621;width:90px;white-space:nowrap;color:#1a1814;background:${rowBg}`
 
     const cells = SCHED_DAYS.map(day => {
       // RN-01: verificar se a célula está fora do expediente
@@ -544,15 +556,15 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
         const horarioDia = horariosSemana[day]
         if (horarioDia?.entrada && horarioDia?.saida) {
           if (inicio && fim && (toMin(inicio) < toMin(horarioDia.entrada) || toMin(fim) > toMin(horarioDia.saida))) {
-            return `<td style="background:linear-gradient(to bottom right, transparent calc(50% - 0.5px), #D1CEC8 50%, transparent calc(50% + 0.5px))"></td>`
+            return `<td style="background:${diagonalBg}"></td>`
           }
         }
       }
       if (!slotKey) {
-        return `<td style="color:#c8c4bb">—</td>`
+        return `<td style="background:${rowBg};color:#c8c4bb">—</td>`
       }
       const matches = schedules.filter(s => s.timeSlot === slotKey && s.day === day)
-      if (!matches.length) return `<td style="color:#c8c4bb">—</td>`
+      if (!matches.length) return `<td style="background:${rowBg};color:#c8c4bb">—</td>`
       const lines = matches.map(s => {
         const subj = store.subjects.find(x => x.id === s.subjectId)
         if (showTeacher) {
@@ -562,7 +574,7 @@ function _scheduleGrid(seg, turno, schedules, store, showTeacher = false, useApe
         }
         return `<strong style="color:#1a1814;font-size:11px;text-transform:uppercase;letter-spacing:.02em">${s.turma ?? '—'}</strong><br><span style="color:#4a4740;font-size:10px">${subj?.name ?? '—'}</span>`
       }).join('<hr style="border:none;border-top:1px solid #e5e2d9;margin:3px 0">')
-      return `<td>${lines}</td>`
+      return `<td style="background:${rowBg}">${lines}</td>`
     }).join('')
 
     return sep + `<tr>
