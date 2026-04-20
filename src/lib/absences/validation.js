@@ -1,6 +1,6 @@
 import { dateToDayLabel, formatISO, parseDate, weekStart, businessDaysBetween } from '../helpers/dates'
 import { isSharedSeries } from '../helpers/turmas'
-import { resolveSlot } from '../periods'
+import { resolveSlot, toMin } from '../periods'
 
 // ─── Carga mensal ─────────────────────────────────────────────────────────────
 
@@ -63,8 +63,7 @@ export function isAvailableBySchedule(teacher, day, timeSlot, periodConfigs) {
   if (!horarioDia) return false
   const resolved = resolveSlot(timeSlot, periodConfigs ?? {})
   if (!resolved) return true
-  const { toMin } = require('../periods')
-  return horarioDia.entrada <= resolved.inicio && resolved.fim <= horarioDia.saida
+  return toMin(horarioDia.entrada) <= toMin(resolved.inicio) && toMin(resolved.fim) <= toMin(horarioDia.saida)
 }
 
 export function weeklyLimitStatus(teacher, date, schedules, absences, sharedSeries = []) {
