@@ -84,11 +84,15 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
         const periodos = mergeAndSortPeriodos(cfg)
         if (!periodos.some(p => !p.isIntervalo)) return null
 
-        // Build _espIdx for especial aulas (1-based counter among non-interval especial items)
+        // Build _espIdx and _rowBg: especial counter and alternating row color (ignoring intervals)
         let espCount = 0
+        let rowDataIdx = 0
         const periodosComIdx = periodos.map(p => {
-          if (p._tipo === 'especial') { espCount += 1; return { ...p, _espIdx: espCount } }
-          return p
+          if (p.isIntervalo) return p
+          const rowBg = rowDataIdx % 2 === 0 ? '' : 'bg-surf'
+          rowDataIdx++
+          if (p._tipo === 'especial') { espCount += 1; return { ...p, _espIdx: espCount, _rowBg: rowBg } }
+          return { ...p, _rowBg: rowBg }
         })
 
         return (
@@ -125,9 +129,11 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                       )
                     }
 
+                    const rowBg = p._rowBg ?? ''
+
                     if (p._tipo === 'regular') {
                       return (
-                        <tr key={p.aulaIdx} className="border-b border-bdr/50">
+                        <tr key={p.aulaIdx} className={`border-b border-bdr/50 ${rowBg}`}>
                           <td className="px-3 py-1.5">
                             <div className="font-bold font-mono">{p.label}</div>
                             <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
@@ -161,7 +167,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                             const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
 
                             return (
-                              <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
+                              <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : rowBg}`}>
                                 <div className="space-y-1">
                                   {mine.map(s => {
                                     const subj = store.subjects.find(x => x.id === s.subjectId)
@@ -208,7 +214,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                     // _tipo === 'especial'
                     const aulaCount = p._espIdx
                     return (
-                      <tr key={`esp-${aulaCount}`} className="border-b border-bdr/50 bg-surf2">
+                      <tr key={`esp-${aulaCount}`} className={`border-b border-bdr/50 ${rowBg}`}>
                         <td className="px-3 py-1.5 border-l-2 border-accent">
                           <div className="font-bold font-mono">{p.label}</div>
                           <div className="font-mono text-t3 text-[10px]">{p.inicio}–{p.fim}</div>
@@ -239,7 +245,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                           const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
 
                           return (
-                            <td key={day} className={`px-1.5 py-1.5 align-top bg-surf2 ${teacherConflict ? 'bg-amber-50/40' : ''}`}>
+                            <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : rowBg}`}>
                               <div className="space-y-1">
                                 {mine.map(s => {
                                   const subj = store.subjects.find(x => x.id === s.subjectId)
