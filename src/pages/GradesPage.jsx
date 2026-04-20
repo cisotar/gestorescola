@@ -7,6 +7,153 @@ import SchoolGrid from '../components/ui/SchoolGrid'
 import { parseSlot } from '../lib/periods'
 import { allTurmaObjects, canEditTeacher } from '../lib/helpers'
 import { generateGradesProfessorHTML, generateSchoolScheduleHTML, openPDF } from '../lib/reports'
+import { DAYS } from '../lib/constants'
+import { toast } from '../hooks/useToast'
+
+// ─── HorarioDiaSemana ─────────────────────────────────────────────────────────
+
+function HorarioDiaSemana({ day, value, onChange }) {
+  const entrada = value?.entrada ?? ''
+  const saida   = value?.saida   ?? ''
+  let error = null
+  if (entrada && !saida) error = 'Preencha a saída também'
+  else if (!entrada && saida) error = 'Preencha a entrada também'
+  else if (entrada && saida && saida <= entrada) error = 'Saída deve ser após a entrada'
+
+  if (!onChange) {
+    return (
+      <div className="flex items-center gap-3 text-sm">
+        <span className="w-20 font-medium text-t1 shrink-0">{day}</span>
+        <span className="text-t2">{entrada && saida ? `${entrada} – ${saida}` : '—'}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-3">
+        <span className="w-20 text-sm font-medium text-t1 shrink-0">{day}</span>
+        <div className="flex items-center gap-2 flex-1">
+          <input type="time" className="inp flex-1" value={entrada} onChange={e => onChange(day, 'entrada', e.target.value)} />
+          <span className="text-t3 text-sm shrink-0">até</span>
+          <input type="time" className="inp flex-1" value={saida} onChange={e => onChange(day, 'saida', e.target.value)} />
+        </div>
+      </div>
+      {error && <p className="text-xs text-err mt-1 ml-23">{error}</p>}
+    </div>
+  )
+}
+
+// ─── HorariosSemanaForm ───────────────────────────────────────────────────────
+
+function HorariosSemanaForm({ value, onChange, onSave, onCancel, saving }) {
+  const horarioErrors = Object.fromEntries(
+    DAYS.map(day => {
+      const v = value[day]
+      const entrada = v?.entrada ?? ''
+      const saida   = v?.saida   ?? ''
+      let error = null
+      if (entrada && !saida) error = 'Preencha a saída também'
+      else if (!entrada && saida) error = 'Preencha a entrada também'
+      else if (entrada && saida && saida <= entrada) error = 'Saída deve ser após a entrada'
+      return [day, error]
+    })
+  )
+  const hasHorarioError = Object.values(horarioErrors).some(Boolean)
+  const handleChange = (day, field, val) => {
+    onChange(prev => {
+      const current = prev[day] ?? { entrada: '', saida: '' }
+      const updated = { ...current, [field]: val }
+      if (!updated.entrada && !updated.saida) {
+        const { [day]: _, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [day]: updated }
+    })
+  }
+  return (
+    <div className="space-y-3">
+      {DAYS.map(day => (
+        <HorarioDiaSemana key={day} day={day} value={value[day]} onChange={handleChange} />
+      ))}
+      <div className="flex gap-2 pt-1">
+        <button className="btn btn-dark btn-sm" disabled={hasHorarioError || saving} onClick={onSave}>
+          {saving ? 'Salvando…' : 'Salvar horários'}
+        </button>
+        {onCancel && <button className="btn btn-ghost btn-sm" onClick={onCancel}>Cancelar</button>}
+      </div>
+    </div>
+  )
+}
+
+// ─── SecaoHorarios ────────────────────────────────────────────────────────────
+
+function SecaoHorarios({ teacher, isEditable }) {
+  const store = useAppStore()
+  const { teacher: myTeacher } = useAuthStore()
+  const [editando, setEditando] = useState(false)
+  const [horariosSemana, setHorariosSemana] = useState(teacher?.horariosSemana ?? {})
+  const [saving, setSaving] = useState(false)
+
+  // Reset state when teacher changes
+  useEffect(() => {
+    setEditando(false)
+    setHorariosSemana(teacher?.horariosSemana ?? {})
+  }, [teacher?.id])
+
+  const teacherHorarios = teacher?.horariosSemana ?? {}
+
+  const handleSave = async () => {
+    setSaving(true)
+    const cleaned = Object.fromEntries(
+      Object.entries(horariosSemana).filter(([, v]) => v?.entrada && v?.saida)
+    )
+    try {
+      const authState = useAuthStore.getState()
+      const isSelf = myTeacher?.id === teacher.id
+      if (isSelf && authState.role === 'teacher') {
+        await store.updateTeacherProfile(teacher.id, { horariosSemana: cleaned })
+      } else {
+        await store.updateTeacher(teacher.id, { horariosSemana: cleaned })
+      }
+      toast('Horários salvos com sucesso', 'ok')
+      setEditando(false)
+    } catch (e) {
+      console.error(e)
+      toast('Erro ao salvar horários', 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2 pb-2 border-b border-bdr">
+      <div className="flex items-center justify-between">
+        <label className="lbl !mb-0">Horários na escola</label>
+        {isEditable && !editando && (
+          <button className="btn btn-ghost btn-xs" onClick={() => { setHorariosSemana(teacherHorarios); setEditando(true) }}>
+            Editar horários
+          </button>
+        )}
+      </div>
+      {editando ? (
+        <HorariosSemanaForm
+          value={horariosSemana}
+          onChange={setHorariosSemana}
+          onSave={handleSave}
+          onCancel={() => { setHorariosSemana(teacherHorarios); setEditando(false) }}
+          saving={saving}
+        />
+      ) : (
+        <div className="space-y-1">
+          {DAYS.map(day => (
+            <HorarioDiaSemana key={day} day={day} value={teacherHorarios[day]} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function GradesPage() {
   const navigate = useNavigate()
@@ -223,19 +370,22 @@ export default function GradesPage() {
               </p>
             )}
 
-            {/* No schedules message */}
-            {selectedTeacherId !== null && segmentTurnoList.length === 0 && (
-              <p className="text-sm text-t3 italic">
-                Nenhum horário cadastrado para este professor
-              </p>
-            )}
+            {/* Horários de entrada/saída do professor selecionado */}
+            {selectedTeacherId !== null && (() => {
+              const canEdit = canEditTeacher(myTeacher, selectedTeacher, useAuthStore.getState())
+              return (
+                <>
+                  <SecaoHorarios key={selectedTeacherId} teacher={selectedTeacher} isEditable={canEdit} />
 
-            {/* Grade Turno Cards */}
-            {selectedTeacherId !== null && segmentTurnoList.length > 0 && (
-              <>
-                {(() => {
-                  const canEdit = canEditTeacher(myTeacher, selectedTeacher, useAuthStore.getState())
-                  return (
+                  {/* No schedules message */}
+                  {segmentTurnoList.length === 0 && (
+                    <p className="text-sm text-t3 italic">
+                      Nenhum horário cadastrado para este professor
+                    </p>
+                  )}
+
+                  {/* Grade Turno Cards */}
+                  {segmentTurnoList.length > 0 && (
                     <div className="space-y-6">
                       {segmentTurnoList.map(({ segmentId, turno }) => (
                         <GradeTurnoCard
@@ -249,10 +399,10 @@ export default function GradesPage() {
                         />
                       ))}
                     </div>
-                  )
-                })()}
-              </>
-            )}
+                  )}
+                </>
+              )
+            })()}
           </div>
         )}
         {activeTab === 'turma' && canAccessTurma && (

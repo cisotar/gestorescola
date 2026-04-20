@@ -62,6 +62,7 @@
     const [phoneError,    setPhoneError] = useState('')
     const [subjError,     setSubjError]  = useState('')
     const [saveError,     setSaveError]  = useState('')
+    const [tentouEnviar,  setTentouEnviar] = useState(false)
 
     // Erros de validação de horários — derivados sem estado extra
     const horarioErrors = Object.fromEntries(
@@ -77,6 +78,10 @@
       })
     )
     const hasHorarioError = Object.values(horarioErrors).some(Boolean)
+    const temAoMenosUmDiaCompleto = DAYS.some(day => {
+      const v = horariosSemana[day]
+      return v?.entrada && v?.saida && v.saida > v.entrada
+    })
 
     const handleHorarioChange = (day, field, val) => {
       setHorariosSemana(prev => {
@@ -119,11 +124,12 @@
       setSelSubjs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
 
     const handleSubmit = async () => {
+      setTentouEnviar(true)
       const pErr = validatePhone(celular)
       const sErr = selectedSubjs.length === 0 ? 'Selecione ao menos uma matéria' : null
       setPhoneError(pErr ?? '')
       setSubjError(sErr ?? '')
-      if (pErr || sErr) return
+      if (pErr || sErr || !temAoMenosUmDiaCompleto) return
 
       setSaving(true); setSaveError('')
       try {
@@ -237,7 +243,7 @@
 
                     {/* Horários de entrada/saída */}
                     <div>
-                      <label className="lbl">Seus horários na escola <span className="text-t3 normal-case font-normal">(opcional)</span></label>
+                      <label className="lbl">Seus horários na escola <span className="text-err">*</span></label>
                       <p className="text-xs text-t3 mt-0.5 mb-3">Informe seus horários de entrada e saída por dia. Deixe em branco os dias em que não trabalha.</p>
                       <div className="space-y-3">
                         {DAYS.map(day => (
@@ -249,6 +255,9 @@
                           />
                         ))}
                       </div>
+                      {tentouEnviar && !temAoMenosUmDiaCompleto && (
+                        <p className="text-xs text-err mt-2">Preencha pelo menos um dia com horário de entrada e saída</p>
+                      )}
                     </div>
 
                     {/* Erro de save */}
@@ -258,7 +267,7 @@
                     <div className="flex flex-col gap-2 pt-1">
                       <button
                         onClick={handleSubmit}
-                        disabled={saving || hasHorarioError}
+                        disabled={saving || hasHorarioError || (tentouEnviar && !temAoMenosUmDiaCompleto)}
                         className="btn btn-dark w-full disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {saving ? 'Salvando…' : 'Enviar cadastro'}
