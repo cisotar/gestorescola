@@ -1,11 +1,15 @@
-// TabSchedules — grade horária: seletor de professor + ScheduleGrid
+// TabSchedules — grade horária: seletor de professor + SecaoHorarios + ScheduleGrid
 
 import { useState } from 'react'
 import useAppStore from '../../../store/useAppStore'
-import { colorOfTeacher } from '../../../lib/helpers'
+import useAuthStore from '../../../store/useAuthStore'
+import { colorOfTeacher, canEditTeacher } from '../../../lib/helpers'
 import { teacherBelongsToSegment, teacherSegmentIds } from '../../../lib/settings'
+import { parseSlot } from '../../../lib/periods'
+import { generateGradesProfessorHTML, openPDF } from '../../../lib/reports'
 import TurnoSelector from '../shared/TurnoSelector'
 import { ScheduleGrid } from '../../ui/ScheduleGrid'
+import { SecaoHorarios } from '../../ui/SecaoHorarios'
 
 export default function TabSchedules() {
   const store = useAppStore()
@@ -82,7 +86,39 @@ export default function TabSchedules() {
         )}
       </div>
 
-      {teacher && <ScheduleGrid teacher={teacher} store={store} />}
+      {teacher && <TeacherPanel teacher={teacher} store={store} />}
+    </div>
+  )
+}
+
+function TeacherPanel({ teacher, store }) {
+  const { teacher: myTeacher } = useAuthStore()
+  const canEdit = canEditTeacher(myTeacher, teacher, useAuthStore.getState())
+
+  const teacherSchedules = store.schedules.filter(s => s.teacherId === teacher.id)
+  const seen = new Set()
+  const segmentTurnoList = []
+  for (const sched of teacherSchedules) {
+    const parsed = parseSlot(sched.timeSlot)
+    if (!parsed) continue
+    const key = `${parsed.segmentId}|${parsed.turno}`
+    if (!seen.has(key)) { seen.add(key); segmentTurnoList.push(parsed) }
+  }
+  const order = { manha: 0, tarde: 1, noite: 2 }
+  segmentTurnoList.sort((a, b) => (order[a.turno] ?? 3) - (order[b.turno] ?? 3))
+
+  const handleExport = () => {
+    const html = generateGradesProfessorHTML(teacher, segmentTurnoList, store, false)
+    openPDF(html)
+  }
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex justify-end">
+        <button className="btn btn-dark btn-sm" onClick={handleExport}>📄 Exportar PDF</button>
+      </div>
+      <SecaoHorarios teacher={teacher} isEditable={canEdit} />
+      <ScheduleGrid teacher={teacher} store={store} />
     </div>
   )
 }
