@@ -4,7 +4,7 @@ import { useState } from 'react'
 import useAppStore from '../../../store/useAppStore'
 import { toast } from '../../../hooks/useToast'
 import { COLOR_PALETTE } from '../../../lib/constants'
-import { calcAreaSubjectRemovalImpact } from '../../../lib/settingsHelpers'
+import { calcAreaSubjectRemovalImpact } from '../../../lib/settings'
 import DeparaModal from '../teachers/DeparaModal'
 
 // ─── AreaBlock ────────────────────────────────────────────────────────────────

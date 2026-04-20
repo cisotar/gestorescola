@@ -2,7 +2,7 @@
 // Reutilizado em TabTeachers e TabProfile
 
 import { useState } from 'react'
-import { PROFILE_OPTIONS } from '../../../lib/settingsHelpers'
+import { PROFILE_OPTIONS } from '../../../lib/settings'
 
 export default function ProfilePillDropdown({ value, onChange, options = PROFILE_OPTIONS, disabled, placeholder = 'Selecionar perfil ▾' }) {
   const [open, setOpen] = useState(false)

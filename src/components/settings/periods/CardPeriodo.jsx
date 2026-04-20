@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { getCfg, calcSaldo, validarEncaixe, toMin } from '../../../lib/periods'
-import { buildPreviewItems } from '../../../lib/settingsHelpers'
+import { buildPreviewItems } from '../../../lib/settings'
 import { toast } from '../../../hooks/useToast'
 import TurnoSelector from '../shared/TurnoSelector'
 import CamposGradeEspecial from './CamposGradeEspecial'

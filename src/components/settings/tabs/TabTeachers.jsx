@@ -12,7 +12,7 @@ import {
   teacherBelongsToSegment,
   teacherSegmentIds,
   PROFILE_OPTIONS_NO_ADMIN,
-} from '../../../lib/settingsHelpers'
+} from '../../../lib/settings'
 import {
   listPendingTeachers,
   approveTeacher,

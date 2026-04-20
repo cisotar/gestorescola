@@ -1,7 +1,7 @@
 // PendingActionCard — card de ação pendente de aprovação (TabApprovals)
 
 import { useState } from 'react'
-import { timeAgo } from '../../../lib/settingsHelpers'
+import { timeAgo } from '../../../lib/settings'
 import RejectModal from './RejectModal'
 
 export default function PendingActionCard({ action, onApprove, onReject }) {

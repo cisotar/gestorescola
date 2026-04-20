@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import useAppStore from '../../../store/useAppStore'
 import { colorOfTeacher } from '../../../lib/helpers'
-import { teacherBelongsToSegment, teacherSegmentIds } from '../../../lib/settingsHelpers'
+import { teacherBelongsToSegment, teacherSegmentIds } from '../../../lib/settings'
 import TurnoSelector from '../shared/TurnoSelector'
 import { ScheduleGrid } from '../../ui/ScheduleGrid'
 
