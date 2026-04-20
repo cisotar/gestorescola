@@ -86,12 +86,8 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return request.auth != null && (
-        request.auth.token.email == 'contato.tarciso@gmail.com' ||
-        request.auth.token.email == 'tarciso@prof.educacao.sp.gov.br' ||
-        request.auth.token.email == 'fernandamarquesi@prof.educacao.sp.gov.br' ||
-        exists(/databases/$(database)/documents/admins/$(emailToKey(request.auth.token.email)))
-      );
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/admins/$(emailToKey(request.auth.token.email)));
     }
 
     // Retorna true se o primeiro slot possui subjectId prefixado com "formation-".

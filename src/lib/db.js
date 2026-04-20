@@ -231,17 +231,10 @@ export async function saveConfig(state) {
 
 // ─── Admins ───────────────────────────────────────────────────────────────────
 
-const HARDCODED_ADMINS = [
-  'contato.tarciso@gmail.com',
-  'tarciso@prof.educacao.sp.gov.br',
-  'fernandamarquesi@prof.educacao.sp.gov.br',
-]
-
 const emailKey = (email) => email.toLowerCase().replace(/[.#$/[\]]/g, '_')
 
 export async function isAdmin(email) {
   if (!email) return false
-  if (HARDCODED_ADMINS.includes(email.toLowerCase())) return true
   try {
     const snap = await getDoc(doc(db, 'admins', emailKey(email)))
     return snap.exists()
