@@ -10,7 +10,7 @@ import { generateGradesProfessorHTML, generateSchoolScheduleHTML, openPDF } from
 import { DAYS } from '../lib/constants'
 import { toast } from '../hooks/useToast'
 
-// ─── HorarioDiaSemana ─────────────────────────────────────────────────────────
+// ─── HorarioDiaSemana (modo edição) ──────────────────────────────────────────
 
 function HorarioDiaSemana({ day, value, onChange }) {
   const entrada = value?.entrada ?? ''
@@ -19,15 +19,6 @@ function HorarioDiaSemana({ day, value, onChange }) {
   if (entrada && !saida) error = 'Preencha a saída também'
   else if (!entrada && saida) error = 'Preencha a entrada também'
   else if (entrada && saida && saida <= entrada) error = 'Saída deve ser após a entrada'
-
-  if (!onChange) {
-    return (
-      <div className="flex items-center gap-3 text-sm">
-        <span className="w-20 font-medium text-t1 shrink-0">{day}</span>
-        <span className="text-t2">{entrada && saida ? `${entrada} – ${saida}` : '—'}</span>
-      </div>
-    )
-  }
 
   return (
     <div>
@@ -40,6 +31,44 @@ function HorarioDiaSemana({ day, value, onChange }) {
         </div>
       </div>
       {error && <p className="text-xs text-err mt-1 ml-23">{error}</p>}
+    </div>
+  )
+}
+
+// ─── TabelaHorarios (modo leitura — grade estilo PDF) ─────────────────────────
+
+function TabelaHorarios({ horariosSemana }) {
+  const h = horariosSemana ?? {}
+  return (
+    <div className="card p-0 overflow-hidden overflow-x-auto">
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="bg-surf2 border-b border-bdr">
+            <th className="px-3 py-2 text-left font-bold text-t2 w-[90px]">Horário</th>
+            {DAYS.map(d => (
+              <th key={d} className="px-2 py-2 text-center font-bold text-t2 min-w-[100px]">{d}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-bdr/50">
+            <td className="px-3 py-1.5 font-bold text-t2">Entrada</td>
+            {DAYS.map(d => (
+              <td key={d} className="px-2 py-1.5 text-center text-t1">
+                {h[d]?.entrada ?? <span className="text-t3">—</span>}
+              </td>
+            ))}
+          </tr>
+          <tr>
+            <td className="px-3 py-1.5 font-bold text-t2">Saída</td>
+            {DAYS.map(d => (
+              <td key={d} className="px-2 py-1.5 text-center text-t1">
+                {h[d]?.saida ?? <span className="text-t3">—</span>}
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
     </div>
   )
 }
@@ -145,11 +174,7 @@ function SecaoHorarios({ teacher, isEditable }) {
           saving={saving}
         />
       ) : (
-        <div className="space-y-1">
-          {DAYS.map(day => (
-            <HorarioDiaSemana key={day} day={day} value={teacherHorarios[day]} />
-          ))}
-        </div>
+        <TabelaHorarios horariosSemana={teacherHorarios} />
       )}
     </div>
   )
