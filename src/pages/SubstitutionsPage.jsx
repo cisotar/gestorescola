@@ -5,12 +5,6 @@ import useAuthStore from '../store/useAuthStore'
 import { allTurmaObjects, findTurma, parseDate, colorOfTeacher, teacherSubjectNames,
          businessDaysBetween, dateToDayLabel, formatISO, weekStart, formatBR } from '../lib/helpers'
 import { slotLabel, getAulas } from '../lib/periods'
-import {
-  openPDF,
-  generateSubstitutionTimesheetHTML,
-  generateSubstitutionBalanceHTML,
-  generateSubstitutionRankingHTML,
-} from '../lib/reports'
 import { toast } from '../hooks/useToast'
 import Modal from '../components/ui/Modal'
 
@@ -531,13 +525,15 @@ function ViewBySubstitute({
     return { teacher, byDate, total: slots.length, slots, covered, absenceCount, balance }
   })() : null
 
-  const handleTimesheetPDF = () => {
+  const handleTimesheetPDF = async () => {
     if (!detail) return
+    const { openPDF, generateSubstitutionTimesheetHTML } = await import('../lib/reports')
     openPDF(generateSubstitutionTimesheetHTML(detail.teacher, detail.slots, store))
   }
 
-  const handleBalancePDF = () => {
+  const handleBalancePDF = async () => {
     if (!detail) return
+    const { openPDF, generateSubstitutionBalanceHTML } = await import('../lib/reports')
     const absenceSlots = computeAbsenceSlots(detail.teacher.id, filters, store)
     openPDF(generateSubstitutionBalanceHTML(detail.teacher, detail.slots, absenceSlots, store))
   }
@@ -758,7 +754,8 @@ function ViewByDay({ store, isAdmin, filteredSlots, selProps }) {
 
   const grouped = useMemo(() => groupBySubstitute(daySlots, store), [daySlots, store.teachers])
 
-  const handlePDF = () => {
+  const handlePDF = async () => {
+    const { openPDF, generateSubstitutionTimesheetHTML } = await import('../lib/reports')
     openPDF(generateSubstitutionTimesheetHTML(null, daySlots, store))
   }
 
@@ -882,7 +879,10 @@ function ViewByWeek({ store, isAdmin, filteredSlots, selProps }) {
     return ids.map(id => store.teachers.find(t => t.id === id)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
   }, [filteredSlots, monISO, friISO, store.teachers])
 
-  const handlePDF = () => openPDF(generateSubstitutionTimesheetHTML(null, weekSlots, store))
+  const handlePDF = async () => {
+    const { openPDF, generateSubstitutionTimesheetHTML } = await import('../lib/reports')
+    openPDF(generateSubstitutionTimesheetHTML(null, weekSlots, store))
+  }
 
   const buildWhatsAppMsg = () => {
     let msg = `*Substituições — Semana ${label}*\n`
@@ -1067,9 +1067,15 @@ function ViewByMonth({ store, isAdmin, filteredSlots, selProps }) {
     })
   }, [rankingRows, rankSort])
 
-  const handlePDF = () => openPDF(generateSubstitutionTimesheetHTML(null, monthSlots, store))
+  const handlePDF = async () => {
+    const { openPDF, generateSubstitutionTimesheetHTML } = await import('../lib/reports')
+    openPDF(generateSubstitutionTimesheetHTML(null, monthSlots, store))
+  }
 
-  const handleRankingPDF = () => openPDF(generateSubstitutionRankingHTML(sortedRanking, month, year))
+  const handleRankingPDF = async () => {
+    const { openPDF, generateSubstitutionRankingHTML } = await import('../lib/reports')
+    openPDF(generateSubstitutionRankingHTML(sortedRanking, month, year))
+  }
 
   const buildWhatsAppMsg = () => {
     let msg = `*Substituições — ${MONTH_NAMES[month]} ${year}*\n`

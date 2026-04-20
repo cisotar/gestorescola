@@ -4,14 +4,6 @@ import useAuthStore from '../store/useAuthStore'
 import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, weekStart, formatISO, parseDate } from '../lib/helpers'
 import { getAulas, slotLabel, getCfg, gerarPeriodosEspeciais } from '../lib/periods'
 import { toast } from '../hooks/useToast'
-import {
-  openPDF,
-  generateTeacherHTML,
-  generateByDayHTML,
-  generateByWeekHTML,
-  generateByMonthHTML,
-  buildWhatsAppMessage,
-} from '../lib/reports'
 import Modal from '../components/ui/Modal'
 import { ScheduleGrid } from '../components/ui/ScheduleGrid'
 
@@ -73,9 +65,10 @@ function WhatsAppButton({ mode, context, store }) {
   const [open, setOpen] = useState(false)
   const [phone, setPhone] = useState(() => localStorage.getItem('gestao_whatsapp_phone') ?? '')
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const digits = phone.replace(/\D/g, '')
     localStorage.setItem('gestao_whatsapp_phone', digits)
+    const { buildWhatsAppMessage } = await import('../lib/reports')
     const msg = buildWhatsAppMessage(mode, context, store)
     window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`, '_blank')
     setOpen(false)
@@ -291,8 +284,9 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, se
     return null
   }
 
-  const handlePDF = () => {
+  const handlePDF = async () => {
     if (!selTeacher) return
+    const { openPDF, generateTeacherHTML } = await import('../lib/reports')
     openPDF(generateTeacherHTML(selTeacher, buildFilter(), store))
   }
 
@@ -486,7 +480,10 @@ function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate, selProps }) 
   const datesWithAbs = [...new Set(allSlots.map(s => s.date))].sort().reverse()
   const slotsOnDate  = allSlots.filter(sl => sl.date === date)
 
-  const handlePDF = () => openPDF(generateByDayHTML(date, store))
+  const handlePDF = async () => {
+    const { openPDF, generateByDayHTML } = await import('../lib/reports')
+    openPDF(generateByDayHTML(date, store))
+  }
 
   return (
     <div>
@@ -566,7 +563,10 @@ function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef, selProps })
   const teachersThisWeek = [...new Set(allSlots.filter(sl => sl.date >= monISO && sl.date <= friISO).map(sl => sl.teacherId))]
     .map(tid => store.teachers.find(t => t.id === tid)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name))
 
-  const handlePDF = () => openPDF(generateByWeekHTML(monISO, filterTeacher || null, store))
+  const handlePDF = async () => {
+    const { openPDF, generateByWeekHTML } = await import('../lib/reports')
+    openPDF(generateByWeekHTML(monISO, filterTeacher || null, store))
+  }
 
   return (
     <div>
@@ -652,7 +652,10 @@ function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef, selProps
   const byDate = {}
   monthSlots.forEach(sl => { if (!byDate[sl.date]) byDate[sl.date] = []; byDate[sl.date].push(sl) })
 
-  const handlePDF = () => openPDF(generateByMonthHTML(year, month, filterTeacher || null, store))
+  const handlePDF = async () => {
+    const { openPDF, generateByMonthHTML } = await import('../lib/reports')
+    openPDF(generateByMonthHTML(year, month, filterTeacher || null, store))
+  }
 
   return (
     <div>
