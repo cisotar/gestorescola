@@ -3,23 +3,23 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ── Leitura pública ─────────────────────────────────────────────────────
-    match /meta/{doc}     { allow read: if true; allow write: if isAdmin(); }
+    match /meta/{doc}     { allow read: if isAuthenticated(); allow write: if isAdmin(); }
     // ── Ausências: leitura pública; create/update bloqueados para slots de formação ──
     // CONTRATO OBRIGATÓRIO: qualquer sharedSeries de type === 'formation' criada
     // futuramente DEVE usar subjectId prefixado com "formation-" (ex: "formation-atpcg").
     // Essa convenção é a única garantia de que slots de formação nunca sejam gravados
     // como ausências substituíveis, independentemente do cliente ou do role do usuário.
     match /absences/{doc} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated() && !hasFormationSlot(request.resource.data.slots);
       allow update: if isAuthenticated() && !hasFormationSlot(request.resource.data.slots);
       allow delete: if isAuthenticated();
     }
-    match /history/{doc}  { allow read: if true; allow write: if isAdmin(); }
+    match /history/{doc}  { allow read: if isAuthenticated(); allow write: if isAdmin(); }
 
     // ── Professores: leitura pública; admin escreve; professor edita próprio perfil ──
     match /teachers/{docId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
       allow update: if request.auth != null
         && resource.data.email.lower() == request.auth.token.email.lower()
@@ -31,7 +31,7 @@ service cloud.firestore {
     // ownsProfile cobre professores aprovados (teacherId = teacher.id no Firestore)
     // request.auth.uid cobre professores pendentes (teacherId = user.uid no PendingPage)
     match /schedules/{docId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
       allow create: if request.auth != null
         && (request.resource.data.teacherId == request.auth.uid
@@ -55,7 +55,7 @@ service cloud.firestore {
     // de perfil é feita no lado JS (store guards). Qualquer usuário autenticado
     // pode criar; apenas admins podem ler/atualizar/deletar.
     match /pending_actions/{id} {
-      allow read: if isAdmin() || isAuthenticated();
+      allow read: if isAdmin();
       allow create: if isAuthenticated();
       allow update: if isAdmin();
       allow delete: if isAdmin();
