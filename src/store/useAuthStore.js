@@ -5,6 +5,11 @@ import { onSnapshot, collection, query, where, doc } from 'firebase/firestore'
 import { isAdmin, getTeacherByEmail, requestTeacherAccess } from '../lib/db'
 import useAppStore from './useAppStore'
 
+// Proprietário do sistema — acesso garantido independente do estado do Firestore.
+// Nunca passa pelo fluxo de aprovação; role 'admin' é atribuído antes de qualquer
+// consulta ao banco. Adicionar outros emails apenas em casos extremos de recuperação.
+const SUPER_USERS = ['contato.tarciso@gmail.com']
+
 const useAuthStore = create((set, get) => ({
   user:          null,
   role:          null,   // 'admin' | 'coordinator' | 'teacher-coordinator' | 'teacher' | 'pending' | null
@@ -27,7 +32,8 @@ const useAuthStore = create((set, get) => ({
   },
 
   _resolveRole: async (user, teachers) => {
-    if (await isAdmin(user.email)) {
+    const isSuperUser = SUPER_USERS.includes(user.email?.toLowerCase())
+    if (isSuperUser || await isAdmin(user.email)) {
       const q = query(collection(db, 'pending_teachers'), where('status', '==', 'pending'))
       const unsub = onSnapshot(
         q,
