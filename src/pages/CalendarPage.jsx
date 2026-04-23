@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
-import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, businessDaysBetween, formatISO, formatMonthlyAulas, isFormationSlot } from '../lib/helpers'
+import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, businessDaysBetween, formatISO, formatMonthlyAulas, isFormationSlot, isRestSlot } from '../lib/helpers'
 import { getPeriodos, slotLabel } from '../lib/periods'
 import { rankCandidates, suggestSubstitutes, monthlyLoad, createAbsence as _buildAbsence } from '../lib/absences'
 import { generateDayHTML, generateSlotCertificateHTML, openPDF } from '../lib/reports'
@@ -223,6 +223,45 @@ function FullCandidateList({ candidates, curSub, matchLabel, store, onSelect }) 
   )
 }
 
+// ─── WhatsAppButton ───────────────────────────────────────────────────────────
+
+function WhatsAppButton({ mode, context, store }) {
+  const [open, setOpen] = useState(false)
+  const [phone, setPhone] = useState(() => localStorage.getItem('gestao_whatsapp_phone') ?? '')
+
+  const handleSend = async () => {
+    const digits = phone.replace(/\D/g, '')
+    const fullNumber = digits.startsWith('55') ? digits : `55${digits}`
+    localStorage.setItem('gestao_whatsapp_phone', digits)
+    const { buildWhatsAppMessage } = await import('../lib/reports')
+    const msg = buildWhatsAppMessage(mode, context, store)
+    window.open(`https://api.whatsapp.com/send?phone=${fullNumber}&text=${encodeURIComponent(msg)}`, '_blank')
+    setOpen(false)
+  }
+
+  return (
+    <>
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>📱 WhatsApp</button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Enviar por WhatsApp">
+        <div className="space-y-4">
+          <div>
+            <label className="lbl">Número WhatsApp</label>
+            <input className="inp" type="tel" placeholder="55 11 99999-9999" value={phone}
+              onChange={e => setPhone(e.target.value)} />
+            <p className="text-xs text-t3 mt-1">Incluir código do país. Ex: 5511999999999</p>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
+            <button className="btn btn-dark" onClick={handleSend} disabled={!phone.replace(/\D/g, '')}>
+              Abrir WhatsApp
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </>
+  )
+}
+
 // ─── DayModal ─────────────────────────────────────────────────────────────────
 
 function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
@@ -306,31 +345,47 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
     <Modal open={open} onClose={onClose} title={`${teacher.name} — ${dayLabel} ${formatBR(date)}`} size="lg">
       {/* Barra de ações rápidas (admin) */}
       {isAdmin && mine.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4 p-3 bg-surf2 rounded-xl">
-          {!allAbsent && (
-            <button className="btn btn-dark btn-sm" onClick={handleMarkAll}>
-              Marcar dia inteiro
-            </button>
-          )}
-          {anyAbsent && !allHasSub && (
-            <button className="btn btn-ghost btn-sm" onClick={handleAcceptAll}>
-              ✓ Aceitar sugestões
-            </button>
-          )}
-          {anyHasSub && (
-            <button className="btn btn-ghost btn-sm text-amber-700" onClick={handleClearSubs}>
-              ↺ Remover substitutos
-            </button>
-          )}
+        <div className="flex flex-col gap-2 mb-4 p-3 bg-surf2 rounded-xl">
+          <div className="flex flex-wrap gap-2">
+            {!allAbsent && (
+              <button className="btn btn-dark btn-sm" onClick={handleMarkAll}>
+                Marcar dia inteiro
+              </button>
+            )}
+          </div>
           {anyAbsent && (
-            <button className="btn btn-danger btn-sm" onClick={handleClearAll}>
-              ✕ Remover todas as faltas
-            </button>
-          )}
-          {anyAbsent && (
-            <button className="btn btn-ghost btn-sm ml-auto" onClick={handleDownloadPDF}>
-              📄 Baixar PDF
-            </button>
+            <div className="flex flex-wrap gap-2 items-center">
+              {!allHasSub && (
+                <button className="btn btn-ghost btn-sm" onClick={handleAcceptAll}>
+                  ✓ Aceitar sugestões
+                </button>
+              )}
+              {anyHasSub && (
+                <button className="btn btn-ghost btn-sm text-amber-700" onClick={handleClearSubs}>
+                  ↺ Remover substitutos
+                </button>
+              )}
+              <button className="btn btn-danger btn-sm" onClick={handleClearAll}>
+                ✕ Remover todas as faltas
+              </button>
+              <div className="flex gap-2 ml-auto">
+                <button className="btn btn-ghost btn-sm" onClick={handleDownloadPDF}>
+                  📄 Baixar PDF
+                </button>
+                <WhatsAppButton
+                  mode="day"
+                  context={{
+                    slots: (store.absences ?? [])
+                      .filter(ab => ab.teacherId === teacher.id)
+                      .flatMap(ab => ab.slots.filter(s => s.date === date)
+                        .map(s => ({ ...s, teacherId: teacher.id }))),
+                    label: formatBR(date),
+                    teacherName: teacher.name,
+                  }}
+                  store={store}
+                />
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -349,6 +404,8 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
         )}
         {segPeriodos.map(({ seg, periodos }) => {
           const turnoLabel = (seg.turno ?? 'manha') === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
+          const periodosAtivos = periodos.filter(p => mine.find(s => s.timeSlot === p.slot))
+          if (periodosAtivos.length === 0) return null
           return (
             <div key={seg.id}>
               {segPeriodos.length > 1 && (
@@ -357,12 +414,14 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                 </div>
               )}
               <div className="space-y-2">
-                {periodos.map(p => {
+                {periodosAtivos.map(p => {
                   const sched = mine.find(s => s.timeSlot === p.slot)
                   const abs   = sched ? absMap[p.slot] : null
                   const sub   = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
                   const subj  = store.subjects.find(x => x.id === sched?.subjectId)
                   const isFormation = sched ? isFormationSlot(sched.turma, sched.subjectId, store.sharedSeries) : false
+                  const isRest      = sched ? isRestSlot(sched.turma, store.sharedSeries) : false
+                  const blockAbsence = isFormation || isRest
 
                   return (
                     <div key={p.slot} className={`p-3 rounded-xl border ${
@@ -381,10 +440,12 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                           {sched ? (
                             <>
                               <div className="font-bold text-sm">{sched.turma}</div>
-                              <div className="text-xs text-t2">{subj?.name ?? '—'}</div>
+                              <div className="text-xs text-t2">{isRest ? 'almoço/janta' : (subj?.name ?? '—')}</div>
                               {abs && (
                                 <div className="mt-1.5">
-                                  {isFormation ? (
+                                  {isRest ? (
+                                    <span className="badge-rest">Descanso</span>
+                                  ) : isFormation ? (
                                     <span className="badge-formation">Dispensa de Substituição</span>
                                   ) : sub ? (
                                     <div className="flex items-center gap-2 flex-wrap">
@@ -429,13 +490,16 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
                             ) : (
                               <div className="flex flex-col items-end gap-1">
                                 <button
-                                  className={`btn btn-dark btn-xs ${isFormation ? 'opacity-40 cursor-not-allowed' : ''}`}
-                                  disabled={isFormation}
-                                  onClick={() => !isFormation && handleMarkAbsent(p, sched)}
+                                  className={`btn btn-dark btn-xs ${blockAbsence ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                  disabled={blockAbsence}
+                                  onClick={() => !blockAbsence && handleMarkAbsent(p, sched)}
                                 >
                                   Marcar falta
                                 </button>
-                                {isFormation && (
+                                {isRest && (
+                                  <span className="text-[10px] text-t3 italic">Slot de descanso: falta não aplicável</span>
+                                )}
+                                {isFormation && !isRest && (
                                   <span className="text-[10px] text-t3 italic">Slot de formação: falta não aplicável</span>
                                 )}
                               </div>
@@ -606,22 +670,25 @@ export default function CalendarPage() {
                             const subj  = store.subjects.find(x => x.id === sched?.subjectId)
                             const isToday = date === todayISO
                             const isFormation = sched ? isFormationSlot(sched.turma, sched.subjectId, store.sharedSeries) : false
+                            const isRest      = sched ? isRestSlot(sched.turma, store.sharedSeries) : false
+                            const blockAbsence = isFormation || isRest
                             return (
                               <td key={date} className={`px-2 py-1.5 ${isToday ? 'bg-accent-l/30' : ''}`}>
                                 {sched ? (
                                   <button
-                                    onClick={() => !isFormation && setModalDate(date)}
-                                    disabled={isFormation}
+                                    onClick={() => !blockAbsence && setModalDate(date)}
+                                    disabled={blockAbsence}
                                     className={`w-full text-left px-2.5 py-2 rounded-lg border text-xs transition-all hover:shadow-sm
-                                      ${isFormation ? 'bg-surf2 border-bdr opacity-75 cursor-not-allowed' :
+                                      ${blockAbsence ? 'bg-surf2 border-bdr opacity-75 cursor-not-allowed' :
                                         abs ? 'bg-[#FFF1EE] border-[#FDB8A8] hover:shadow-sm' : 'bg-surf2 border-bdr hover:border-t3 hover:shadow-sm'}`}
                                   >
-                                    <div className={`font-bold truncate flex items-center gap-2 ${abs && !isFormation ? 'text-[#7F1A06]' : 'text-t1'}`}>
+                                    <div className={`font-bold truncate flex items-center gap-2 ${abs && !blockAbsence ? 'text-[#7F1A06]' : 'text-t1'}`}>
                                       {sched.turma}
-                                      {isFormation && <span className="badge-formation shrink-0">Dispensa</span>}
+                                      {isRest && <span className="badge-rest shrink-0">Descanso</span>}
+                                      {isFormation && !isRest && <span className="badge-formation shrink-0">Dispensa</span>}
                                     </div>
-                                    <div className={`text-[10px] truncate mt-0.5 ${abs && !isFormation ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
-                                    {abs && !isFormation && (
+                                    <div className={`text-[10px] truncate mt-0.5 ${abs && !blockAbsence ? 'text-[#9A3412]' : 'text-t2'}`}>{isRest ? 'almoço/janta' : (subj?.name ?? '—')}</div>
+                                    {abs && !blockAbsence && (
                                       <div className={`text-[10px] font-bold mt-0.5 ${sub ? 'text-ok' : 'text-err'}`}>
                                         {sub ? `↳ ${sub.name}` : '⚠ sem sub.'}
                                       </div>

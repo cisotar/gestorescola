@@ -52,6 +52,10 @@
     @apply inline-flex items-center px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 text-xs font-semibold;
   }
 
+  .badge-rest {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md bg-surf2 text-t2 text-xs font-semibold;
+  }
+
   /* Scrollbar personalizado */
   .scroll-thin {
     scrollbar-width: thin;

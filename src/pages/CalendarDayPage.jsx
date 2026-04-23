@@ -6,7 +6,7 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import useAppStore from '../store/useAppStore'
 import useAuthStore from '../store/useAuthStore'
 import { DAYS } from '../lib/constants'
-import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, formatMonthlyAulas, isFormationSlot } from '../lib/helpers'
+import { colorOfTeacher, teacherSubjectNames, formatBR, dateToDayLabel, formatMonthlyAulas, isFormationSlot, isRestSlot } from '../lib/helpers'
 import { getPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, toMin, getCfg } from '../lib/periods'
 import { rankCandidates, suggestSubstitutes, monthlyLoad } from '../lib/absences'
 import { generateDayHTML, generateSlotCertificateHTML, openPDF } from '../lib/reports'
@@ -174,6 +174,45 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
             </button>
           </div>
         )}
+      </Modal>
+    </>
+  )
+}
+
+// ─── WhatsAppButton ───────────────────────────────────────────────────────────
+
+function WhatsAppButton({ mode, context, store }) {
+  const [open, setOpen] = useState(false)
+  const [phone, setPhone] = useState(() => localStorage.getItem('gestao_whatsapp_phone') ?? '')
+
+  const handleSend = async () => {
+    const digits = phone.replace(/\D/g, '')
+    const fullNumber = digits.startsWith('55') ? digits : `55${digits}`
+    localStorage.setItem('gestao_whatsapp_phone', digits)
+    const { buildWhatsAppMessage } = await import('../lib/reports')
+    const msg = buildWhatsAppMessage(mode, context, store)
+    window.open(`https://api.whatsapp.com/send?phone=${fullNumber}&text=${encodeURIComponent(msg)}`, '_blank')
+    setOpen(false)
+  }
+
+  return (
+    <>
+      <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}>📱 WhatsApp</button>
+      <Modal open={open} onClose={() => setOpen(false)} title="Enviar por WhatsApp">
+        <div className="space-y-4">
+          <div>
+            <label className="lbl">Número WhatsApp</label>
+            <input className="inp" type="tel" placeholder="55 11 99999-9999" value={phone}
+              onChange={e => setPhone(e.target.value)} />
+            <p className="text-xs text-t3 mt-1">Incluir código do país. Ex: 5511999999999</p>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button className="btn btn-ghost" onClick={() => setOpen(false)}>Cancelar</button>
+            <button className="btn btn-dark" onClick={handleSend} disabled={!phone.replace(/\D/g, '')}>
+              Abrir WhatsApp
+            </button>
+          </div>
+        </div>
       </Modal>
     </>
   )
@@ -382,7 +421,21 @@ export default function CalendarDayPage() {
             <button className="btn btn-danger btn-sm" onClick={handleClearAll}>✕ Remover todas as faltas</button>
           )}
           {allHasSub && (
-            <button className="btn btn-ghost btn-sm ml-auto" onClick={handleDownloadPDF}>📄 Baixar PDF</button>
+            <div className="flex gap-2 ml-auto">
+              <button className="btn btn-ghost btn-sm" onClick={handleDownloadPDF}>📄 Baixar PDF</button>
+              <WhatsAppButton
+                mode="day"
+                context={{
+                  slots: (store.absences ?? [])
+                    .filter(ab => ab.teacherId === teacher.id)
+                    .flatMap(ab => ab.slots.filter(s => s.date === activeDate)
+                      .map(s => ({ ...s, teacherId: teacher.id }))),
+                  label: formatBR(activeDate),
+                  teacherName: teacher.name,
+                }}
+                store={store}
+              />
+            </div>
           )}
         </div>
       )}
@@ -401,6 +454,8 @@ export default function CalendarDayPage() {
         )}
         {segPeriodos.map(({ seg: s, periodos }) => {
           const turnoLabel = (s.turno ?? 'manha') === 'tarde' ? '🌇 Tarde' : '🌅 Manhã'
+          const periodosAtivos = periodos.filter(p => dayMine.find(sc => sc.timeSlot === p.slot))
+          if (periodosAtivos.length === 0) return null
           return (
             <div key={s.id}>
               {segPeriodos.length > 1 && (
@@ -410,17 +465,19 @@ export default function CalendarDayPage() {
               )}
               <div className="card bg-white border border-bdr overflow-hidden">
                 <div className="divide-y divide-bdr">
-                  {periodos.map((p) => {
+                  {periodosAtivos.map((p) => {
                     const sched  = dayMine.find(sc => sc.timeSlot === p.slot)
                     const abs    = sched ? dayAbsMap[p.slot] : null
                     const sub    = abs?.substituteId ? store.teachers.find(t => t.id === abs.substituteId) : null
                     const subj   = store.subjects.find(x => x.id === sched?.subjectId)
                     const isFormation = sched ? isFormationSlot(sched.turma, sched.subjectId, store.sharedSeries) : false
+                    const isRest      = sched ? isRestSlot(sched.turma, store.sharedSeries) : false
+                    const blockAbsence = isFormation || isRest
 
                     return (
                       <div key={p.slot} className={`flex items-start gap-3 px-4 py-3
                         ${abs
-                          ? isFormation ? 'bg-surf2 opacity-75' : 'bg-[#FFF1EE]'
+                          ? blockAbsence ? 'bg-surf2 opacity-75' : 'bg-[#FFF1EE]'
                           : `${!sched ? 'opacity-60' : ''}`
                         }`}
                       >
@@ -434,12 +491,17 @@ export default function CalendarDayPage() {
                         <div className="flex-1 min-w-0">
                           {sched ? (
                             <>
-                              <div className={`font-bold text-sm ${abs ? 'text-[#7F1A06]' : ''}`}>{sched.turma}</div>
-                              <div className={`text-xs ${abs ? 'text-[#9A3412]' : 'text-t2'}`}>{subj?.name ?? '—'}</div>
-                              {!abs && isFormation && (
+                              <div className={`font-bold text-sm ${abs && !blockAbsence ? 'text-[#7F1A06]' : ''}`}>{sched.turma}</div>
+                              <div className={`text-xs ${abs && !blockAbsence ? 'text-[#9A3412]' : 'text-t2'}`}>{isRest ? 'almoço/janta' : (subj?.name ?? '—')}</div>
+                              {!abs && isRest && (
+                                <span className="text-xs text-t3 italic mt-0.5 block">Slot de descanso</span>
+                              )}
+                              {!abs && isFormation && !isRest && (
                                 <span className="text-xs text-t3 italic mt-0.5 block">Slot de formação</span>
                               )}
-                              {abs && isFormation ? (
+                              {abs && isRest ? (
+                                <span className="badge-rest">Descanso</span>
+                              ) : abs && isFormation ? (
                                 <span className="badge-formation">Dispensa de Substituição</span>
                               ) : abs && (
                                 <div className="mt-1.5">
@@ -487,8 +549,8 @@ export default function CalendarDayPage() {
                             ) : (
                               <button
                                 className="btn btn-dark btn-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                                disabled={isFormation}
-                                onClick={() => handleMarkAbsent(p, sched)}
+                                disabled={blockAbsence}
+                                onClick={() => !blockAbsence && handleMarkAbsent(p, sched)}
                               >
                                 Marcar falta
                               </button>
