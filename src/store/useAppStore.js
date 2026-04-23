@@ -47,10 +47,11 @@ const INITIAL_STATE = {
   subjects:      [],
   /**
    * Turmas compartilhadas (FORMAÇÃO, etc.)
-   * @type {Array<{id: string, name: string, type: 'formation'|'elective'}>}
+   * @type {Array<{id: string, name: string, type: 'formation'|'elective'|'rest'}>}
    *
    * - type: 'formation' — não demanda substituto (ex: ATPCG, ATPCA)
    * - type: 'elective' — demanda substituto como aulas regulares
+   * - type: 'rest'     — período de descanso/almoço; não demanda substituto
    */
   sharedSeries:  [],
   teachers:      [],
@@ -303,12 +304,12 @@ const useAppStore = create((set, get) => {
    * @param {Object} series - Turma a adicionar
    * @param {string} series.id - Identificador único
    * @param {string} series.name - Nome exibido
-   * @param {'formation'|'elective'} series.type - Tipo obrigatório
-   * @throws {Error} Se type não for 'formation' ou 'elective'
+   * @param {'formation'|'elective'|'rest'} series.type - Tipo obrigatório
+   * @throws {Error} Se type não for 'formation', 'elective' ou 'rest'
    */
   addSharedSeries: (series) => {
-    if (!['formation', 'elective'].includes(series.type)) {
-      throw new Error(`Tipo inválido: ${series.type}. Aceitos: 'formation', 'elective'`)
+    if (!['formation', 'elective', 'rest'].includes(series.type)) {
+      throw new Error(`Tipo inválido: ${series.type}. Aceitos: 'formation', 'elective', 'rest'`)
     }
     set(s => ({ sharedSeries: [...s.sharedSeries, series] }))
     saveConfig(get())
@@ -318,12 +319,12 @@ const useAppStore = create((set, get) => {
    * Atualiza turma compartilhada existente com validação de type.
    * @param {string} id - ID da turma a atualizar
    * @param {Object} changes - Campos a atualizar
-   * @param {'formation'|'elective'} [changes.type] - Tipo (opcional), validado se presente
+   * @param {'formation'|'elective'|'rest'} [changes.type] - Tipo (opcional), validado se presente
    * @throws {Error} Se type for inválido
    */
   updateSharedSeries: (id, changes) => {
-    if (changes.type && !['formation', 'elective'].includes(changes.type)) {
-      throw new Error(`Tipo inválido: ${changes.type}. Aceitos: 'formation', 'elective'`)
+    if (changes.type && !['formation', 'elective', 'rest'].includes(changes.type)) {
+      throw new Error(`Tipo inválido: ${changes.type}. Aceitos: 'formation', 'elective', 'rest'`)
     }
     set(s => ({ sharedSeries: s.sharedSeries.map(ss => ss.id === id ? { ...ss, ...changes } : ss) }))
     saveConfig(get())

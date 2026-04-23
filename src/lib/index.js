@@ -18,7 +18,7 @@ export { toMin, fromMin, gerarPeriodos, defaultCfg, calcSaldo, validarEncaixe, g
 export { uid, h } from './helpers/ids'
 export { parseDate, formatISO, formatBR, dateToDayLabel, weekStart, businessDaysBetween, formatMonthlyAulas } from './helpers/dates'
 export { colorOfAreaId, colorOfTeacher, COLOR_PALETTE, COLOR_NEUTRAL } from './helpers/colors'
-export { allTurmaObjects, findTurma, isSharedSeries, isFormationSlot, teacherSubjectNames } from './helpers/turmas'
+export { allTurmaObjects, findTurma, isSharedSeries, isFormationSlot, isRestSlot, teacherSubjectNames } from './helpers/turmas'
 export { canEditTeacher } from './helpers/permissions'
 
 // Absences (validação e ranking de substitutos)

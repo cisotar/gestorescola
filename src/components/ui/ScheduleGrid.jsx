@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import useAppStore from '../../store/useAppStore'
 import { getCfg, gerarPeriodos, gerarPeriodosEspeciais, makeEspecialSlot, toMin, mergeAndSortPeriodos } from '../../lib/periods'
-import { isSharedSeries } from '../../lib/helpers'
+import { isSharedSeries, isRestSlot } from '../../lib/helpers'
 import AddScheduleModal from './AddScheduleModal'
 import Modal from './Modal'
 import { toast } from '../../hooks/useToast'
@@ -171,10 +171,11 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                 <div className="space-y-1">
                                   {mine.map(s => {
                                     const subj = store.subjects.find(x => x.id === s.subjectId)
+                                    const subjLabel = isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subj?.name ?? '—')
                                     return (
                                       <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
                                         <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                        <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
+                                        <div className="text-[#4a4740] text-[10px] truncate">{subjLabel}</div>
                                         {!readOnly && (
                                           <button
                                             className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
@@ -249,10 +250,11 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                               <div className="space-y-1">
                                 {mine.map(s => {
                                   const subj = store.subjects.find(x => x.id === s.subjectId)
+                                  const subjLabel = isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subj?.name ?? '—')
                                   return (
                                     <div key={s.id} className="relative bg-white border border-bdr rounded-lg p-1.5 text-[11px] group">
                                       <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                      <div className="text-[#4a4740] text-[10px] truncate">{subj?.name ?? '—'}</div>
+                                      <div className="text-[#4a4740] text-[10px] truncate">{subjLabel}</div>
                                       {!readOnly && (
                                         <button
                                           className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"

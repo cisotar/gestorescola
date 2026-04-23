@@ -67,10 +67,11 @@ function WhatsAppButton({ mode, context, store }) {
 
   const handleSend = async () => {
     const digits = phone.replace(/\D/g, '')
+    const fullNumber = digits.startsWith('55') ? digits : `55${digits}`
     localStorage.setItem('gestao_whatsapp_phone', digits)
     const { buildWhatsAppMessage } = await import('../lib/reports')
     const msg = buildWhatsAppMessage(mode, context, store)
-    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`, '_blank')
+    window.open(`https://api.whatsapp.com/send?phone=${fullNumber}&text=${encodeURIComponent(msg)}`, '_blank')
     setOpen(false)
   }
 

@@ -1,4 +1,5 @@
 import { getCfg, makeEspecialSlot, mergeAndSortPeriodos } from '../../lib/periods'
+import { isRestSlot } from '../../lib/helpers'
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
@@ -91,12 +92,12 @@ export default function SchoolGrid({ seg, schedules, store, showTeacher = true, 
                                 {showTeacher ? (
                                   <>
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name || '—')}</div>
-                                    <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
+                                    <div className="text-[#4a4740] text-[10px]">{isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subject?.name ?? '—')}</div>
                                   </>
                                 ) : (
                                   <>
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{s.turma ?? '—'}</div>
-                                    <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
+                                    <div className="text-[#4a4740] text-[10px]">{isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subject?.name ?? '—')}</div>
                                   </>
                                 )}
                               </div>
@@ -138,12 +139,12 @@ export default function SchoolGrid({ seg, schedules, store, showTeacher = true, 
                                 {showTeacher ? (
                                   <>
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name || '—')}</div>
-                                    <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
+                                    <div className="text-[#4a4740] text-[10px]">{isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subject?.name ?? '—')}</div>
                                   </>
                                 ) : (
                                   <>
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{s.turma ?? '—'}</div>
-                                    <div className="text-[#4a4740] text-[10px]">{subject?.name ?? '—'}</div>
+                                    <div className="text-[#4a4740] text-[10px]">{isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subject?.name ?? '—')}</div>
                                   </>
                                 )}
                               </div>

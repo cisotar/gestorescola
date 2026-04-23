@@ -51,20 +51,48 @@ export function isSharedSeries(turmaName, sharedSeries = []) {
  * O subjectId agora aponta para subjects[].id normalmente (matéria da grade),
  * portanto não é mais usado para detectar o tipo de formação.
  *
+ * Nota: slots de descanso/intervalo (type === "rest") NÃO são cobertos por esta
+ * função — use `isRestSlot` para verificar esse tipo.
+ *
  * @param {string|null} turma - Nome da turma (ex: "FORMAÇÃO", "6º Ano A", null)
  * @param {string|null} _subjectId - Ignorado (mantido por compatibilidade de assinatura)
- * @param {Array<{id: string, name: string, type: 'formation'|'elective'}>} [sharedSeries=[]]
+ * @param {Array<{id: string, name: string, type: 'formation'|'elective'|'rest'}>} [sharedSeries=[]]
  * @returns {boolean} true se slot pertence a turma de formação, false caso contrário
  *
  * @example
  * isFormationSlot("FORMAÇÃO", null, [{id: '1', name: 'FORMAÇÃO', type: 'formation'}]) // → true
  * isFormationSlot("Eletiva 2024", null, [{id: '2', name: 'Eletiva 2024', type: 'elective'}]) // → false
  * isFormationSlot("6º Ano A", "subj-bio", [{id: '1', name: 'FORMAÇÃO', type: 'formation'}]) // → false
+ * isFormationSlot("ALMOÇO", null, [{id: '3', name: 'ALMOÇO', type: 'rest'}]) // → false (use isRestSlot)
  */
 export function isFormationSlot(turma, _subjectId, sharedSeries = []) {
   if (!turma) return false
   const sharedTurma = sharedSeries.find(ss => ss.name === turma)
   return !!(sharedTurma && sharedTurma.type === 'formation')
+}
+
+/**
+ * Detecta se um slot é de descanso/intervalo (type === "rest").
+ *
+ * Verifica se a turma é uma turma compartilhada de tipo "rest".
+ * Slots do tipo "rest" representam períodos de descanso ou almoço na grade
+ * e não demandam substituto.
+ *
+ * @param {string|null} turma - Nome da turma (ex: "ALMOÇO", "6º Ano A", null)
+ * @param {Array<{id: string, name: string, type: 'formation'|'elective'|'rest'}>} [sharedSeries=[]]
+ * @returns {boolean} true se slot pertence a turma de descanso, false caso contrário
+ *
+ * @example
+ * isRestSlot("ALMOÇO", [{id: '1', name: 'ALMOÇO', type: 'rest'}]) // → true
+ * isRestSlot("FORMAÇÃO", [{id: '2', name: 'FORMAÇÃO', type: 'formation'}]) // → false
+ * isRestSlot("6º Ano A", [{id: '1', name: 'ALMOÇO', type: 'rest'}]) // → false
+ * isRestSlot(null, [{id: '1', name: 'ALMOÇO', type: 'rest'}]) // → false
+ * isRestSlot("ALMOÇO", []) // → false
+ */
+export function isRestSlot(turma, sharedSeries = []) {
+  if (!turma) return false
+  const sharedTurma = sharedSeries.find(ss => ss.name === turma)
+  return !!(sharedTurma && sharedTurma.type === 'rest')
 }
 
 export function teacherSubjectNames(teacher, subjects) {

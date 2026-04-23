@@ -38,6 +38,8 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
     ? (grades.find(g => g.name === grade)?.classes ?? []).map(c => `${grade} ${c.letter}`)
     : []
   const selectedSharedSeries = store.sharedSeries.find(ss => ss.name === turma) ?? null
+  const isRestType = selectedSharedSeries?.type === 'rest'
+  const isSharedAndNeedsSubject = isSharedSeries(turma, store.sharedSeries) && !isRestType
 
   // Helper para detectar se área é compartilhada
   function isSharedSchedule(schedule, store) {
@@ -81,9 +83,10 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
           { alert('Esta turma está reservada para área compartilhada.'); return }
       }
     }
-    if (isShared && !subjId)
+    if (isSharedAndNeedsSubject && !subjId)
       { alert('Selecione a matéria.'); return }
-    onSave({ teacherId: teacher.id, subjectId: subjId || null, turma, day, timeSlot: slot })
+    const finalSubjectId = isRestType ? null : (subjId || null)
+    onSave({ teacherId: teacher.id, subjectId: finalSubjectId, turma, day, timeSlot: slot })
   }
 
   const pillBase = 'px-3 py-1 rounded-full text-sm border transition-colors cursor-pointer'
@@ -152,36 +155,18 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
                   key={ss.id}
                   type="button"
                   className={turma === ss.name ? pillOn : pillOff}
-                  onClick={() => { setGrade(''); setTurma(ss.name); setSubjId('') }}
+                  onClick={() => { setGrade(''); setTurma(turma === ss.name ? '' : ss.name); setSubjId('') }}
                 >
                   {ss.name}
                 </button>
               ))}
             </div>
-
-            {selectedSharedSeries && (
-              <div className="mt-3">
-                <div className="text-[10px] font-bold text-t3 uppercase tracking-wider mb-2">Matéria</div>
-                <div className="flex flex-wrap gap-2">
-                  {mySubjs.map(subj => (
-                      <button
-                        key={subj.id}
-                        type="button"
-                        className={subjId === subj.id ? pillOn : pillOff}
-                        onClick={() => setSubjId(subj.id)}
-                      >
-                        {subj.name}
-                      </button>
-                    ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
         {/* Matéria */}
         <div>
-          <label className="lbl">Matéria <span className="font-normal text-t3">(opcional)</span></label>
+          <label className="lbl">Matéria</label>
           {mySubjs.length === 0
             ? <p className="text-xs text-t3 mt-1">Nenhuma matéria vinculada a este segmento.</p>
             : <div className="flex flex-wrap gap-2 mt-1">
