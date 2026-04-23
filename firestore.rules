@@ -62,10 +62,10 @@ service cloud.firestore {
     }
 
     // ── Somente admins ───────────────────────────────────────────────────────
-    // Leitura do próprio doc permitida para qualquer autenticado (bootstrap de role)
+    // O ID do documento é o email em lowercase (ex: "contato.tarciso@gmail.com")
     match /admins/{doc} {
       allow read: if isAdmin()
-        || (request.auth != null && doc == emailToKey(request.auth.token.email));
+        || (request.auth != null && doc == request.auth.token.email.lower());
       allow write: if isAdmin();
     }
 
@@ -79,15 +79,11 @@ service cloud.firestore {
       return teacherDoc != null && teacherDoc.data.email.lower() == request.auth.token.email.lower();
     }
 
-    function emailToKey(email) {
-      return email.lower()
-        .replace('.', '_').replace('#', '_').replace('$', '_')
-        .replace('/', '_').replace('[', '_').replace(']', '_');
-    }
-
     function isAdmin() {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/admins/$(emailToKey(request.auth.token.email)));
+      return request.auth != null && (
+        request.auth.token.email.lower() == 'contato.tarciso@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()))
+      );
     }
 
     // Retorna true se o primeiro slot possui subjectId prefixado com "formation-".

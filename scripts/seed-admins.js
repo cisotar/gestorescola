@@ -61,7 +61,7 @@ const db = getFirestore()
 // ─── emailKey: mesma lógica de src/lib/db.js ──────────────────────────────────
 
 function emailKey(email) {
-  return email.toLowerCase().replace(/[.#$/[\]]/g, '_')
+  return email.toLowerCase()
 }
 
 // ─── Admins a serem seedados ───────────────────────────────────────────────────

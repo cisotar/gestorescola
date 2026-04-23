@@ -106,7 +106,7 @@ export { saveConfig } from './config'
 
 // ─── Admins ───────────────────────────────────────────────────────────────────
 
-const emailKey = (email) => email.toLowerCase().replace(/[.#$/[\]]/g, '_')
+const emailKey = (email) => email.toLowerCase()
 
 export async function isAdmin(email) {
   if (!email) return false
