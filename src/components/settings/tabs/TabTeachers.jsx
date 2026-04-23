@@ -23,8 +23,10 @@ import {
 } from '../../../lib/db'
 import Modal from '../../ui/Modal'
 import { ScheduleGridModal } from '../../ui/ScheduleGrid'
+import GradeTurnoCard from '../../ui/GradeTurnoCard'
 import ProfilePillDropdown from '../shared/ProfilePillDropdown'
 import SubjectSelector from '../shared/SubjectSelector'
+import { parseSlot } from '../../../lib/periods'
 
 // ─── SubjectChangeModal ───────────────────────────────────────────────────────
 
@@ -614,36 +616,44 @@ export default function TabTeachers() {
         )}
       </Modal>
 
-      {/* Modal: Horários informados pelo professor pendente */}
+      {/* Modal: Cadastro de aulas do professor pendente */}
       <Modal
         open={!!viewingHorarios}
         onClose={() => setViewingHorarios(null)}
-        title={viewingHorarios ? `Horários — ${viewingHorarios.name}` : ''}
-        size="sm"
+        title={viewingHorarios ? `Aulas cadastradas — ${viewingHorarios.name}` : ''}
+        size="lg"
       >
-        {viewingHorarios && (
-          <div className="space-y-3">
-            <p className="text-xs text-t3">Horários de entrada e saída informados no cadastro.</p>
-            <div className="space-y-1">
-              {DAYS.map(day => {
-                const v = viewingHorarios.horariosSemana?.[day]
-                return (
-                  <div key={day} className="flex items-center gap-3 py-1.5 border-b border-bdr/50 last:border-0">
-                    <span className="w-20 text-sm font-medium text-t1 shrink-0">{day}</span>
-                    {v?.entrada && v?.saida ? (
-                      <span className="text-sm text-t1">{v.entrada} – {v.saida}</span>
-                    ) : (
-                      <span className="text-sm text-t3">Não trabalha</span>
-                    )}
-                  </div>
-                )
-              })}
+        {viewingHorarios && (() => {
+          const pendingSchedules = store.schedules.filter(s => s.teacherId === viewingHorarios.id)
+          const seen = new Set()
+          const segmentTurnos = []
+          for (const sched of pendingSchedules) {
+            const parsed = parseSlot(sched.timeSlot)
+            if (!parsed) continue
+            const key = `${parsed.segmentId}|${parsed.turno}`
+            if (!seen.has(key)) { seen.add(key); segmentTurnos.push(parsed) }
+          }
+          const order = { manha: 0, tarde: 1, noite: 2 }
+          segmentTurnos.sort((a, b) => (order[a.turno] ?? 3) - (order[b.turno] ?? 3))
+          if (segmentTurnos.length === 0) {
+            return <p className="text-sm text-t3 text-center py-6">Nenhuma aula cadastrada.</p>
+          }
+          return (
+            <div className="space-y-4">
+              {segmentTurnos.map(({ segmentId, turno }) => (
+                <GradeTurnoCard
+                  key={`${segmentId}|${turno}`}
+                  segmentId={segmentId}
+                  turno={turno}
+                  teacher={viewingHorarios}
+                  store={store}
+                  horariosSemana={viewingHorarios.horariosSemana ?? null}
+                  readOnly
+                />
+              ))}
             </div>
-            {(!viewingHorarios.horariosSemana || Object.keys(viewingHorarios.horariosSemana).length === 0) && (
-              <p className="text-xs text-warn text-center py-2">Nenhum horário informado.</p>
-            )}
-          </div>
-        )}
+          )
+        })()}
       </Modal>
 
       {/* Painel: Sem Segmento */}
