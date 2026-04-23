@@ -3,11 +3,25 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuthStore from './store/useAuthStore'
 import useAppStore from './store/useAppStore'
 import { loadFromFirestore, setupRealtimeListeners } from './lib/db'
+import { auth } from './lib/firebase'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
 import PendingPage from './pages/PendingPage'
 import Toast from './components/ui/Toast'
 import Spinner from './components/ui/Spinner'
+
+// Aguarda o Firebase Auth resolver a sessão antes de retornar.
+// Necessário para garantir que leituras autenticadas do Firestore (meta/config,
+// teachers, schedules) não sejam disparadas antes do usuário estar autenticado,
+// o que causaria falha silenciosa e store vazio (subjects: []).
+function waitForAuth() {
+  return new Promise(resolve => {
+    const unsub = auth.onAuthStateChanged(user => {
+      unsub()
+      resolve(user)
+    })
+  })
+}
 
 // Lazy-load pages to reduce initial bundle size
 const HomePage = lazy(() => import('./pages/HomePage'))
@@ -29,12 +43,18 @@ export default function App() {
   const canAccessAdmin = isAdmin || isCoordinator()
   const { hydrate, setTeachers, teachers, loaded } = useAppStore()
 
-  // 1. Carrega Firestore e inicia listeners em tempo real
+  // 1. Aguarda auth resolver e então carrega Firestore + inicia listeners em tempo real.
+  // Aguardar auth é necessário: meta/config e collections exigem isAuthenticated().
+  // Sem isso, o loadFromFirestore falha silenciosamente em primeiro acesso (sem cache)
+  // e subjects/areas/segments ficam vazios na PendingPage.
   useEffect(() => {
     let active = true
     let unsubscribes = []
-    loadFromFirestore().then(data => {
+    waitForAuth().then(() => {
       if (!active) return
+      return loadFromFirestore()
+    }).then(data => {
+      if (!active || !data) return
       hydrate(data)
       unsubscribes = setupRealtimeListeners(useAppStore.getState())
     })
