@@ -267,7 +267,7 @@
                     <div className="flex flex-col gap-2 pt-1">
                       <button
                         onClick={handleSubmit}
-                        disabled={saving || hasHorarioError || (tentouEnviar && !temAoMenosUmDiaCompleto)}
+                        disabled={saving || hasHorarioError || !temAoMenosUmDiaCompleto}
                         className="btn btn-dark w-full disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {saving ? 'Salvando…' : 'Enviar cadastro'}
