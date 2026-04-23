@@ -128,6 +128,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
               : <div className="flex flex-wrap gap-2 mt-1">
                   {allTurmasForGrade.map(t => {
                     const locked = hardBlockedTurmas.has(t)
+                    const occupant = locked ? (occupiedByTeacher[t] ?? '?') : null
                     return (
                       <button
                         key={t}
@@ -135,9 +136,8 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
                         className={locked ? pillLock : turma === t ? pillOn : pillOff}
                         disabled={locked}
                         onClick={() => !locked && setTurma(t)}
-                        title={locked ? `Ocupado por ${occupiedByTeacher[t] ?? '?'}` : undefined}
                       >
-                        {t}
+                        {locked ? `${t} · ${occupant}` : t}
                       </button>
                     )
                   })}
