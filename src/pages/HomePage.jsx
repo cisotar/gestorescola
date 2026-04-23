@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import ActionCard from '../components/ui/ActionCard'
@@ -68,6 +69,56 @@ function TeacherStats({ teacher, schedules, absences }) {
   )
 }
 
+// ─── Banner: horários de entrada/saída ausentes ───────────────────────────────
+
+function BannerHorariosAusentes() {
+  const navigate = useNavigate()
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-warn bg-amber-50 px-4 py-3">
+      <span className="text-warn text-lg leading-none mt-0.5">⚠️</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-warn">
+          Seus horários de entrada e saída não estão cadastrados
+        </p>
+        <p className="text-xs text-amber-700 mt-0.5">
+          O sistema de substituições usa esses dados para verificar sua disponibilidade.
+        </p>
+      </div>
+      <button
+        onClick={() => navigate('/settings?tab=profile')}
+        className="btn btn-dark btn-sm shrink-0"
+      >
+        Cadastrar horários
+      </button>
+    </div>
+  )
+}
+
+// ─── Banner: grade horária vazia ───────────────────────────────────────────────
+
+function BannerGradeVazia({ teacherId }) {
+  const navigate = useNavigate()
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-warn bg-amber-50 px-4 py-3">
+      <span className="text-warn text-lg leading-none mt-0.5">⚠️</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-warn">
+          Sua grade horária está vazia
+        </p>
+        <p className="text-xs text-amber-700 mt-0.5">
+          Adicione suas aulas para que o sistema possa gerar substituições corretamente.
+        </p>
+      </div>
+      <button
+        onClick={() => navigate(`/grades?teacher=${teacherId}`)}
+        className="btn btn-dark btn-sm shrink-0"
+      >
+        Cadastrar grade
+      </button>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -82,6 +133,13 @@ export default function HomePage() {
       </div>
     )
   }
+
+  const semHorarios = myTeacher
+    ? (!myTeacher.horariosSemana || Object.keys(myTeacher.horariosSemana).length === 0)
+    : false
+  const semGrade = myTeacher
+    ? schedules.filter(s => s.teacherId === myTeacher.id).length === 0
+    : false
 
   const actionCards = [
     {
@@ -123,6 +181,9 @@ export default function HomePage() {
         <h1 className="text-2xl font-extrabold tracking-tight">Olá, {firstName} 👋</h1>
         <p className="text-sm text-t2 mt-1">Bem-vindo(a) ao seu painel de controle.</p>
       </div>
+
+      {semHorarios && <BannerHorariosAusentes />}
+      {semGrade && <BannerGradeVazia teacherId={myTeacher.id} />}
 
       <KPICards teachers={teachers} schedules={schedules} absences={absences} />
 

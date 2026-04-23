@@ -307,18 +307,24 @@
                       </div>
                     </div>
 
+                    <div className="text-sm pt-1">
+                      <div className="font-semibold text-t1">
+                        {myScheduleCount} aula(s) cadastrada(s)
+                      </div>
+                      {myScheduleCount === 0 && (
+                        <p className="text-xs text-err mt-1">
+                          Cadastre ao menos uma aula na grade ao lado para concluir
+                        </p>
+                      )}
+                    </div>
+
                     <div className="space-y-2 pt-2">
                       <button
                         onClick={() => setStep('waiting')}
-                        className="btn btn-dark w-full"
+                        disabled={myScheduleCount === 0}
+                        className="btn btn-dark w-full disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         Concluir
-                      </button>
-                      <button
-                        onClick={() => setStep('waiting')}
-                        className="btn btn-ghost w-full"
-                      >
-                        Pular por agora
                       </button>
                     </div>
                   </div>
