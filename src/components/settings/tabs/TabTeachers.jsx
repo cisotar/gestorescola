@@ -214,6 +214,7 @@ export default function TabTeachers() {
   const [showNoSegmentPanel, setShowNoSegmentPanel] = useState(false)
   const [pendingProfiles,    setPendingProfiles]    = useState({})
   const [admins,             setAdmins]             = useState([])
+  const [viewingHorarios,    setViewingHorarios]    = useState(null) // professor pendente cujos horários estão sendo exibidos
 
   useEffect(() => {
     listAdmins().then(list => setAdmins(list.map(a => a.email.toLowerCase())))
@@ -571,6 +572,13 @@ export default function TabTeachers() {
                       </div>
                     )}
                   </div>
+                  <button
+                    className="btn btn-ghost btn-xs shrink-0 mt-0.5"
+                    title="Ver horários informados"
+                    onClick={() => setViewingHorarios(p)}
+                  >
+                    📅
+                  </button>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-bdr">
                   <ProfilePillDropdown
@@ -602,6 +610,38 @@ export default function TabTeachers() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Horários informados pelo professor pendente */}
+      <Modal
+        open={!!viewingHorarios}
+        onClose={() => setViewingHorarios(null)}
+        title={viewingHorarios ? `Horários — ${viewingHorarios.name}` : ''}
+        size="sm"
+      >
+        {viewingHorarios && (
+          <div className="space-y-3">
+            <p className="text-xs text-t3">Horários de entrada e saída informados no cadastro.</p>
+            <div className="space-y-1">
+              {DAYS.map(day => {
+                const v = viewingHorarios.horariosSemana?.[day]
+                return (
+                  <div key={day} className="flex items-center gap-3 py-1.5 border-b border-bdr/50 last:border-0">
+                    <span className="w-20 text-sm font-medium text-t1 shrink-0">{day}</span>
+                    {v?.entrada && v?.saida ? (
+                      <span className="text-sm text-t1">{v.entrada} – {v.saida}</span>
+                    ) : (
+                      <span className="text-sm text-t3">Não trabalha</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            {(!viewingHorarios.horariosSemana || Object.keys(viewingHorarios.horariosSemana).length === 0) && (
+              <p className="text-xs text-warn text-center py-2">Nenhum horário informado.</p>
+            )}
           </div>
         )}
       </Modal>
