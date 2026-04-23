@@ -5,6 +5,7 @@
   import { updatePendingData } from '../lib/db'
   import { db } from '../lib/firebase'
   import { ScheduleGrid } from '../components/ui/ScheduleGrid'
+  import Modal from '../components/ui/Modal'
   import { DAYS } from '../lib/constants'
 
   const PHONE_REGEX = /^[1-9][0-9]9[0-9]{7,8}$/
@@ -50,6 +51,27 @@
     return null
   }
 
+  function ModalErroValidacao({ open, erros, onClose }) {
+    return (
+      <Modal open={open} onClose={onClose} title="Dados Incompletos" size="sm">
+        <div className="space-y-2 mb-4">
+          {erros.map((erro, idx) => (
+            <div key={idx} className="flex gap-2 items-start">
+              <span className="text-lg leading-none mt-0.5">❌</span>
+              <span className="text-sm text-t1">{erro}</span>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={onClose}
+          className="btn btn-dark w-full"
+        >
+          Entendi, vou corrigir
+        </button>
+      </Modal>
+    )
+  }
+
   export default function PendingPage() {
     const { user, logout }               = useAuthStore()
     const store                          = useAppStore()
@@ -59,10 +81,9 @@
     const [selectedSubjs, setSelSubjs]  = useState([])
     const [horariosSemana, setHorariosSemana] = useState({})
     const [saving,        setSaving]    = useState(false)
-    const [phoneError,    setPhoneError] = useState('')
-    const [subjError,     setSubjError]  = useState('')
     const [saveError,     setSaveError]  = useState('')
-    const [tentouEnviar,  setTentouEnviar] = useState(false)
+    const [modalErroAberto, setModalErroAberto] = useState(false)
+    const [errosValidacao, setErrosValidacao] = useState([])
 
     // Erros de validação de horários — derivados sem estado extra
     const horarioErrors = Object.fromEntries(
@@ -124,13 +145,37 @@
       setSelSubjs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
 
     const handleSubmit = async () => {
-      setTentouEnviar(true)
-      const pErr = validatePhone(celular)
-      const sErr = selectedSubjs.length === 0 ? 'Selecione ao menos uma matéria' : null
-      setPhoneError(pErr ?? '')
-      setSubjError(sErr ?? '')
-      if (pErr || sErr || !temAoMenosUmDiaCompleto) return
+      const erros = []
 
+      // Validar matérias
+      if (selectedSubjs.length === 0) {
+        erros.push('Selecione ao menos uma matéria')
+      }
+
+      // Validar celular
+      const pErr = validatePhone(celular)
+      if (pErr) {
+        erros.push(pErr)
+      }
+
+      // Validar horários
+      if (!temAoMenosUmDiaCompleto) {
+        erros.push('Preencha horários de entrada e saída')
+      }
+
+      // Validar aulas
+      if (myScheduleCount === 0) {
+        erros.push('Cadastre ao menos uma aula na grade')
+      }
+
+      // Se há erros, abrir modal
+      if (erros.length > 0) {
+        setErrosValidacao(erros)
+        setModalErroAberto(true)
+        return
+      }
+
+      // Sem erros — prosseguir com salvamento
       setSaving(true); setSaveError('')
       try {
         await updatePendingData(user.uid, { celular: celular.replace(/\D/g, ''), apelido: apelido.trim(), subjectIds: selectedSubjs, horariosSemana })
@@ -181,16 +226,13 @@
                       <label className="lbl">Telefone <span className="text-err">*</span></label>
                       <input
                         type="tel"
-                        className={`inp ${phoneError ? 'border-err' : ''}`}
+                        className="inp"
                         placeholder="11987654321"
                         value={celular}
                         onChange={e => setCelular(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                       />
-                      {phoneError
-                        ? <p className="text-xs text-err mt-1">{phoneError}</p>
-                        : <p className="text-xs text-t3 mt-1">Use seu número de WhatsApp. Formato: DDD (sem zero) + número (ex: 11987654321)</p>
-                      }
+                      <p className="text-xs text-t3 mt-1">Use seu número de WhatsApp. Formato: DDD (sem zero) + número (ex: 11987654321)</p>
                     </div>
 
                     {/* Apelido */}
@@ -240,7 +282,6 @@
                           ))}
                         </div>
                       )}
-                      {subjError && <p className="text-xs text-err mt-2">{subjError}</p>}
                     </div>
 
                     {/* Horários de entrada/saída */}
@@ -257,9 +298,6 @@
                           />
                         ))}
                       </div>
-                      {tentouEnviar && !temAoMenosUmDiaCompleto && (
-                        <p className="text-xs text-err mt-2">Preencha pelo menos um dia com horário de entrada e saída</p>
-                      )}
                     </div>
 
                     {/* Erro de save */}
@@ -374,6 +412,12 @@
             )}
           </div>
         </div>
+
+        <ModalErroValidacao
+          open={modalErroAberto}
+          erros={errosValidacao}
+          onClose={() => setModalErroAberto(false)}
+        />
       </div>
     )
   }
