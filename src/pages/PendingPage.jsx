@@ -72,6 +72,32 @@
     )
   }
 
+  function ModalCopiaHorario({ open, onClose, onConfirm }) {
+    return (
+      <Modal open={open} onClose={onClose} title="Copiar horário para toda semana?">
+        <div className="space-y-4">
+          <p className="text-sm text-t2">
+            Deseja aplicar esse horário de entrada e saída para todos os dias da semana?
+          </p>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={onClose}
+              className="btn btn-ghost flex-1"
+            >
+              Não, obrigado
+            </button>
+            <button
+              onClick={onConfirm}
+              className="btn btn-dark flex-1"
+            >
+              Copiar para toda semana
+            </button>
+          </div>
+        </div>
+      </Modal>
+    )
+  }
+
   export default function PendingPage() {
     const { user, logout }               = useAuthStore()
     const store                          = useAppStore()
@@ -84,6 +110,10 @@
     const [saveError,     setSaveError]  = useState('')
     const [modalErroAberto, setModalErroAberto] = useState(false)
     const [errosValidacao, setErrosValidacao] = useState([])
+    const [horarioCopiaOfertado, setHorarioCopiaOfertado] = useState(false)
+    const [modalCopiaAberto, setModalCopiaAberto] = useState(false)
+    const [horarioCopiaEntrada, setHorarioCopiaEntrada] = useState('')
+    const [horarioCopiacSaida, setHorarioCopiacSaida] = useState('')
 
     // Erros de validação de horários — derivados sem estado extra
     const horarioErrors = Object.fromEntries(
@@ -113,6 +143,15 @@
           const { [day]: _, ...rest } = prev
           return rest
         }
+
+        // Detectar primeiro par completo e oferecer cópia
+        if (!horarioCopiaOfertado && updated.entrada && updated.saida) {
+          setHorarioCopiaOfertado(true)
+          setHorarioCopiaEntrada(updated.entrada)
+          setHorarioCopiacSaida(updated.saida)
+          setModalCopiaAberto(true)
+        }
+
         return { ...prev, [day]: updated }
       })
     }
@@ -185,6 +224,16 @@
       } finally {
         setSaving(false)
       }
+    }
+
+    const handleCopiaHorarios = () => {
+      const novoHorario = { entrada: horarioCopiaEntrada, saida: horarioCopiacSaida }
+      const horariosCopia = { ...horariosSemana }
+      DAYS.forEach(day => {
+        horariosCopia[day] = { ...novoHorario }
+      })
+      setHorariosSemana(horariosCopia)
+      setModalCopiaAberto(false)
     }
 
     // Teacher sintético para ScheduleGrid — usa user.uid como id (mesmo que o admin associará ao aprovar)
@@ -417,6 +466,12 @@
           open={modalErroAberto}
           erros={errosValidacao}
           onClose={() => setModalErroAberto(false)}
+        />
+
+        <ModalCopiaHorario
+          open={modalCopiaAberto}
+          onClose={() => setModalCopiaAberto(false)}
+          onConfirm={handleCopiaHorarios}
         />
       </div>
     )
