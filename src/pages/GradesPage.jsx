@@ -100,9 +100,29 @@ export default function GradesPage() {
   const professorSchedules = selectedTeacherId
     ? store.schedules.filter(s => s.teacherId === selectedTeacherId)
     : []
-  const segmentTurnoList = selectedTeacherId
+  const segmentTurnoListFromSchedules = selectedTeacherId
     ? extractSegmentTurno(professorSchedules)
     : []
+
+  // Fallback: when teacher is selected but has no schedules yet, derive segment/turno pairs
+  // from store.segments so empty GradeTurnoCards are rendered and the user can add first slots.
+  // Only applies when canEdit is true — read-only views keep showing the "no schedules" message.
+  const canEditSelected = selectedTeacher
+    ? canEditTeacher(myTeacher, selectedTeacher, useAuthStore.getState())
+    : false
+
+  const segmentTurnoListFallback = store.segments
+    .filter(seg => seg.turno)
+    .map(seg => ({ segmentId: seg.id, turno: seg.turno }))
+    .sort((a, b) => {
+      const order = { manha: 0, tarde: 1, noite: 2 }
+      return (order[a.turno] ?? 3) - (order[b.turno] ?? 3)
+    })
+
+  const segmentTurnoList =
+    segmentTurnoListFromSchedules.length === 0 && selectedTeacherId && canEditSelected
+      ? segmentTurnoListFallback
+      : segmentTurnoListFromSchedules
 
   // Derived helpers for "Por Turma" tab
   const turmaObjects = allTurmaObjects(store.segments)
