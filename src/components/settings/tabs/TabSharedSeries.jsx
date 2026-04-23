@@ -65,7 +65,7 @@ function SharedSeriesModal({ open, onClose, store, editingSeries }) {
 
         <div>
           <label className="lbl">Tipo *</label>
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-2">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="radio"
@@ -83,6 +83,15 @@ function SharedSeriesModal({ open, onClose, store, editingSeries }) {
                 onChange={e => setType(e.target.value)}
               />
               <span className="text-sm">Eletiva (requer substituto)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                value="rest"
+                checked={type === 'rest'}
+                onChange={e => setType(e.target.value)}
+              />
+              <span className="text-sm">Descanso (almoço/janta — sem matéria, sem substituto)</span>
             </label>
           </div>
         </div>
@@ -134,7 +143,7 @@ export default function TabSharedSeries() {
           <div className="text-4xl mb-2">🧩</div>
           <div className="font-bold text-sm text-t1">Nenhuma turma compartilhada cadastrada</div>
           <p className="text-sm text-t2 mt-1 mb-4">
-            Crie turmas de Formação ou Eletiva para uso em múltiplos professores simultâneos.
+            Crie turmas de Formação, Eletiva ou Descanso para uso em múltiplos professores simultâneos.
           </p>
           <button className="btn btn-dark" onClick={openCreate}>Criar primeira turma</button>
         </div>
@@ -144,8 +153,14 @@ export default function TabSharedSeries() {
             const affected = store.schedules.filter(s => s.turma === series.name).length
             const typeBadgeClass = series.type === 'formation'
               ? 'bg-blue-100 text-blue-700'
-              : 'bg-amber-100 text-amber-700'
-            const typeLabel = series.type === 'formation' ? 'Formação' : 'Eletiva'
+              : series.type === 'rest'
+                ? 'bg-surf2 text-t2'
+                : 'bg-amber-100 text-amber-700'
+            const typeLabel = series.type === 'formation'
+              ? 'Formação'
+              : series.type === 'rest'
+                ? 'Descanso'
+                : 'Eletiva'
             return (
               <div key={series.id} className="card">
                 <div className="flex items-start gap-3 justify-between mb-4">
@@ -168,7 +183,9 @@ export default function TabSharedSeries() {
                 <p className="text-xs text-t3">
                   {series.type === 'formation'
                     ? 'Ausência não requer substituto. Professores escolhem matérias da lista.'
-                    : 'Ausência requer substituto. Professores escolhem matérias da lista.'}
+                    : series.type === 'rest'
+                      ? 'Slot de descanso. Não requer matéria nem substituto.'
+                      : 'Ausência requer substituto. Professores escolhem matérias da lista.'}
                 </p>
               </div>
             )
