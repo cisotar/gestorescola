@@ -210,7 +210,9 @@
                     {/* Matérias */}
                     <div>
                       <label className="lbl">Matérias que leciona <span className="text-err">*</span></label>
-                      {segGroups.length === 0 ? (
+                      {store.subjects.length === 0 ? (
+                        <p className="text-xs text-t3 mt-1">Carregando matérias...</p>
+                      ) : segGroups.length === 0 ? (
                         <p className="text-xs text-t3 mt-1">Nenhuma matéria cadastrada no sistema ainda.</p>
                       ) : (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2">
