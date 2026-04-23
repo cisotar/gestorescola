@@ -241,7 +241,7 @@
 
     const myScheduleCount = store.schedules.filter(s => s.teacherId === user.uid).length
 
-    const containerMax = step === 'schedule' ? 'max-w-5xl' : 'max-w-4xl'
+    const containerMax = step === 'schedule' ? 'max-w-7xl lg:max-w-[95vw]' : 'max-w-4xl'
 
     return (
       <div className="fixed inset-0 bg-bg overflow-y-auto p-4">
@@ -378,7 +378,7 @@
                   <p className="text-sm text-t2">Cadastre seus horários agora enquanto aguarda a aprovação.</p>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-8 items-start">
+                <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-4 items-start">
                   {/* Coluna esquerda — resumo dos dados enviados */}
                   <div className="space-y-4">
                     <div className="bg-surf2 rounded-xl p-4 text-sm space-y-2 border border-bdr">
@@ -420,7 +420,7 @@
 
                   {/* Coluna direita — grade horária */}
                   <div className="min-w-0">
-                    <ScheduleGrid teacher={syntheticTeacher} store={store} />
+                    <ScheduleGrid teacher={syntheticTeacher} store={store} horariosSemana={horariosSemana} />
                   </div>
                 </div>
               </>

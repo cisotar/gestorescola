@@ -56,6 +56,23 @@
     @apply inline-flex items-center px-2 py-0.5 rounded-md bg-surf2 text-t2 text-xs font-semibold;
   }
 
+  .schedule-cell-blocked {
+    @apply opacity-60 cursor-not-allowed relative border border-bdr;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(0, 0, 0, 0.05) 10px,
+      rgba(0, 0, 0, 0.05) 20px
+    );
+  }
+
+  .schedule-cell-blocked::after {
+    content: "Indisponível";
+    @apply absolute inset-0 flex items-center justify-center text-xs font-semibold text-t3;
+    opacity: 0.5;
+  }
+
   /* Scrollbar personalizado */
   .scroll-thin {
     scrollbar-width: thin;
