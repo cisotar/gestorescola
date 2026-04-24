@@ -4,3 +4,4 @@ export { parseDate, formatISO, formatBR, dateToDayLabel, weekStart, businessDays
 export { colorOfAreaId, colorOfTeacher, COLOR_PALETTE, COLOR_NEUTRAL } from './colors'
 export { allTurmaObjects, findTurma, isSharedSeries, isFormationSlot, isRestSlot, teacherSubjectNames } from './turmas'
 export { canEditTeacher } from './permissions'
+export { detectDropdownPlacement } from './dropdown'
