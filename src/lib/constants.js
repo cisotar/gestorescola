@@ -14,3 +14,33 @@ export const COLOR_PALETTE = [
 ]
 
 export const COLOR_NEUTRAL = { bg:'#F9FAFB', bd:'#D1D5DB', tx:'#374151', dt:'#6B7280', tg:'#F3F4F6' }
+
+// ─── Schema de `pending_teachers/{uid}` ───────────────────────────────────
+// Documento único por user.uid do Firebase Auth.
+// Representa uma solicitação de acesso pendente de aprovação do admin.
+//
+// {
+//   id:          string,              // Firebase user.uid
+//   uid:         string,              // Duplicado de id (compatibilidade)
+//   email:       string,              // E-mail em minúsculas
+//   name:        string,              // Nome do usuário
+//   photoURL:    string,              // Avatar (opcional)
+//   requestedAt: Timestamp,           // Data de solicitação
+//   status:      "pending",           // "pending" | "approved"
+//   celular:     string,              // Telefone (opcional, preenchido em PendingPage)
+//   apelido:     string,              // Apelido (opcional)
+//   subjectIds:  string[],            // IDs de matérias (FK → subjects[].id)
+//   profile:     null | "teacher" | "coordinator" | "teacher-coordinator",
+//                                     // Perfil atribuído ANTES de aprovação
+//                                     // null = admin ainda não selecionou perfil
+//   horariosSemana: object,           // Horários presença por dia (opcional)
+// }
+//
+// Valores válidos para `profile`:
+// - null (padrão) — admin ainda não atribuiu perfil
+// - "teacher"  — Professor regular
+// - "coordinator"  — Coordenador pedagógico puro
+// - "teacher-coordinator"  — Professor que também coordena
+//
+// Nota: campo é OPCIONAL e BACKWARD COMPATIBLE. Documentos antigos sem
+// `profile` continuam funcionando (approveTeacher() usa default 'teacher').

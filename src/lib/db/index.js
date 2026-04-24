@@ -143,6 +143,14 @@ export async function getTeacherByEmail(email, teachers) {
 
 // ─── Professores pendentes ────────────────────────────────────────────────────
 
+/**
+ * Cria documento inicial em `pending_teachers/{uid}` quando usuário se loga
+ * pela primeira vez e não tem cadastro em `teachers/`.
+ *
+ * Schema: { id, uid, email, name, photoURL, requestedAt, status: 'pending', profile: null }
+ * Campo profile é inicializado como null — será preenchido pelo admin antes
+ * de chamar approveTeacher() e será persistido na aprovação.
+ */
 export async function requestTeacherAccess(user) {
   const ref  = doc(db, 'pending_teachers', user.uid)
   const snap = await getDoc(ref)
@@ -151,6 +159,7 @@ export async function requestTeacherAccess(user) {
     id: user.uid, uid: user.uid, email: user.email.toLowerCase(),
     name: user.displayName ?? '', photoURL: user.photoURL ?? '',
     requestedAt: serverTimestamp(), status: 'pending',
+    profile: null,  // Inicializar como null, será atribuído pelo admin
   })
 }
 
@@ -198,6 +207,22 @@ export async function patchTeacherSelf(id, changes) {
   await updateDoc(doc(db, 'teachers', id), changes)
 }
 
+/**
+ * Aprova um professor pendente e migra para `teachers/`.
+ *
+ * @param {string} pendingId — Document ID em `pending_teachers/` (= user.uid)
+ * @param {object} state — Estado atual do app (useAppStore.getState())
+ * @param {function} setState — Setter do store (useAppStore.setState)
+ * @param {string} profile — Perfil: 'teacher' | 'coordinator' | 'teacher-coordinator'
+ *                           Vem de `pending_teachers[pendingId].profile` (atribuído pelo admin)
+ *                           Padrão: 'teacher' (backward compatible com pendentes antigos)
+ *
+ * Fluxo:
+ * 1. Lê documento de `pending_teachers/{pendingId}`
+ * 2. Cria (ou atualiza) documento em `teachers/` com profile fornecido
+ * 3. Migra schedules órfãos de teacherId=pendingId para novo teacherId
+ * 4. Deleta `pending_teachers/{pendingId}`
+ */
 export async function approveTeacher(pendingId, state, setState, profile = 'teacher') {
   const ref  = doc(db, 'pending_teachers', pendingId)
   const snap = await getDoc(ref)
