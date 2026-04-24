@@ -974,3 +974,139 @@ describe('suggestSubstitutes — filtro substitutesAtSlot', () => {
     expect(() => suggestSubstitutes(absenceSlot, 'quantitative', makeStore(teachers))).not.toThrow()
   })
 })
+
+// ─── Cenário: handleAcceptAll — sem double-booking no mesmo date+timeSlot ──────
+//
+// Simula o loop de "Aceitar todas as sugestões" quando há múltiplos professores
+// ausentes no mesmo horário. Usa rankCandidates + allocatedMap em memória,
+// exatamente como CalendarPage.handleAcceptAll faz.
+
+describe('cenário handleAcceptAll — sem double-booking', () => {
+  // Fixtures de cenário: 3 candidatos, 3 professores ausentes no mesmo horário
+  const SLOT = 'seg-fund|manha|1'
+  const DATE = '2026-05-05'
+
+  const candidatos = [
+    makeTeacher({ id: 'ziraldo',  name: 'Ziraldo',  subjectIds: ['subj-bio'], status: 'approved' }),
+    makeTeacher({ id: 'beatriz',  name: 'Beatriz',  subjectIds: ['subj-bio'], status: 'approved' }),
+    makeTeacher({ id: 'carlos',   name: 'Carlos',   subjectIds: ['subj-bio'], status: 'approved' }),
+  ]
+
+  // Três ausentes, três slots no mesmo date+timeSlot, nenhum com substituto ainda
+  const ausencias = [
+    { id: 'abs-joao',  teacherId: 'joao',   slots: [{ id: 'sl-joao',  date: DATE, timeSlot: SLOT, substituteId: null }] },
+    { id: 'abs-maria', teacherId: 'maria',  slots: [{ id: 'sl-maria', date: DATE, timeSlot: SLOT, substituteId: null }] },
+    { id: 'abs-jose',  teacherId: 'jose',   slots: [{ id: 'sl-jose',  date: DATE, timeSlot: SLOT, substituteId: null }] },
+  ]
+
+  const store = {
+    teachers: candidatos,
+    schedules: [],
+    absences: ausencias,
+    subjects,
+    areas,
+    periodConfigs: {},
+    sharedSeries: [],
+  }
+
+  // Replica o algoritmo de CalendarPage.handleAcceptAll
+  function simularAcceptAll(slotsParaAtribuir) {
+    const allocatedMap = new Map()
+
+    // Pre-seed com substituições já existentes no store (nenhuma neste teste)
+    store.absences.forEach(ab => {
+      ab.slots.forEach(sl => {
+        if (!sl.substituteId) return
+        const key = `${sl.date}|${sl.timeSlot}`
+        if (!allocatedMap.has(key)) allocatedMap.set(key, new Set())
+        allocatedMap.get(key).add(sl.substituteId)
+      })
+    })
+
+    const atribuicoes = []
+    for (const { absenceId, slotId, date, timeSlot, subjectId } of slotsParaAtribuir) {
+      const candidates = rankCandidates(
+        'professor-ausente', date, timeSlot, subjectId,
+        store.teachers, store.schedules, store.absences,
+        store.subjects, store.areas, store.periodConfigs, store.sharedSeries,
+      )
+      const key = `${date}|${timeSlot}`
+      const allocated = allocatedMap.get(key) ?? new Set()
+      const top = candidates.find(c => !allocated.has(c.teacher.id))
+      if (top) {
+        atribuicoes.push({ absenceId, slotId, substituteId: top.teacher.id })
+        if (!allocatedMap.has(key)) allocatedMap.set(key, new Set())
+        allocatedMap.get(key).add(top.teacher.id)
+      }
+    }
+    return atribuicoes
+  }
+
+  it('atribui substitutos distintos para 3 ausências no mesmo horário', () => {
+    const slots = [
+      { absenceId: 'abs-joao',  slotId: 'sl-joao',  date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+      { absenceId: 'abs-maria', slotId: 'sl-maria', date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+      { absenceId: 'abs-jose',  slotId: 'sl-jose',  date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+    ]
+
+    const atribuicoes = simularAcceptAll(slots)
+
+    expect(atribuicoes).toHaveLength(3)
+    const ids = atribuicoes.map(a => a.substituteId)
+    // Nenhum professor aparece duas vezes no mesmo horário
+    expect(new Set(ids).size).toBe(3)
+    // Os três candidatos disponíveis foram usados (um por slot)
+    expect(ids).toContain('ziraldo')
+    expect(ids).toContain('beatriz')
+    expect(ids).toContain('carlos')
+  })
+
+  it('Ziraldo não repete no mesmo horário quando já foi atribuído ao primeiro slot', () => {
+    const slots = [
+      { absenceId: 'abs-joao',  slotId: 'sl-joao',  date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+      { absenceId: 'abs-maria', slotId: 'sl-maria', date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+    ]
+
+    const atribuicoes = simularAcceptAll(slots)
+
+    expect(atribuicoes).toHaveLength(2)
+    const [primeiro, segundo] = atribuicoes
+    expect(primeiro.substituteId).not.toBe(segundo.substituteId)
+  })
+
+  it('com mais ausências do que candidatos disponíveis, os slots excedentes são pulados', () => {
+    const slotsExcesso = [
+      { absenceId: 'abs-joao',   slotId: 'sl-joao',   date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+      { absenceId: 'abs-maria',  slotId: 'sl-maria',  date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+      { absenceId: 'abs-jose',   slotId: 'sl-jose',   date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+      { absenceId: 'abs-extra',  slotId: 'sl-extra',  date: DATE, timeSlot: SLOT, subjectId: 'subj-bio' },
+    ]
+
+    const atribuicoes = simularAcceptAll(slotsExcesso)
+
+    // Apenas 3 candidatos disponíveis → 4º slot é pulado sem erro
+    expect(atribuicoes).toHaveLength(3)
+    expect(new Set(atribuicoes.map(a => a.substituteId)).size).toBe(3)
+  })
+
+  it('permite o mesmo professor em horários diferentes do mesmo dia', () => {
+    const SLOT2 = 'seg-fund|manha|2'
+    const slots = [
+      { absenceId: 'abs-joao',  slotId: 'sl-joao',  date: DATE, timeSlot: SLOT,  subjectId: 'subj-bio' },
+      { absenceId: 'abs-maria', slotId: 'sl-maria', date: DATE, timeSlot: SLOT2, subjectId: 'subj-bio' },
+    ]
+
+    const atribuicoes = simularAcceptAll(slots)
+
+    expect(atribuicoes).toHaveLength(2)
+    // O mesmo professor PODE ser atribuído em horários diferentes
+    // (não há restrição entre SLOT e SLOT2)
+    const [a1, a2] = atribuicoes
+    // Ambos têm substituto atribuído
+    expect(a1.substituteId).toBeTruthy()
+    expect(a2.substituteId).toBeTruthy()
+    // E o candidato mais bem rankeado (ziraldo) pode aparecer nos dois horários distintos
+    expect(a1.substituteId).toBe('ziraldo')
+    expect(a2.substituteId).toBe('ziraldo')
+  })
+})
