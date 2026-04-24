@@ -143,14 +143,6 @@ export async function getTeacherByEmail(email, teachers) {
 
 // ─── Professores pendentes ────────────────────────────────────────────────────
 
-/**
- * Cria documento inicial em `pending_teachers/{uid}` quando usuário se loga
- * pela primeira vez e não tem cadastro em `teachers/`.
- *
- * Schema: { id, uid, email, name, photoURL, requestedAt, status: 'pending', profile: null }
- * Campo profile é inicializado como null — será preenchido pelo admin antes
- * de chamar approveTeacher() e será persistido na aprovação.
- */
 export async function requestTeacherAccess(user) {
   const ref  = doc(db, 'pending_teachers', user.uid)
   const snap = await getDoc(ref)
@@ -159,7 +151,7 @@ export async function requestTeacherAccess(user) {
     id: user.uid, uid: user.uid, email: user.email.toLowerCase(),
     name: user.displayName ?? '', photoURL: user.photoURL ?? '',
     requestedAt: serverTimestamp(), status: 'pending',
-    profile: null,  // Inicializar como null, será atribuído pelo admin
+    profile: null,
   })
 }
 
@@ -172,59 +164,11 @@ export async function listPendingTeachers() {
   return snap.docs.map(d => d.data()).filter(d => d.status === 'pending')
 }
 
-/**
- * Atualiza campos do próprio perfil de um professor aprovado.
- * O Firestore permite que o professor grave apenas os campos listados em
- * `hasOnly` na regra `allow update` de `teachers/{docId}`:
- * celular, whatsapp, apelido, name, subjectIds, horariosSemana.
- *
- * O campo `horariosSemana` descreve os horários de presença do professor
- * na escola por dia da semana. Formato esperado:
- *
- * @example
- * // Professor que trabalha de segunda a quarta (manhã) e quarta a sexta (tarde):
- * {
- *   "Segunda": { entrada: "07:00", saida: "12:30" },
- *   "Terça":   { entrada: "07:00", saida: "12:30" },
- *   "Quarta":  { entrada: "07:00", saida: "17:20" },
- *   "Quinta":  { entrada: "13:00", saida: "17:20" },
- *   "Sexta":   { entrada: "13:00", saida: "17:20" }
- * }
- *
- * Semântica:
- * - Dia ausente do objeto  → professor NÃO trabalha naquele dia
- * - Campo `horariosSemana` ausente ou `null` → sem restrição de horário
- *   (professor aparece no ranking de substitutos normalmente)
- * - Objeto vazio `{}` → tratado como ausente pelas funções de ranking
- *
- * Chaves de dia válidas: "Segunda", "Terça", "Quarta", "Quinta", "Sexta"
- * (alinhadas com `schedules[].day` e `DAYS` em `src/lib/constants.js`).
- *
- * @param {string} id - Document ID do professor em `teachers/`
- * @param {object} changes - Campos a atualizar (parcial)
- */
 export async function patchTeacherSelf(id, changes) {
   await updateDoc(doc(db, 'teachers', id), changes)
 }
 
-/**
- * Aprova um professor pendente e migra para `teachers/`.
- *
- * @param {string} pendingId — Document ID em `pending_teachers/` (= user.uid)
- * @param {object} state — Estado atual do app (useAppStore.getState())
- * @param {function} setState — Setter do store (useAppStore.setState)
- * @param {string} profile — Perfil: 'teacher' | 'coordinator' | 'teacher-coordinator'
- *                           Vem de `pending_teachers[pendingId].profile` (atribuído pelo admin)
- *                           Padrão: 'teacher' (backward compatible com pendentes antigos)
- *
- * Fluxo:
- * 1. Lê documento de `pending_teachers/{pendingId}`
- * 2. Cria (ou atualiza) documento em `teachers/` com profile fornecido
- * 3. Migra schedules órfãos de teacherId=pendingId para novo teacherId
- * 4. Deleta `pending_teachers/{pendingId}`
- */
 export async function approveTeacher(pendingId, state, setState, profile = 'teacher') {
-  // Validar que profile é um valor válido
   const VALID_PROFILES = ['teacher', 'coordinator', 'teacher-coordinator']
   if (!VALID_PROFILES.includes(profile)) {
     console.warn(`[db] Profile inválido: ${profile}, usando default 'teacher'`)
