@@ -32,7 +32,8 @@ export default function TabApprovals({ adminEmail }) {
     addSubject:           (p) => store.addSubject(p.name, p.areaId),
     removeSubject:        (p) => store.removeSubject(p.id),
     saveAreaWithSubjects: (p) => store.saveAreaWithSubjects(p.areaId, p.name, p.subjectNames),
-    setWorkload:          (p) => store.setWorkload(p.warn, p.danger),
+    setWorkload:                 (p) => store.setWorkload(p.warn, p.danger),
+    removeClassFromGradeCascade: (p) => store.removeClassFromGradeCascade(p.segId, p.gradeName, p.letter),
   }
 
   const load = async () => {

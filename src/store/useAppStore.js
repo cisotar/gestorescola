@@ -3,6 +3,9 @@ import { uid, isFormationSlot } from '../lib/helpers'
 import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener, saveConfig, submitPendingAction } from '../lib/db'
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
+import { formatISO } from '../lib/helpers/dates'
+import { db } from '../lib/firebase'
+import { writeBatch, serverTimestamp, doc as firestoreDoc, collection as firestoreCollection } from 'firebase/firestore'
 import {
   createAbsence as _createAbsence,
   assignSubstitute as _assignSubstitute,
@@ -202,6 +205,112 @@ const useAppStore = create((set, get) => {
       ),
     }))
     saveConfig(get())
+  },
+
+  removeClassFromGradeCascade: async (segId, gradeName, letter) => {
+    const fullLabel = `${gradeName} ${letter}`
+
+    // ── Caminho coordenador: submete para aprovação sem executar ──────────────
+    if (_isCoordinator()) {
+      const s = get()
+      const schedulesCount = s.schedules.filter(sc => sc.turma === fullLabel).length
+      const today = formatISO(new Date())
+      const futureAbsCount = s.absences.filter(ab =>
+        ab.slots.some(sl => sl.turma === fullLabel && sl.date >= today)
+      ).length
+      const summary = `Remover turma ${fullLabel} (cascade: ${schedulesCount} aulas, ${futureAbsCount} faltas futuras)`
+      return _submitApproval('removeClassFromGradeCascade', { segId, gradeName, letter }, summary)
+    }
+
+    const today = formatISO(new Date())
+    const s = get()
+
+    // ── Coletar schedules a deletar ───────────────────────────────────────────
+    const schedulesToDelete = s.schedules.filter(sc => sc.turma === fullLabel)
+
+    // ── Coletar absences afetadas (com ao menos um slot futuro da turma) ──────
+    const absencesAffected = s.absences
+      .map(ab => {
+        const futureSlots = ab.slots.filter(sl => sl.turma === fullLabel && sl.date >= today)
+        if (futureSlots.length === 0) return null
+        const slotsToKeep = ab.slots.filter(sl => !(sl.turma === fullLabel && sl.date >= today))
+        return { absence: ab, slotsToKeep, futureSlots }
+      })
+      .filter(Boolean)
+
+    const absencesToDelete = absencesAffected.filter(x => x.slotsToKeep.length === 0)
+    const absencesToUpdate = absencesAffected.filter(x => x.slotsToKeep.length > 0)
+
+    // ── Contadores para retorno e auditoria ───────────────────────────────────
+    const schedulesDeleted = schedulesToDelete.length
+    const futureSlotsDeleted = absencesAffected.reduce((acc, x) => acc + x.futureSlots.length, 0)
+    const absencesAffectedCount = absencesAffected.length
+    const pastSlotsKept = absencesAffected.reduce((acc, x) => acc + x.slotsToKeep.length, 0)
+
+    // ── Montar operações de batch ─────────────────────────────────────────────
+    const ops = [] // array de funções (batch) => void
+
+    for (const sc of schedulesToDelete) {
+      ops.push(batch => batch.delete(firestoreDoc(db, 'schedules', sc.id)))
+    }
+    for (const { absence, slotsToKeep } of absencesToUpdate) {
+      ops.push(batch => batch.update(firestoreDoc(db, 'absences', absence.id), { slots: slotsToKeep }))
+    }
+    for (const { absence } of absencesToDelete) {
+      ops.push(batch => batch.delete(firestoreDoc(db, 'absences', absence.id)))
+    }
+
+    // ── Executar batches em chunks de 499 (limite Firestore = 500) ────────────
+    const CHUNK = 499
+    for (let i = 0; i < ops.length; i += CHUNK) {
+      const chunk = ops.slice(i, i + CHUNK)
+      const batch = writeBatch(db)
+      for (const apply of chunk) apply(batch)
+      await batch.commit()
+    }
+
+    // ── Remover turma de meta/config ──────────────────────────────────────────
+    await get().removeClassFromGrade(segId, gradeName, letter)
+
+    // ── Gravar documento de auditoria em admin_actions/ ───────────────────────
+    const executedBy = useAuthStore.getState().user?.email ?? ''
+    const actionId = uid()
+    try {
+      await saveDoc('admin_actions', {
+        id: actionId,
+        type: 'removeClassFromGrade',
+        removedClass: fullLabel,
+        segId,
+        gradeName,
+        letter,
+        removedAt: today,
+        executedBy,
+        schedulesDeletedCount: schedulesDeleted,
+        absencesAffectedCount,
+        futureSlotsDeleted,
+        pastSlotsKept,
+        createdAt: serverTimestamp(),
+      })
+    } catch (e) {
+      console.error('[removeClassFromGradeCascade] Falha ao gravar admin_actions:', e)
+    }
+
+    // ── Atualizar estado Zustand de forma imutável ────────────────────────────
+    const deletedScheduleIds = new Set(schedulesToDelete.map(sc => sc.id))
+    const deletedAbsenceIds = new Set(absencesToDelete.map(x => x.absence.id))
+    const updatedAbsenceMap = new Map(absencesToUpdate.map(x => [x.absence.id, x.slotsToKeep]))
+
+    set(s2 => ({
+      schedules: s2.schedules.filter(sc => !deletedScheduleIds.has(sc.id)),
+      absences: s2.absences
+        .filter(ab => !deletedAbsenceIds.has(ab.id))
+        .map(ab => updatedAbsenceMap.has(ab.id)
+          ? { ...ab, slots: updatedAbsenceMap.get(ab.id) }
+          : ab
+        ),
+    }))
+
+    return { schedulesDeleted, futureSlotsDeleted, absencesAffected: absencesAffectedCount, pastSlotsKept }
   },
 
   // ─── Períodos ───────────────────────────────────────────────────────────────
