@@ -224,6 +224,13 @@ export async function patchTeacherSelf(id, changes) {
  * 4. Deleta `pending_teachers/{pendingId}`
  */
 export async function approveTeacher(pendingId, state, setState, profile = 'teacher') {
+  // Validar que profile é um valor válido
+  const VALID_PROFILES = ['teacher', 'coordinator', 'teacher-coordinator']
+  if (!VALID_PROFILES.includes(profile)) {
+    console.warn(`[db] Profile inválido: ${profile}, usando default 'teacher'`)
+    profile = 'teacher'
+  }
+
   const ref  = doc(db, 'pending_teachers', pendingId)
   const snap = await getDoc(ref)
   if (!snap.exists()) return

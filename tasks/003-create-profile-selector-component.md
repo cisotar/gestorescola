@@ -39,14 +39,14 @@ Modal de professores pendentes precisa de dropdown para seleção de perfil que 
 - `src/components/ui/index.js` — exportar ProfileSelector (se houver arquivo de exports)
 
 ## Acceptance criteria
-- [ ] Componente renderiza com botão trigger ("Selecionar Perfil" ou valor selecionado)
-- [ ] Ao clicar, dropdown abre na posição calculada por detectDropdownPlacement()
-- [ ] Dropdown exibe 3 opções com labels em português
-- [ ] Seleção chama onChange() e fecha dropdown
-- [ ] Suporta valor null (não selecionado) e valores válidos
-- [ ] Teclado funciona (Tab entra no componente, Arrow seleciona, Enter confirma, Esc fecha)
-- [ ] Dropdown não vaza do modal (respeitando containerRef)
-- [ ] Possui visual feedback (opção selecionada destacada)
+- [x] Componente renderiza com botão trigger ("Selecionar Perfil" ou valor selecionado)
+- [x] Ao clicar, dropdown abre na posição calculada por detectDropdownPlacement()
+- [x] Dropdown exibe 3 opções com labels em português
+- [x] Seleção chama onChange() e fecha dropdown
+- [x] Suporta valor null (não selecionado) e valores válidos
+- [x] Teclado funciona (Tab entra no componente, Arrow seleciona, Enter confirma, Esc fecha)
+- [x] Dropdown não vaza do modal (respeitando containerRef)
+- [x] Possui visual feedback (opção selecionada destacada)
 
 ## Notes
 - Integração com PendingTeacherItem será próxima issue
