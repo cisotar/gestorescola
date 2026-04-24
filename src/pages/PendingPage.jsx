@@ -410,6 +410,9 @@
                       >
                         Concluir
                       </button>
+                      <button onClick={() => setStep('form')} className="btn btn-ghost w-full">
+                        ← Voltar
+                      </button>
                     </div>
                   </div>
 
@@ -449,9 +452,14 @@
                   </div>
                 )}
 
-                <button onClick={logout} className="btn btn-ghost w-full">
-                  Sair da conta
-                </button>
+                <div className="space-y-2">
+                  <button onClick={() => setStep('schedule')} className="btn btn-ghost w-full">
+                    ← Editar grade de aulas
+                  </button>
+                  <button onClick={logout} className="btn btn-ghost w-full">
+                    Sair da conta
+                  </button>
+                </div>
               </>
             )}
           </div>
