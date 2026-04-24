@@ -197,14 +197,9 @@
         erros.push(pErr)
       }
 
-      // Validar horários
+      // Validar horários de entrada/saída
       if (!temAoMenosUmDiaCompleto) {
         erros.push('Preencha horários de entrada e saída')
-      }
-
-      // Validar aulas
-      if (myScheduleCount === 0) {
-        erros.push('Cadastre ao menos uma aula na grade')
       }
 
       // Se há erros, abrir modal
@@ -214,7 +209,7 @@
         return
       }
 
-      // Sem erros — prosseguir com salvamento
+      // Salva dados iniciais e avança para o cadastro de grade de aulas
       setSaving(true); setSaveError('')
       try {
         await updatePendingData(user.uid, { celular: celular.replace(/\D/g, ''), apelido: apelido.trim(), subjectIds: selectedSubjs, horariosSemana })
@@ -359,7 +354,7 @@
                         disabled={saving || hasHorarioError || !temAoMenosUmDiaCompleto}
                         className="btn btn-dark w-full disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        {saving ? 'Salvando…' : 'Enviar cadastro'}
+                        {saving ? 'Salvando…' : 'Próximo →'}
                       </button>
                       <button onClick={logout} className="btn btn-ghost w-full">
                         Sair da conta
