@@ -6,29 +6,24 @@ import AddScheduleModal from './AddScheduleModal'
 import Modal from './Modal'
 import { toast } from '../../hooks/useToast'
 
-// ─── Helper: verificar se slot está bloqueado por horários da semana ────────
+// ─── Helper: verificar se slot está fora do horário de trabalho do professor ─
 /**
- * Determina se um timeSlot deve ser bloqueado (célula indisponível) com base nos horários do professor
- * @param {string} day — dia da semana (ex: "Segunda")
- * @param {string} timeSlot — slot de aula (ex: "seg-fund|manha|1")
- * @param {Object} horariosSemana — horários por dia { "Segunda": { entrada: "07:00", saida: "12:30" }, ... }
- * @param {Object} periodConfigs — configuração de períodos para resolver o slot
- * @returns {boolean} — true se o slot está inteiramente dentro do horário de trabalho (bloqueado)
+ * Determina se um timeSlot está fora do horário de trabalho (deve mostrar CelulaFora)
+ * @returns {boolean} — true se o slot cai fora do intervalo [entrada, saida] do professor
  */
-function isTimeBlocked(day, timeSlot, horariosSemana, periodConfigs) {
+function isTimeOutsideHorario(day, timeSlot, horariosSemana, periodConfigs) {
   const dayHorarios = horariosSemana?.[day]
   if (!dayHorarios?.entrada || !dayHorarios?.saida) return false
 
   const slotInfo = resolveSlot(timeSlot, periodConfigs)
-  if (!slotInfo) return false // slot especial ou inválido: nunca bloqueado
+  if (!slotInfo) return false
 
   const slotStart = toMin(slotInfo.inicio)
   const slotEnd = toMin(slotInfo.fim)
   const entradaMin = toMin(dayHorarios.entrada)
   const saidaMin = toMin(dayHorarios.saida)
 
-  // Bloquear se o slot está inteiramente dentro do intervalo [entrada, saida]
-  return slotStart >= entradaMin && slotEnd <= saidaMin
+  return slotStart < entradaMin || slotEnd > saidaMin
 }
 
 // ─── Helper: detectar segmentos de um professor ──────────────────────────────
@@ -166,21 +161,8 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                           </td>
                           {DAYS.map(day => {
                             const slot = `${seg.id}|${turno}|${p.aulaIdx}`
-                            const isBlocked = horariosSemana !== null && isTimeBlocked(day, slot, horariosSemana, store.periodConfigs)
 
-                            // Original logic: check if time is outside horário da semana (saída de turno)
-                            if (horariosSemana !== null && !isBlocked) {
-                              const horarioDia = horariosSemana[day]
-                              if (horarioDia?.entrada && horarioDia?.saida) {
-                                if (p.inicio && p.fim &&
-                                  (toMin(p.inicio) < toMin(horarioDia.entrada) || toMin(p.fim) > toMin(horarioDia.saida))) {
-                                  return <CelulaFora key={day} />
-                                }
-                              }
-                            }
-
-                            // If blocked by horários (within working hours), show CelulaFora
-                            if (isBlocked) {
+                            if (horariosSemana !== null && isTimeOutsideHorario(day, slot, horariosSemana, store.periodConfigs)) {
                               return <CelulaFora key={day} />
                             }
 
@@ -298,21 +280,8 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                         </td>
                         {DAYS.map(day => {
                           const slot = makeEspecialSlot(seg.id, turno, aulaCount)
-                          const isBlocked = horariosSemana !== null && isTimeBlocked(day, slot, horariosSemana, store.periodConfigs)
 
-                          // Original logic: check if time is outside horário da semana
-                          if (horariosSemana !== null && !isBlocked) {
-                            const horarioDia = horariosSemana[day]
-                            if (horarioDia?.entrada && horarioDia?.saida) {
-                              if (p.inicio && p.fim &&
-                                (toMin(p.inicio) < toMin(horarioDia.entrada) || toMin(p.fim) > toMin(horarioDia.saida))) {
-                                return <CelulaFora key={day} />
-                              }
-                            }
-                          }
-
-                          // If blocked by horários (within working hours), show CelulaFora
-                          if (isBlocked) {
+                          if (horariosSemana !== null && isTimeOutsideHorario(day, slot, horariosSemana, store.periodConfigs)) {
                             return <CelulaFora key={day} />
                           }
 
