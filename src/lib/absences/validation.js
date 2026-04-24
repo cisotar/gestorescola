@@ -43,7 +43,35 @@ export function monthlyLoad(teacherId, referenceDate, schedules, absences, share
 
 // ─── Disponibilidade ──────────────────────────────────────────────────────────
 
-export function isBusy(teacherId, date, timeSlot, schedules, absences) {
+/**
+ * Retorna o conjunto de substituteIds já alocados no par date+timeSlot.
+ * Útil para evitar que o mesmo professor seja atribuído como substituto
+ * em múltiplas ausências simultâneas fisicamente impossíveis.
+ *
+ * @param {string} date - Data ISO (ex: "2026-04-14")
+ * @param {string} timeSlot - Slot de tempo (ex: "seg-fund|manha|1")
+ * @param {Array} absences - Lista de ausências registradas
+ * @param {string|null} [excludeSlotId=null] - ID do slot a ignorar (útil para reatribuição)
+ * @returns {Set<string>} Conjunto de substituteIds já alocados no par date+timeSlot
+ */
+export function substitutesAtSlot(date, timeSlot, absences, excludeSlotId = null) {
+  const ids = []
+  ;(absences || []).forEach(ab => {
+    ab.slots.forEach(sl => {
+      if (
+        sl.date === date &&
+        sl.timeSlot === timeSlot &&
+        sl.substituteId !== null &&
+        sl.id !== excludeSlotId
+      ) {
+        ids.push(sl.substituteId)
+      }
+    })
+  })
+  return new Set(ids)
+}
+
+export function isBusy(teacherId, date, timeSlot, schedules, absences, excludeSlotId = null) {
   const dayLabel = dateToDayLabel(date)
   if (!dayLabel) return true
   const hasClass = schedules.some(
@@ -52,7 +80,10 @@ export function isBusy(teacherId, date, timeSlot, schedules, absences) {
   if (hasClass) return true
   return (absences || []).some(ab =>
     ab.slots.some(sl =>
-      sl.substituteId === teacherId && sl.date === date && sl.timeSlot === timeSlot
+      sl.substituteId === teacherId &&
+      sl.date === date &&
+      sl.timeSlot === timeSlot &&
+      sl.id !== excludeSlotId
     )
   )
 }

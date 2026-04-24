@@ -1,5 +1,5 @@
 // Re-export seletivamente
-export { monthlyLoad, isBusy, isAvailableBySchedule, weeklyLimitStatus, isUnderWeeklyLimit } from './validation'
+export { monthlyLoad, isBusy, isAvailableBySchedule, weeklyLimitStatus, isUnderWeeklyLimit, substitutesAtSlot } from './validation'
 export { rankCandidates, suggestSubstitutes } from './ranking'
 export { createAbsence, assignSubstitute, deleteAbsenceSlot, deleteAbsence, absencesOf, absenceSlotsInWeek } from './mutations'
 

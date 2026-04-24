@@ -1,5 +1,5 @@
 import { dateToDayLabel } from '../helpers/dates'
-import { isBusy, isAvailableBySchedule, monthlyLoad, weeklyLimitStatus } from './validation'
+import { isBusy, isAvailableBySchedule, monthlyLoad, weeklyLimitStatus, substitutesAtSlot } from './validation'
 
 /**
  * Classifica professores candidatos a substituto por compatibilidade com a aula ausente.
@@ -34,7 +34,7 @@ import { isBusy, isAvailableBySchedule, monthlyLoad, weeklyLimitStatus } from '.
  * @param {Array} [sharedSeries=[]] - Turmas compartilhadas (FORMAÇÃO, ELETIVA)
  * @returns {Array<{teacher, load, match, sameSeg, score, atLimit}>} Candidatos ordenados por score e carga
  */
-export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teachers, schedules, absences, subjects, areas, periodConfigs = {}, sharedSeries = []) {
+export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teachers, schedules, absences, subjects, areas, periodConfigs = {}, sharedSeries = [], excludeSlotId = null) {
   // Extrai o segmentId do timeSlot (formato: segmentId|turno|aulaIdx)
   const slotSegmentId = timeSlot?.split('|')[0] ?? null
 
@@ -74,12 +74,15 @@ export function rankCandidates(absentTeacherId, date, timeSlot, subjectId, teach
     return 'other'
   }
 
+  const allocated = substitutesAtSlot(date, timeSlot, absences, excludeSlotId)
+
   const candidates = teachers
     .filter(t =>
       t.id !== absentTeacherId &&
       t.profile !== 'coordinator' &&
-      !isBusy(t.id, date, timeSlot, schedules, absences) &&
-      isAvailableBySchedule(t, dateToDayLabel(date), timeSlot, periodConfigs)
+      !isBusy(t.id, date, timeSlot, schedules, absences, excludeSlotId) &&
+      isAvailableBySchedule(t, dateToDayLabel(date), timeSlot, periodConfigs) &&
+      !allocated.has(t.id)
     )
     .map(t => {
       const score       = scoreOf(t)
@@ -109,14 +112,18 @@ export function suggestSubstitutes(absenceSlot, ruleType, store) {
 
   const _periodConfigs = store.periodConfigs ?? {}
   const _sharedSeries  = store.sharedSeries  ?? []
+  const _excludeSlotId = absenceSlot.excludeSlotId ?? null
+
+  const _allocated = substitutesAtSlot(absenceSlot.date, absenceSlot.slot, store.absences, _excludeSlotId)
 
   // Candidatos base: aprovados, disponíveis, diferentes do ausente e excluindo coord. geral
   const baseCandidates = store.teachers.filter(t =>
     t.id !== absenceSlot.absentTeacherId &&
     t.status === 'approved' &&
     t.profile !== 'coordinator' &&
-    !isBusy(t.id, absenceSlot.date, absenceSlot.slot, store.schedules, store.absences) &&
-    isAvailableBySchedule(t, dateToDayLabel(absenceSlot.date), absenceSlot.slot, _periodConfigs)
+    !isBusy(t.id, absenceSlot.date, absenceSlot.slot, store.schedules, store.absences, _excludeSlotId) &&
+    isAvailableBySchedule(t, dateToDayLabel(absenceSlot.date), absenceSlot.slot, _periodConfigs) &&
+    !_allocated.has(t.id)
   )
 
   if (ruleType === 'qualitative') {

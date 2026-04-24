@@ -65,13 +65,13 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
   const candidates = useMemo(() =>
     rankCandidates(teacherId, date, slot, subjectId,
       store.teachers, store.schedules, store.absences, store.subjects, store.areas,
-      store.periodConfigs, store.sharedSeries),
-    [teacherId, date, slot, subjectId, store]
+      store.periodConfigs, store.sharedSeries, slotId),
+    [teacherId, date, slot, subjectId, slotId, store]
   )
 
   const absenceSlot = useMemo(() => ({
-    absentTeacherId: teacherId, date, slot, subjectId,
-  }), [teacherId, date, slot, subjectId])
+    absentTeacherId: teacherId, date, slot, subjectId, excludeSlotId: slotId,
+  }), [teacherId, date, slot, subjectId, slotId])
 
   const suggestions = useMemo(
     () => suggestSubstitutes(absenceSlot, ruleType, store).map(({ teacher, load, atLimit }) => ({
@@ -91,9 +91,23 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
   const absentTeacher = store.teachers.find(t => t.id === teacherId)
 
   const handleAssign = (t) => {
-    assignSubstitute(absenceId, slotId, t.id)
-    setAssignedTeacher(t)
-    toast(`Substituto: ${t.name}`, 'ok')
+    if (t && t.id) {
+      const alreadyAllocated = (store.absences ?? []).some(ab =>
+        ab.slots.some(sl =>
+          sl.date === date && sl.timeSlot === slot &&
+          sl.id !== slotId && sl.substituteId === t.id
+        )
+      )
+      if (alreadyAllocated) {
+        toast('Professor já alocado neste horário', 'err')
+        return
+      }
+      assignSubstitute(absenceId, slotId, t.id)
+      setAssignedTeacher(t)
+      toast(`Substituto: ${t.name}`, 'ok')
+    } else {
+      assignSubstitute(absenceId, slotId, null)
+    }
   }
 
   const handleDownloadPDF = () => {
@@ -313,13 +327,33 @@ function DayModal({ open, onClose, date, teacher, store, isAdmin }) {
   }
 
   const handleAcceptAll = () => {
+    // Build in-memory index of already-allocated substitutes per date+timeSlot
+    // so that within this loop we don't assign the same teacher twice even though
+    // store.absences won't update between iterations.
+    const allocatedMap = new Map()
+    store.absences.forEach(ab => {
+      ab.slots.forEach(sl => {
+        if (!sl.substituteId) return
+        const key = `${sl.date}|${sl.timeSlot}`
+        if (!allocatedMap.has(key)) allocatedMap.set(key, new Set())
+        allocatedMap.get(key).add(sl.substituteId)
+      })
+    })
+
     Object.entries(absMap).forEach(([slot, { absenceId, slotId, substituteId }]) => {
       if (substituteId) return
       const sched = mine.find(s => s.timeSlot === slot)
-      const top = rankCandidates(teacher.id, date, slot, sched?.subjectId,
+      const candidates = rankCandidates(teacher.id, date, slot, sched?.subjectId,
         store.teachers, store.schedules, store.absences, store.subjects, store.areas,
-        store.periodConfigs, store.sharedSeries)[0]
-      if (top) assignSubstitute(absenceId, slotId, top.teacher.id)
+        store.periodConfigs, store.sharedSeries)
+      const key = `${date}|${slot}`
+      const allocated = allocatedMap.get(key) ?? new Set()
+      const top = candidates.find(c => !allocated.has(c.teacher.id))
+      if (top) {
+        assignSubstitute(absenceId, slotId, top.teacher.id)
+        if (!allocatedMap.has(key)) allocatedMap.set(key, new Set())
+        allocatedMap.get(key).add(top.teacher.id)
+      }
     })
     toast('Substituições confirmadas', 'ok')
   }

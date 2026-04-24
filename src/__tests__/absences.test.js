@@ -6,6 +6,7 @@ import {
   isAvailableBySchedule,
   weeklyLimitStatus,
   isUnderWeeklyLimit,
+  substitutesAtSlot,
 } from '../lib/absences/index.js'
 
 // ─── Fixtures compartilhadas ──────────────────────────────────────────────────
@@ -633,5 +634,343 @@ describe('rankCandidates — cenário realista', () => {
     // Últimos dois têm score 4
     expect(result[4].score).toBe(4)
     expect(result[5].score).toBe(4)
+  })
+})
+
+// ─── substitutesAtSlot ────────────────────────────────────────────────────────
+
+describe('substitutesAtSlot', () => {
+  it('retorna Set vazio quando absences é vazio', () => {
+    const result = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, [])
+    expect(result).toBeInstanceOf(Set)
+    expect(result.size).toBe(0)
+  })
+
+  it('retorna Set vazio quando absences é undefined', () => {
+    const result = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, undefined)
+    expect(result).toBeInstanceOf(Set)
+    expect(result.size).toBe(0)
+  })
+
+  it('retorna Set com substituteId do slot que bate date+timeSlot', () => {
+    const absences = [
+      {
+        id: 'abs1',
+        teacherId: 'prof-ausente',
+        slots: [
+          { id: 'sl-1', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 'sub-b' },
+        ],
+      },
+    ]
+    const result = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, absences)
+    expect(result.has('sub-b')).toBe(true)
+    expect(result.size).toBe(1)
+  })
+
+  it('não inclui slots com date ou timeSlot diferentes', () => {
+    const absences = [
+      {
+        id: 'abs1',
+        teacherId: 'prof-ausente',
+        slots: [
+          { id: 'sl-1', date: DATE_TUE, timeSlot: TIME_SLOT_FUND, substituteId: 'sub-b' },
+          { id: 'sl-2', date: DATE_MON, timeSlot: TIME_SLOT_MEDIO, substituteId: 'sub-c' },
+        ],
+      },
+    ]
+    const result = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, absences)
+    expect(result.size).toBe(0)
+  })
+
+  it('não inclui slots com substituteId null', () => {
+    const absences = [
+      {
+        id: 'abs1',
+        teacherId: 'prof-ausente',
+        slots: [
+          { id: 'sl-1', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: null },
+        ],
+      },
+    ]
+    const result = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, absences)
+    expect(result.size).toBe(0)
+  })
+
+  it('absorve duplicatas quando mesmo professor está em dois slots do mesmo date+timeSlot', () => {
+    const absences = [
+      {
+        id: 'abs1',
+        teacherId: 'prof-a',
+        slots: [{ id: 'sl-1', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 'sub-b' }],
+      },
+      {
+        id: 'abs2',
+        teacherId: 'prof-c',
+        slots: [{ id: 'sl-2', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 'sub-b' }],
+      },
+    ]
+    const result = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, absences)
+    expect(result.size).toBe(1)
+    expect(result.has('sub-b')).toBe(true)
+  })
+
+  it('retorna múltiplos substituteIds quando há vários professores no mesmo date+timeSlot', () => {
+    const absences = [
+      {
+        id: 'abs1',
+        teacherId: 'prof-a',
+        slots: [{ id: 'sl-1', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 'sub-b' }],
+      },
+      {
+        id: 'abs2',
+        teacherId: 'prof-c',
+        slots: [{ id: 'sl-2', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 'sub-d' }],
+      },
+    ]
+    const result = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, absences)
+    expect(result.size).toBe(2)
+    expect(result.has('sub-b')).toBe(true)
+    expect(result.has('sub-d')).toBe(true)
+  })
+
+  it('excludeSlotId ignora o slot especificado ao montar o conjunto', () => {
+    const absences = [
+      {
+        id: 'abs1',
+        teacherId: 'prof-a',
+        slots: [{ id: 'sl-abc', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 'sub-b' }],
+      },
+    ]
+    const result = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, absences, 'sl-abc')
+    expect(result.size).toBe(0)
+  })
+
+  it('excludeSlotId não encontrado: resultado idêntico ao sem exclusão', () => {
+    const absences = [
+      {
+        id: 'abs1',
+        teacherId: 'prof-a',
+        slots: [{ id: 'sl-1', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 'sub-b' }],
+      },
+    ]
+    const withExclusion    = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, absences, 'id-inexistente')
+    const withoutExclusion = substitutesAtSlot(DATE_MON, TIME_SLOT_FUND, absences)
+    expect(withExclusion.size).toBe(withoutExclusion.size)
+    expect(withExclusion.has('sub-b')).toBe(true)
+  })
+})
+
+// ─── rankCandidates — filtro substitutesAtSlot ────────────────────────────────
+
+describe('rankCandidates — filtro substitutesAtSlot', () => {
+  it('exclui professor já alocado como substituto no mesmo date+timeSlot', () => {
+    const teachers = [
+      makeTeacher({ id: 't1', subjectIds: ['subj-bio'] }),
+      makeTeacher({ id: 't2', subjectIds: ['subj-bio'] }),
+    ]
+    // t1 já é substituto de outra ausência no mesmo DATE_MON + TIME_SLOT_FUND
+    const absences = [
+      {
+        id: 'abs-outra',
+        teacherId: 'outro-ausente',
+        slots: [{ id: 'sl-outro', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 't1' }],
+      },
+    ]
+    const result = rankCandidates(ABSENT_ID, DATE_MON, TIME_SLOT_FUND, 'subj-bio', teachers, [], absences, subjects, areas)
+    const ids = result.map(r => r.teacher.id)
+    expect(ids).not.toContain('t1')
+    expect(ids).toContain('t2')
+  })
+
+  it('com excludeSlotId, o professor do slot excluído volta como candidato', () => {
+    const teachers = [
+      makeTeacher({ id: 't1', subjectIds: ['subj-bio'] }),
+      makeTeacher({ id: 't2', subjectIds: ['subj-bio'] }),
+    ]
+    // slot sl-abc tem t1 como substituto — mas estamos reatribuindo esse slot
+    const absences = [
+      {
+        id: 'abs-outra',
+        teacherId: 'outro-ausente',
+        slots: [{ id: 'sl-abc', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 't1' }],
+      },
+    ]
+    // sem excludeSlotId: t1 não aparece
+    const resultSem = rankCandidates(ABSENT_ID, DATE_MON, TIME_SLOT_FUND, 'subj-bio', teachers, [], absences, subjects, areas)
+    expect(resultSem.map(r => r.teacher.id)).not.toContain('t1')
+
+    // com excludeSlotId = 'sl-abc': t1 volta a aparecer
+    const resultCom = rankCandidates(ABSENT_ID, DATE_MON, TIME_SLOT_FUND, 'subj-bio', teachers, [], absences, subjects, areas, {}, [], 'sl-abc')
+    expect(resultCom.map(r => r.teacher.id)).toContain('t1')
+  })
+
+  it('chamadas sem o 12º argumento continuam funcionando (parâmetro opcional)', () => {
+    const teachers = [makeTeacher({ id: 't1', subjectIds: ['subj-bio'] })]
+    expect(() =>
+      rankCandidates(ABSENT_ID, DATE_MON, TIME_SLOT_FUND, 'subj-bio', teachers, [], [], subjects, areas)
+    ).not.toThrow()
+    const result = rankCandidates(ABSENT_ID, DATE_MON, TIME_SLOT_FUND, 'subj-bio', teachers, [], [], subjects, areas)
+    expect(result).toHaveLength(1)
+  })
+
+  it('isBusy ainda é aplicado antes do filtro de alocação (ordem de precedência)', () => {
+    // t1: tem aula agendada (isBusy=true) E está alocado em outro slot
+    // t2: está alocado mas não tem aula → filtrado pelo substitutesAtSlot
+    // t3: livre → aparece
+    const teachers = [
+      makeTeacher({ id: 't1', subjectIds: ['subj-bio'] }),
+      makeTeacher({ id: 't2', subjectIds: ['subj-bio'] }),
+      makeTeacher({ id: 't3', subjectIds: ['subj-bio'] }),
+    ]
+    const schedules = [
+      { teacherId: 't1', day: 'Segunda', timeSlot: TIME_SLOT_FUND },
+    ]
+    const absences = [
+      {
+        id: 'abs-outra',
+        teacherId: 'outro-ausente',
+        slots: [
+          { id: 'sl-1', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 't1' },
+          { id: 'sl-2', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 't2' },
+        ],
+      },
+    ]
+    const result = rankCandidates(ABSENT_ID, DATE_MON, TIME_SLOT_FUND, 'subj-bio', teachers, schedules, absences, subjects, areas)
+    const ids = result.map(r => r.teacher.id)
+    expect(ids).not.toContain('t1')
+    expect(ids).not.toContain('t2')
+    expect(ids).toContain('t3')
+  })
+})
+
+// ─── suggestSubstitutes — filtro substitutesAtSlot ───────────────────────────
+
+// Importar suggestSubstitutes diretamente
+import { suggestSubstitutes } from '../lib/absences/index.js'
+
+describe('suggestSubstitutes — filtro substitutesAtSlot', () => {
+  const makeStore = (teachers, absences = []) => ({
+    teachers,
+    schedules: [],
+    absences,
+    subjects,
+    areas,
+    periodConfigs: {},
+    sharedSeries: [],
+  })
+
+  it('modo qualitative: exclui professor já alocado no mesmo date+timeSlot', () => {
+    const teachers = [
+      makeTeacher({ id: 't1', subjectIds: ['subj-bio'], status: 'approved' }),
+      makeTeacher({ id: 't2', subjectIds: ['subj-bio'], status: 'approved' }),
+      makeTeacher({ id: 't3', subjectIds: ['subj-bio'], status: 'approved' }),
+    ]
+    // t1 já alocado em outro slot no mesmo date+timeSlot
+    const absences = [
+      {
+        id: 'abs-outra',
+        teacherId: 'outro-ausente',
+        slots: [{ id: 'sl-outra', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 't1' }],
+      },
+    ]
+    const absenceSlot = {
+      absentTeacherId: ABSENT_ID,
+      date: DATE_MON,
+      slot: TIME_SLOT_FUND,
+      subjectId: 'subj-bio',
+    }
+    const result = suggestSubstitutes(absenceSlot, 'qualitative', makeStore(teachers, absences))
+    const ids = result.map(r => r.teacher.id)
+    expect(ids).not.toContain('t1')
+  })
+
+  it('modo quantitative: exclui professor já alocado no mesmo date+timeSlot', () => {
+    const teachers = [
+      makeTeacher({ id: 't1', subjectIds: ['subj-bio'], status: 'approved' }),
+      makeTeacher({ id: 't2', subjectIds: ['subj-bio'], status: 'approved' }),
+      makeTeacher({ id: 't3', subjectIds: ['subj-bio'], status: 'approved' }),
+    ]
+    const absences = [
+      {
+        id: 'abs-outra',
+        teacherId: 'outro-ausente',
+        slots: [{ id: 'sl-outra', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 't1' }],
+      },
+    ]
+    const absenceSlot = {
+      absentTeacherId: ABSENT_ID,
+      date: DATE_MON,
+      slot: TIME_SLOT_FUND,
+      subjectId: 'subj-bio',
+    }
+    const result = suggestSubstitutes(absenceSlot, 'quantitative', makeStore(teachers, absences))
+    const ids = result.map(r => r.teacher.id)
+    expect(ids).not.toContain('t1')
+  })
+
+  it('com excludeSlotId, o professor do slot excluído volta como candidato em qualitative', () => {
+    // O modo qualitative requer que o professor ausente esteja na store
+    const absentTeacher = makeTeacher({ id: ABSENT_ID, subjectIds: ['subj-bio'], status: 'approved' })
+    const teachers = [
+      absentTeacher,
+      makeTeacher({ id: 't1', subjectIds: ['subj-bio'], status: 'approved' }),
+      makeTeacher({ id: 't2', subjectIds: ['subj-bio'], status: 'approved' }),
+    ]
+    const absences = [
+      {
+        id: 'abs-outra',
+        teacherId: 'outro-ausente',
+        slots: [{ id: 'sl-abc', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 't1' }],
+      },
+    ]
+    // sem excludeSlotId: t1 não aparece
+    const absenceSlotSem = {
+      absentTeacherId: ABSENT_ID,
+      date: DATE_MON,
+      slot: TIME_SLOT_FUND,
+      subjectId: 'subj-bio',
+    }
+    const resultSem = suggestSubstitutes(absenceSlotSem, 'qualitative', makeStore(teachers, absences))
+    expect(resultSem.map(r => r.teacher.id)).not.toContain('t1')
+
+    // com excludeSlotId: t1 volta
+    const absenceSlotCom = { ...absenceSlotSem, excludeSlotId: 'sl-abc' }
+    const resultCom = suggestSubstitutes(absenceSlotCom, 'qualitative', makeStore(teachers, absences))
+    expect(resultCom.map(r => r.teacher.id)).toContain('t1')
+  })
+
+  it('com excludeSlotId, o professor do slot excluído volta como candidato em quantitative', () => {
+    const teachers = [
+      makeTeacher({ id: 't1', subjectIds: ['subj-bio'], status: 'approved' }),
+      makeTeacher({ id: 't2', subjectIds: ['subj-bio'], status: 'approved' }),
+    ]
+    const absences = [
+      {
+        id: 'abs-outra',
+        teacherId: 'outro-ausente',
+        slots: [{ id: 'sl-abc', date: DATE_MON, timeSlot: TIME_SLOT_FUND, substituteId: 't1' }],
+      },
+    ]
+    const absenceSlotCom = {
+      absentTeacherId: ABSENT_ID,
+      date: DATE_MON,
+      slot: TIME_SLOT_FUND,
+      subjectId: 'subj-bio',
+      excludeSlotId: 'sl-abc',
+    }
+    const result = suggestSubstitutes(absenceSlotCom, 'quantitative', makeStore(teachers, absences))
+    expect(result.map(r => r.teacher.id)).toContain('t1')
+  })
+
+  it('chamadas sem excludeSlotId continuam funcionando (parâmetro opcional)', () => {
+    const teachers = [makeTeacher({ id: 't1', subjectIds: ['subj-bio'], status: 'approved' })]
+    const absenceSlot = {
+      absentTeacherId: ABSENT_ID,
+      date: DATE_MON,
+      slot: TIME_SLOT_FUND,
+      subjectId: 'subj-bio',
+    }
+    expect(() => suggestSubstitutes(absenceSlot, 'qualitative', makeStore(teachers))).not.toThrow()
+    expect(() => suggestSubstitutes(absenceSlot, 'quantitative', makeStore(teachers))).not.toThrow()
   })
 })
