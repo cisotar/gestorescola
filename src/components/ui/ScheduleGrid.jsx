@@ -226,7 +226,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                     return (
                                       <div
                                         key={s.id}
-                                        className={`relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px]${!readOnly ? ' cursor-grab' : ''}`}
+                                        className={`group relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px]${!readOnly ? ' cursor-grab' : ''}`}
                                         draggable={!readOnly ? 'true' : undefined}
                                         onDragStart={!readOnly ? () => setDragSource({ scheduleId: s.id, fromDay: day, fromSlot: slot }) : undefined}
                                         onDragEnd={!readOnly ? () => { setDragSource(null); setDragTarget(null) } : undefined}
@@ -235,9 +235,20 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                         <div className="text-[#4a4740] text-[10px] truncate">{subjLabel}</div>
                                         {!readOnly && (
                                           <button
-                                            className="absolute top-0.5 right-0.5 text-t3 hover:text-err opacity-50 hover:opacity-100 p-1 hover:bg-err-l hover:rounded"
+                                            className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 bg-err text-white rounded p-1 transition-opacity duration-150"
                                             onClick={() => removeSchedule(s.id)}
-                                          >✕</button>
+                                            onMouseDown={e => e.stopPropagation()}
+                                            aria-label="Remover aula"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                                              fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                              <polyline points="3 6 5 6 21 6" />
+                                              <path d="M19 6l-1 14H6L5 6" />
+                                              <path d="M10 11v6" />
+                                              <path d="M14 11v6" />
+                                              <path d="M9 6V4h6v2" />
+                                            </svg>
+                                          </button>
                                         )}
                                       </div>
                                     )
@@ -336,7 +347,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                   return (
                                     <div
                                       key={s.id}
-                                      className={`relative bg-white border border-bdr rounded-lg p-1.5 text-[11px]${!readOnly ? ' cursor-grab' : ''}`}
+                                      className={`group relative bg-white border border-bdr rounded-lg p-1.5 text-[11px]${!readOnly ? ' cursor-grab' : ''}`}
                                       draggable={!readOnly ? 'true' : undefined}
                                       onDragStart={!readOnly ? () => setDragSource({ scheduleId: s.id, fromDay: day, fromSlot: slot }) : undefined}
                                       onDragEnd={!readOnly ? () => { setDragSource(null); setDragTarget(null) } : undefined}
@@ -345,9 +356,20 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                       <div className="text-[#4a4740] text-[10px] truncate">{subjLabel}</div>
                                       {!readOnly && (
                                         <button
-                                          className="absolute top-0.5 right-0.5 text-t3 hover:text-err opacity-50 hover:opacity-100 p-1 hover:bg-err-l hover:rounded"
+                                          className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 bg-err text-white rounded p-1 transition-opacity duration-150"
                                           onClick={() => removeSchedule(s.id)}
-                                        >✕</button>
+                                          onMouseDown={e => e.stopPropagation()}
+                                          aria-label="Remover aula"
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                                            fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <polyline points="3 6 5 6 21 6" />
+                                            <path d="M19 6l-1 14H6L5 6" />
+                                            <path d="M10 11v6" />
+                                            <path d="M14 11v6" />
+                                            <path d="M9 6V4h6v2" />
+                                          </svg>
+                                        </button>
                                       )}
                                     </div>
                                   )
