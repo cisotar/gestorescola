@@ -212,7 +212,15 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                   e.preventDefault()
                                   if (!dragSource) return
                                   if (dragSource.fromDay === day && dragSource.fromSlot === slot) { setDragTarget(null); return }
-                                  if (teacherConflict || isBlocked) { toast('Horário já ocupado neste dia', 'err'); setDragTarget(null); return }
+                                  if (isBlocked) { toast('Horário bloqueado', 'err'); setDragTarget(null); return }
+                                  const slotOccupant = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+                                  if (slotOccupant) {
+                                    const occupantName = store.teachers.find(t => t.id === slotOccupant.teacherId)?.name ?? 'outro professor'
+                                    toast(`Horário já ocupado pelo prof. ${occupantName}`, 'err')
+                                    setDragTarget(null)
+                                    return
+                                  }
+                                  if (teacherConflict) { toast('Você já tem aula neste horário', 'err'); setDragTarget(null); return }
                                   updateSchedule(dragSource.scheduleId, { day, timeSlot: slot })
                                   toast('Aula movida', 'ok')
                                   setDragSource(null)
@@ -333,7 +341,15 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                 e.preventDefault()
                                 if (!dragSource) return
                                 if (dragSource.fromDay === day && dragSource.fromSlot === slot) { setDragTarget(null); return }
-                                if (teacherConflict || isBlocked) { toast('Horário já ocupado neste dia', 'err'); setDragTarget(null); return }
+                                if (isBlocked) { toast('Horário bloqueado', 'err'); setDragTarget(null); return }
+                                const slotOccupant = store.schedules.find(s => s.timeSlot === slot && s.day === day && s.teacherId !== teacher.id)
+                                if (slotOccupant) {
+                                  const occupantName = store.teachers.find(t => t.id === slotOccupant.teacherId)?.name ?? 'outro professor'
+                                  toast(`Horário já ocupado pelo prof. ${occupantName}`, 'err')
+                                  setDragTarget(null)
+                                  return
+                                }
+                                if (teacherConflict) { toast('Você já tem aula neste horário', 'err'); setDragTarget(null); return }
                                 updateSchedule(dragSource.scheduleId, { day, timeSlot: slot })
                                 toast('Aula movida', 'ok')
                                 setDragSource(null)
