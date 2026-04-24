@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, forwardRef } from 'react'
 
-export default function Modal({ open, onClose, title, children, size = 'md' }) {
+const Modal = forwardRef(function Modal({ open, onClose, title, children, size = 'md' }, ref) {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose?.() }
     document.addEventListener('keydown', handler)
@@ -16,7 +16,7 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
       className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40"
       onClick={(e) => { if (e.target === e.currentTarget) onClose?.() }}
     >
-      <div className={`bg-surf rounded-2xl shadow-2xl w-full ${widths[size]} max-h-[90vh] flex flex-col`}>
+      <div ref={ref} className={`bg-surf rounded-2xl shadow-2xl w-full ${widths[size]} max-h-[90vh] flex flex-col`}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bdr shrink-0">
           <h3 className="text-base font-bold text-t1">{title}</h3>
@@ -34,4 +34,6 @@ export default function Modal({ open, onClose, title, children, size = 'md' }) {
       </div>
     </div>
   )
-}
+})
+
+export default Modal

@@ -1,6 +1,6 @@
 // TabTeachers — CRUD de professores com filtros, modais e perfis
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useAppStore from '../../../store/useAppStore'
 import useAuthStore from '../../../store/useAuthStore'
@@ -25,6 +25,7 @@ import Modal from '../../ui/Modal'
 import { ScheduleGridModal } from '../../ui/ScheduleGrid'
 import GradeTurnoCard from '../../ui/GradeTurnoCard'
 import ProfilePillDropdown from '../shared/ProfilePillDropdown'
+import ProfileSelector from '../../ui/ProfileSelector'
 import SubjectSelector from '../shared/SubjectSelector'
 import { parseSlot } from '../../../lib/periods'
 
@@ -211,6 +212,7 @@ export default function TabTeachers() {
   const { role } = useAuthStore()
   const isAdminUser = role === 'admin'
   const navigate = useNavigate()
+  const modalRef = useRef(null)
   const [modal,              setModal]              = useState(false)
   const [schedModal,         setSchedModal]         = useState(false)
   const [schedTeacher,       setSchedTeacher]       = useState(null)
@@ -624,7 +626,7 @@ export default function TabTeachers() {
       <SubjectChangeModal ctx={subjectChangeCtx} />
 
       {/* Painel: Aguardando Aprovação */}
-      <Modal open={showPendingPanel} onClose={() => setShowPendingPanel(false)} title={`Aguardando Aprovação (${pending.length})`} size="lg">
+      <Modal ref={modalRef} open={showPendingPanel} onClose={() => setShowPendingPanel(false)} title={`Aguardando Aprovação (${pending.length})`} size="lg">
         {pending.length === 0 ? (
           <div className="text-center py-8 text-t3">✅ Nenhum professor aguardando aprovação.</div>
         ) : (
@@ -668,11 +670,10 @@ export default function TabTeachers() {
                   </button>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-bdr">
-                  <ProfilePillDropdown
+                  <ProfileSelector
                     value={pendingProfiles[p.id]}
-                    options={PROFILE_OPTIONS_NO_ADMIN}
                     onChange={profile => setPendingProfiles(prev => ({ ...prev, [p.id]: profile }))}
-                    placeholder="Selecionar perfil ▾"
+                    containerRef={modalRef}
                   />
                   <div className="flex gap-2">
                     <button
@@ -691,7 +692,9 @@ export default function TabTeachers() {
                           toast('Erro ao aprovar professor', 'err')
                         }
                       }}
-                    >Aprovar</button>
+                    >
+                      {pendingProfiles[p.id] ? `Aprovar como ${PROFILE_OPTIONS_NO_ADMIN.find(o => o.value === pendingProfiles[p.id])?.label}` : 'Aprovar'}
+                    </button>
                     <button className="btn btn-ghost btn-sm text-err" onClick={() => handleReject(p)}>Rejeitar</button>
                   </div>
                 </div>
