@@ -83,8 +83,12 @@ function CelulaFora({ day }) {
  * @param {Object} [horariosSemana=null] - Horários customizados por dia: { "Segunda": { entrada: "07:00", saida: "12:00" }, ... }
  */
 export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap, segmentFilter = null, horariosSemana = null }) {
-  const { addSchedule, removeSchedule } = useAppStore()
+  const { addSchedule, removeSchedule, updateSchedule } = useAppStore()
   const [modal, setModal] = useState(null)
+  const [dragSource, setDragSource] = useState(null)
+  // { scheduleId: string, fromDay: string, fromSlot: string }
+  const [dragTarget, setDragTarget] = useState(null)
+  // { day: string, slot: string }
 
   const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
 
@@ -118,7 +122,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
         })
 
         return (
-          <div key={seg.id} className="mb-6">
+          <div key={seg.id} className={`mb-6 ${!readOnly && dragSource ? 'cursor-grabbing' : ''}`}>
             <div className="flex items-center gap-3 mb-2">
               <div className="text-xs font-bold text-t2 uppercase tracking-wide">{seg.name}</div>
               <div className="text-xs text-t3 px-2 py-0.5 rounded-full bg-surf2 border border-bdr">
@@ -198,18 +202,40 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                             const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
 
                             return (
-                              <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : rowBg}`}>
+                              <td
+                                key={day}
+                                className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : rowBg} ${!readOnly && dragTarget?.day === day && dragTarget?.slot === slot ? 'border border-accent bg-accent-l/40' : ''}`}
+                                onDragOver={!readOnly ? (e) => { e.preventDefault(); setDragTarget({ day, slot }) } : undefined}
+                                onDragEnter={!readOnly ? (e) => { e.preventDefault(); setDragTarget({ day, slot }) } : undefined}
+                                onDragLeave={!readOnly ? () => setDragTarget(null) : undefined}
+                                onDrop={!readOnly ? (e) => {
+                                  e.preventDefault()
+                                  if (!dragSource) return
+                                  if (dragSource.fromDay === day && dragSource.fromSlot === slot) { setDragTarget(null); return }
+                                  if (teacherConflict || isBlocked) { toast('Horário já ocupado neste dia', 'err'); setDragTarget(null); return }
+                                  updateSchedule(dragSource.scheduleId, { day, timeSlot: slot })
+                                  toast('Aula movida', 'ok')
+                                  setDragSource(null)
+                                  setDragTarget(null)
+                                } : undefined}
+                              >
                                 <div className="space-y-1">
                                   {mine.map(s => {
                                     const subj = store.subjects.find(x => x.id === s.subjectId)
                                     const subjLabel = isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subj?.name ?? '—')
                                     return (
-                                      <div key={s.id} className="relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px] group">
+                                      <div
+                                        key={s.id}
+                                        className={`relative bg-surf2 border border-bdr rounded-lg p-1.5 text-[11px]${!readOnly ? ' cursor-grab' : ''}`}
+                                        draggable={!readOnly ? 'true' : undefined}
+                                        onDragStart={!readOnly ? () => setDragSource({ scheduleId: s.id, fromDay: day, fromSlot: slot }) : undefined}
+                                        onDragEnd={!readOnly ? () => { setDragSource(null); setDragTarget(null) } : undefined}
+                                      >
                                         <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
                                         <div className="text-[#4a4740] text-[10px] truncate">{subjLabel}</div>
                                         {!readOnly && (
                                           <button
-                                            className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
+                                            className="absolute top-0.5 right-0.5 text-t3 hover:text-err opacity-50 hover:opacity-100 p-1 hover:bg-err-l hover:rounded"
                                             onClick={() => removeSchedule(s.id)}
                                           >✕</button>
                                         )}
@@ -286,18 +312,40 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                           const freeTurmas = allTurmas.filter(t => !hardBlockedTurmas.includes(t))
 
                           return (
-                            <td key={day} className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : rowBg}`}>
+                            <td
+                              key={day}
+                              className={`px-1.5 py-1.5 align-top ${teacherConflict ? 'bg-amber-50/40' : rowBg} ${!readOnly && dragTarget?.day === day && dragTarget?.slot === slot ? 'border border-accent bg-accent-l/40' : ''}`}
+                              onDragOver={!readOnly ? (e) => { e.preventDefault(); setDragTarget({ day, slot }) } : undefined}
+                              onDragEnter={!readOnly ? (e) => { e.preventDefault(); setDragTarget({ day, slot }) } : undefined}
+                              onDragLeave={!readOnly ? () => setDragTarget(null) : undefined}
+                              onDrop={!readOnly ? (e) => {
+                                e.preventDefault()
+                                if (!dragSource) return
+                                if (dragSource.fromDay === day && dragSource.fromSlot === slot) { setDragTarget(null); return }
+                                if (teacherConflict || isBlocked) { toast('Horário já ocupado neste dia', 'err'); setDragTarget(null); return }
+                                updateSchedule(dragSource.scheduleId, { day, timeSlot: slot })
+                                toast('Aula movida', 'ok')
+                                setDragSource(null)
+                                setDragTarget(null)
+                              } : undefined}
+                            >
                               <div className="space-y-1">
                                 {mine.map(s => {
                                   const subj = store.subjects.find(x => x.id === s.subjectId)
                                   const subjLabel = isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subj?.name ?? '—')
                                   return (
-                                    <div key={s.id} className="relative bg-white border border-bdr rounded-lg p-1.5 text-[11px] group">
+                                    <div
+                                      key={s.id}
+                                      className={`relative bg-white border border-bdr rounded-lg p-1.5 text-[11px]${!readOnly ? ' cursor-grab' : ''}`}
+                                      draggable={!readOnly ? 'true' : undefined}
+                                      onDragStart={!readOnly ? () => setDragSource({ scheduleId: s.id, fromDay: day, fromSlot: slot }) : undefined}
+                                      onDragEnd={!readOnly ? () => { setDragSource(null); setDragTarget(null) } : undefined}
+                                    >
                                       <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
                                       <div className="text-[#4a4740] text-[10px] truncate">{subjLabel}</div>
                                       {!readOnly && (
                                         <button
-                                          className="absolute top-0.5 right-0.5 text-t3 hover:text-err hidden group-hover:block"
+                                          className="absolute top-0.5 right-0.5 text-t3 hover:text-err opacity-50 hover:opacity-100 p-1 hover:bg-err-l hover:rounded"
                                           onClick={() => removeSchedule(s.id)}
                                         >✕</button>
                                       )}
