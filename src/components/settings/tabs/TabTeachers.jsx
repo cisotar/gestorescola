@@ -28,6 +28,16 @@ import ProfilePillDropdown from '../shared/ProfilePillDropdown'
 import SubjectSelector from '../shared/SubjectSelector'
 import { parseSlot } from '../../../lib/periods'
 
+// ─── buildWhatsAppHref ────────────────────────────────────────────────────────
+
+function buildWhatsAppHref(t) {
+  const raw = t.whatsapp || t.celular || ''
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return null
+  const phone = digits.startsWith('55') && digits.length >= 12 ? digits : `55${digits}`
+  return `https://api.whatsapp.com/send?phone=${phone}`
+}
+
 // ─── SubjectChangeModal ───────────────────────────────────────────────────────
 
 function SubjectChangeModal({ ctx }) {
@@ -217,6 +227,7 @@ export default function TabTeachers() {
   const [pendingProfiles,    setPendingProfiles]    = useState({})
   const [admins,             setAdmins]             = useState([])
   const [viewingHorarios,    setViewingHorarios]    = useState(null) // professor pendente cujos horários estão sendo exibidos
+  const [sortConfig,         setSortConfig]         = useState({ key: 'name', dir: 'asc' })
 
   useEffect(() => {
     listAdmins().then(list => setAdmins(list.map(a => a.email.toLowerCase())))
@@ -235,6 +246,21 @@ export default function TabTeachers() {
       .filter(seg => teacherBelongsToSegment(t, seg.id, store.subjects, store.areas))
       .map(seg => seg.name)
       .join(', ') || '—'
+
+  const toggleSort = (key) => {
+    setSortConfig(prev =>
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' }
+    )
+  }
+
+  const sortIcon = (key) => {
+    if (sortConfig.key !== key) return <span className="text-t3 ml-1">⇅</span>
+    return sortConfig.dir === 'asc'
+      ? <span className="text-accent ml-1">▲</span>
+      : <span className="text-accent ml-1">▼</span>
+  }
 
   const handleApprove = async (p) => {
     await approveTeacher(p.id, store, useAppStore.setState)
@@ -282,13 +308,36 @@ export default function TabTeachers() {
     }
   }
 
-  const approvedRows = [...store.teachers].sort((a, b) => a.name.localeCompare(b.name))
-  const pendingRows  = [...pending].sort((a, b) => a.name.localeCompare(b.name))
+  const STATUS_ORDER = ['admin', 'coordinator', 'teacher-coordinator', 'teacher']
+
+  const pendingRows = [...pending]
+    .sort((a, b) => a.name.localeCompare(b.name))
     .map(p => ({ ...p, _isPending: true }))
-  const allRows = [...approvedRows, ...pendingRows]
+
+  const compare = (a, b) => {
+    let result = 0
+    if (sortConfig.key === 'name') {
+      result = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    } else if (sortConfig.key === 'segment') {
+      result = teacherSegmentNames(a).localeCompare(teacherSegmentNames(b), undefined, { sensitivity: 'base' })
+    } else if (sortConfig.key === 'status') {
+      const ia = STATUS_ORDER.indexOf(currentProfile(a))
+      const ib = STATUS_ORDER.indexOf(currentProfile(b))
+      result = (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+    }
+    return sortConfig.dir === 'desc' ? -result : result
+  }
+
+  const sortedRows = [...store.teachers.slice().sort(compare), ...pendingRows]
 
   const openAdd  = () => { setForm({ name: '', email: '', celular: '', subjectIds: [] }); setEditId(null); setEditingTeacher(null); setModal(true) }
   const openEdit = (t) => { setForm({ name: t.name, email: t.email ?? '', celular: t.celular ?? '', apelido: t.apelido ?? '', subjectIds: t.subjectIds ?? [] }); setEditId(t.id); setEditingTeacher(t); setModal(true) }
+
+  const handleRemove = (t) => {
+    if (!window.confirm(`Tem certeza que deseja remover ${t.name}? Esta ação não pode ser desfeita.`)) return
+    store.removeTeacher(t.id)
+    toast('Professor removido', 'ok')
+  }
 
   const save = () => {
     if (!form.name.trim()) return
@@ -371,21 +420,37 @@ export default function TabTeachers() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="bg-surf2 border-b border-bdr">
-                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Nome</th>
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2 cursor-pointer hover:bg-surf2 select-none" onClick={() => toggleSort('name')}>Nome {sortIcon('name')}</th>
                 <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">E-mail</th>
                 <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Telefone</th>
-                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Segmento</th>
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2 cursor-pointer hover:bg-surf2 select-none" onClick={() => toggleSort('segment')}>Segmento {sortIcon('segment')}</th>
                 <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Matérias</th>
-                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2">Status</th>
-                <th className="px-3 py-2.5 w-[50px]"></th>
+                <th className="px-3 py-2.5 text-left text-xs font-bold text-t2 cursor-pointer hover:bg-surf2 select-none" onClick={() => toggleSort('status')}>Status {sortIcon('status')}</th>
+                <th className="px-3 py-2.5 w-[80px] text-right text-xs font-bold text-t2">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {allRows.map(t => (
+              {sortedRows.map(t => (
                 <tr key={t.id} className={`border-b border-bdr/50 hover:bg-surf2/50 ${t._isPending ? 'bg-amber-50/40' : ''}`}>
                   <td className="px-3 py-2.5 font-semibold text-sm">{t.name}</td>
-                  <td className="px-3 py-2.5 text-xs text-t1">{t.email || '—'}</td>
-                  <td className="px-3 py-2.5 text-xs text-t1">{t.celular || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs text-t1">
+                    {t.email
+                      ? <a href={`mailto:${t.email}`} className="text-accent underline hover:text-accent/80">{t.email}</a>
+                      : '—'}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs text-t1">
+                    {buildWhatsAppHref(t)
+                      ? (
+                        <a href={buildWhatsAppHref(t)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent underline hover:text-accent/80">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.117.549 4.107 1.51 5.84L.057 23.997l6.305-1.654A11.954 11.954 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.007-1.37l-.359-.214-3.743.982.999-3.648-.234-.374A9.818 9.818 0 0 1 2.182 12C2.182 6.57 6.57 2.182 12 2.182S21.818 6.57 21.818 12 17.43 21.818 12 21.818z"/>
+                          </svg>
+                          {t.celular || '—'}
+                        </a>
+                      )
+                      : '—'}
+                  </td>
                   <td className="px-3 py-2.5 text-xs text-t1">
                     {t._isPending ? <span className="text-warn">—</span> : (teacherSegmentNames(t) || '—')}
                   </td>
@@ -400,17 +465,37 @@ export default function TabTeachers() {
                   </td>
                   <td className="px-3 py-2.5">
                     {t._isPending ? (
-                      isAdminUser && <div className="flex gap-1">
-                        <button className="btn btn-dark btn-xs" onClick={() => handleApprove(t)}>Aprovar</button>
-                        <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(t)}>✕</button>
-                      </div>
+                      isAdminUser && (
+                        <div className="flex gap-1">
+                          <button className="btn btn-dark btn-xs" onClick={() => handleApprove(t)}>Aprovar</button>
+                          <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(t)}>✕</button>
+                        </div>
+                      )
                     ) : (
-                      isAdminUser && <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>
+                      isAdminUser && (
+                        <div className="flex gap-1 justify-end">
+                          <button className="btn btn-ghost btn-xs" title="Editar professor" onClick={() => openEdit(t)}>✏️</button>
+                          <button
+                            className="btn btn-ghost btn-xs text-err"
+                            title="Remover professor"
+                            onClick={() => handleRemove(t)}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+                              fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14H6L5 6" />
+                              <path d="M10 11v6" />
+                              <path d="M14 11v6" />
+                              <path d="M9 6V4h6v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      )
                     )}
                   </td>
                 </tr>
               ))}
-              {allRows.length === 0 && (
+              {sortedRows.length === 0 && (
                 <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-t3">Nenhum professor cadastrado.</td></tr>
               )}
             </tbody>
