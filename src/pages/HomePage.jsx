@@ -220,15 +220,6 @@ export default function HomePage() {
         <TeacherStats teacher={myTeacher} schedules={schedules} absences={absences} />
       )}
 
-      {lecturers.length > 0 && (
-        <WorkloadCard
-          lecturers={lecturers}
-          schedules={schedules}
-          absences={absences}
-          sharedSeries={sharedSeries}
-        />
-      )}
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {actionCards.map(card => (
           <ActionCard
@@ -241,6 +232,15 @@ export default function HomePage() {
           />
         ))}
       </div>
+
+      {lecturers.length > 0 && (
+        <WorkloadCard
+          lecturers={lecturers}
+          schedules={schedules}
+          absences={absences}
+          sharedSeries={sharedSeries}
+        />
+      )}
 
     </div>
   )
