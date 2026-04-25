@@ -121,7 +121,8 @@ export default function App() {
             <Route path="/substitutions"  element={<SubstitutionsPage />} />
             <Route path="/substitutions/ranking" element={<RankingPage />} />
             <Route path="/settings"  element={<SettingsPage />} />
-            <Route path="/workload"  element={<WorkloadPage />} />
+            <Route path="/cargahoraria" element={<WorkloadPage />} />
+            <Route path="/workload"     element={<Navigate to="/cargahoraria" replace />} />
             <Route path="/schedule"  element={<ScheduleRedirect />} />
             <Route path="/school-schedule" element={<SchoolScheduleRedirect />} />
             <Route path="/grades"  element={<GradesPage />} />

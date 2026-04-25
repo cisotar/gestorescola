@@ -73,7 +73,7 @@ export function WorkloadTable({ teachers, schedules, absences, sharedSeries = []
   return (
     <div className="card p-0 overflow-hidden">
       <button
-        onClick={() => navigate('/workload')}
+        onClick={() => navigate('/cargahoraria')}
         className="w-full px-4 py-3 border-b border-bdr text-left hover:bg-surf2 transition-colors flex items-center justify-between"
       >
         <div>

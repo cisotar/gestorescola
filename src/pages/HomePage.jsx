@@ -138,7 +138,7 @@ function WorkloadCard({ lecturers, schedules, absences, sharedSeries }) {
         variant="card"
       />
       <div className="flex justify-end mt-3">
-        <Link to="/workload" className="btn btn-ghost btn-sm">Ver tabela completa</Link>
+        <Link to="/cargahoraria" className="btn btn-ghost btn-sm">Ver tabela completa</Link>
       </div>
     </div>
   )

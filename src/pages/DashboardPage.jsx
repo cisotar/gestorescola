@@ -98,7 +98,7 @@ export default function DashboardPage() {
     { icon: '🗓️', label: 'Grade da Escola',              desc: 'Visualize e filtre os horários de toda a escola',                to: '/school-schedule' },
     { icon: '📊', label: 'Relatórios de Faltas',         desc: 'Acesse os relatórios consolidados de ausências',                 to: '/absences' },
     { icon: '📁', label: 'Relatórios de Substituições',  desc: 'Consulte os relatórios completos de substituições',              to: '/substitutions' },
-    { icon: '📈', label: 'Carga Horária',                desc: 'Tabela de aulas, faltas e substituições por professor',          to: '/workload' },
+    { icon: '📈', label: 'Carga Horária',                desc: 'Tabela de aulas, faltas e substituições por professor',          to: '/cargahoraria' },
   ]
 
   return (
