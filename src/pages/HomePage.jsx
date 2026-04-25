@@ -1,10 +1,11 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import ActionCard from '../components/ui/ActionCard'
 import KPICards from '../components/ui/KPICards'
 import Spinner from '../components/ui/Spinner'
+import { PeriodToggle, WorkloadConsolidatedTable } from '../components/ui/WorkloadShared'
 import { businessDaysBetween, dateToDayLabel } from '../lib/absences'
 
 // ─── Estatísticas pessoais completas ──────────────────────────────────────────
@@ -118,12 +119,39 @@ function BannerGradeVazia({ teacherId }) {
   )
 }
 
+// ─── Card de carga horária consolidada ───────────────────────────────────────
+
+function WorkloadCard({ lecturers, schedules, absences, sharedSeries }) {
+  const [period, setPeriod] = useState('month')
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-4">
+        <div className="font-bold text-sm">Carga Horária</div>
+        <PeriodToggle period={period} onChange={setPeriod} />
+      </div>
+      <WorkloadConsolidatedTable
+        teachers={lecturers}
+        schedules={schedules}
+        absences={absences}
+        sharedSeries={sharedSeries}
+        period={period}
+        variant="card"
+      />
+      <div className="flex justify-end mt-3">
+        <Link to="/workload" className="btn btn-ghost btn-sm">Ver tabela completa</Link>
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const { user, teacher: myTeacher } = useAuthStore()
-  const { schedules, absences, teachers, loaded } = useAppStore()
+  const { schedules, absences, teachers, sharedSeries, loaded, loadAbsencesIfNeeded } = useAppStore()
   const firstName = user?.displayName?.split(' ')[0] ?? 'Professor'
+
+  useEffect(() => { loadAbsencesIfNeeded() }, [])
 
   if (!loaded) {
     return (
@@ -132,6 +160,8 @@ export default function HomePage() {
       </div>
     )
   }
+
+  const lecturers = teachers.filter(t => t.profile !== 'coordinator')
 
   const semHorarios = myTeacher
     ? (!myTeacher.horariosSemana || Object.keys(myTeacher.horariosSemana).length === 0)
@@ -188,6 +218,15 @@ export default function HomePage() {
 
       {myTeacher && (
         <TeacherStats teacher={myTeacher} schedules={schedules} absences={absences} />
+      )}
+
+      {lecturers.length > 0 && (
+        <WorkloadCard
+          lecturers={lecturers}
+          schedules={schedules}
+          absences={absences}
+          sharedSeries={sharedSeries}
+        />
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
