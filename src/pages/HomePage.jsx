@@ -4,7 +4,6 @@ import useAuthStore from '../store/useAuthStore'
 import useAppStore from '../store/useAppStore'
 import ActionCard from '../components/ui/ActionCard'
 import KPICards from '../components/ui/KPICards'
-import { AulasAtribuidasCard, WorkloadTable } from '../components/ui/WorkloadCards'
 import Spinner from '../components/ui/Spinner'
 import { businessDaysBetween, dateToDayLabel } from '../lib/absences'
 
@@ -123,7 +122,7 @@ function BannerGradeVazia({ teacherId }) {
 
 export default function HomePage() {
   const { user, teacher: myTeacher } = useAuthStore()
-  const { schedules, absences, teachers, sharedSeries, loaded } = useAppStore()
+  const { schedules, absences, teachers, loaded } = useAppStore()
   const firstName = user?.displayName?.split(' ')[0] ?? 'Professor'
 
   if (!loaded) {
@@ -204,11 +203,6 @@ export default function HomePage() {
         ))}
       </div>
 
-      {/* Tabelas de aulas — visão geral da escola */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AulasAtribuidasCard teachers={teachers} schedules={schedules} />
-        <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} sharedSeries={sharedSeries} />
-      </div>
     </div>
   )
 }

@@ -1,66 +1,168 @@
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import useAppStore from '../store/useAppStore'
+import Spinner from '../components/ui/Spinner'
+import { isFormationSlot } from '../lib/helpers/turmas'
+import { formatISO, businessDaysBetween, dateToDayLabel } from '../lib/helpers/dates'
+
+// ─── Toggle Mensal / Anual ─────────────────────────────────────────────────────
+
+function PeriodToggle({ period, onChange }) {
+  return (
+    <div className="flex gap-1">
+      {[['month', 'Este mês'], ['year', 'Este ano']].map(([val, lbl]) => (
+        <button
+          key={val}
+          onClick={() => onChange(val)}
+          className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-colors ${
+            period === val
+              ? 'bg-navy text-white border-navy'
+              : 'bg-surf2 text-t2 border-bdr hover:border-t3'
+          }`}
+        >{lbl}</button>
+      ))}
+    </div>
+  )
+}
+
+// ─── Linha da tabela consolidada ──────────────────────────────────────────────
+
+function WorkloadRow({ teacher, schedules, absences, sharedSeries, fromDate, today }) {
+  const atribuidas = schedules.filter(s => s.teacherId === teacher.id).length
+
+  const formacao = schedules.filter(s =>
+    s.teacherId === teacher.id &&
+    isFormationSlot(s.turma, null, sharedSeries)
+  ).length
+
+  const days = businessDaysBetween(fromDate, today)
+  const dadas = days.reduce((acc, date) => {
+    const dayLabel = dateToDayLabel(date)
+    if (!dayLabel) return acc
+    return acc + schedules.filter(s =>
+      s.teacherId === teacher.id &&
+      s.day === dayLabel &&
+      !isFormationSlot(s.turma, null, sharedSeries)
+    ).length
+  }, 0)
+
+  const faltas = absences
+    .filter(ab => ab.teacherId === teacher.id)
+    .flatMap(ab => ab.slots ?? [])
+    .filter(sl =>
+      sl.date >= fromDate &&
+      sl.date <= today &&
+      !isFormationSlot(sl.turma, null, sharedSeries)
+    ).length
+
+  const subs = absences
+    .flatMap(ab => ab.slots ?? [])
+    .filter(sl =>
+      sl.substituteId === teacher.id &&
+      sl.date >= fromDate &&
+      sl.date <= today
+    ).length
+
+  const saldo = dadas - faltas + subs
+  const saldoClass = saldo < 0 ? 'text-err font-bold' : 'text-t1 font-bold'
+
+  return (
+    <tr className="border-b border-bdr/50 hover:bg-surf2 transition-colors">
+      <td className="px-4 py-3 font-semibold text-sm text-t1">{teacher.name}</td>
+      <td className="px-4 py-3 text-center font-mono text-sm">{atribuidas}</td>
+      <td className="px-4 py-3 text-center font-mono text-sm">{formacao || '—'}</td>
+      <td className="px-4 py-3 text-center font-mono text-sm">{dadas}</td>
+      <td className="px-4 py-3 text-center font-mono text-sm text-err">{faltas || '—'}</td>
+      <td className="px-4 py-3 text-center font-mono text-sm text-ok">{subs || '—'}</td>
+      <td className={`px-4 py-3 text-center font-mono text-sm ${saldoClass}`}>{saldo}</td>
+    </tr>
+  )
+}
+
+// ─── Tabela consolidada de carga horária ──────────────────────────────────────
+
+function WorkloadConsolidatedTable({ teachers, schedules, absences, sharedSeries, period }) {
+  const sorted = [...teachers].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+
+  const today = formatISO(new Date())
+  const [y, m] = today.split('-')
+  const fromDate = period === 'month' ? `${y}-${m}-01` : `${y}-01-01`
+
+  return (
+    <div className="card p-0 overflow-hidden overflow-x-auto">
+      <div className="max-h-[400px] overflow-y-auto scroll-thin">
+        <table className="w-full text-sm border-collapse">
+          <thead className="sticky top-0 z-10 bg-surf2">
+            <tr>
+              {['Professor', 'Atribuídas', 'Formação', 'Dadas', 'Faltas', 'Subs', 'Saldo'].map(h => (
+                <th
+                  key={h}
+                  className="px-4 py-2.5 text-left text-[10px] font-bold text-t3 uppercase tracking-wide"
+                >{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(teacher => (
+              <WorkloadRow
+                key={teacher.id}
+                teacher={teacher}
+                schedules={schedules}
+                absences={absences}
+                sharedSeries={sharedSeries}
+                fromDate={fromDate}
+                today={today}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function WorkloadPage() {
-  const { teachers, schedules, absences, workloadDanger } = useAppStore()
-  const navigate  = useNavigate()
-  const maxLoad   = workloadDanger || 26
+  const { teachers, schedules, absences, sharedSeries, loaded, loadAbsencesIfNeeded } = useAppStore()
+  const [period, setPeriod] = useState('month')
 
-  const rows = teachers
-    .filter(t => t.profile !== 'coordinator')
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map(t => {
-      const sc     = schedules.filter(s => s.teacherId === t.id).length
-      const faltas = absences
-        .filter(ab => ab.teacherId === t.id)
-        .reduce((acc, ab) => acc + ab.slots.length, 0)
-      const subs   = absences
-        .flatMap(ab => ab.slots)
-        .filter(sl => sl.substituteId === t.id).length
-      return { t, sc, faltas, subs }
-    })
+  useEffect(() => {
+    loadAbsencesIfNeeded()
+  }, [])
+
+  if (!loaded) {
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner size={32} />
+      </div>
+    )
+  }
+
+  const lecturers = teachers.filter(t => t.profile !== 'coordinator')
+
+  if (lecturers.length === 0) {
+    return (
+      <div className="space-y-5">
+        <h1 className="text-xl font-extrabold tracking-tight">Carga Horária</h1>
+        <div className="card text-center py-16 text-t3">Nenhum professor cadastrado.</div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/home')} className="btn btn-ghost btn-sm">← Voltar</button>
+      <div className="flex items-center justify-between">
         <h1 className="text-xl font-extrabold tracking-tight">Carga Horária</h1>
+        <PeriodToggle period={period} onChange={setPeriod} />
       </div>
 
-      {rows.length === 0 ? (
-        <div className="card text-center py-16 text-t3">Nenhum professor cadastrado.</div>
-      ) : (
-        <div className="card p-0 overflow-hidden">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-surf2">
-                {['Professor', 'Aulas/sem.', 'Faltas', 'Substituições'].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10px] font-bold text-t3 uppercase tracking-wide">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ t, sc, faltas, subs }) => {
-                const pct      = Math.round((sc / maxLoad) * 100)
-                const barColor = pct >= 100 ? '#C8290A' : pct >= 77 ? '#D97706' : '#16A34A'
-                return (
-                  <tr key={t.id} className="border-b border-bdr/50 hover:bg-surf2 transition-colors">
-                    <td className="px-4 py-3 font-semibold text-sm">{t.name}</td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="font-bold">{sc}</div>
-                      <div className="w-full bg-surf2 rounded-full h-1 mt-1">
-                        <div className="h-1 rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: barColor }} />
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-err text-xs">{faltas || '—'}</td>
-                    <td className="px-4 py-3 text-center font-bold text-ok text-xs">{subs || '—'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <WorkloadConsolidatedTable
+        teachers={lecturers}
+        schedules={schedules}
+        absences={absences}
+        sharedSeries={sharedSeries}
+        period={period}
+      />
     </div>
   )
 }
