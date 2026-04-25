@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { isFormationSlot } from '../../lib/helpers/turmas'
+import { isFormationSlot, isRestSlot } from '../../lib/helpers/turmas'
 import { formatISO, businessDaysBetween, dateToDayLabel } from '../../lib/helpers/dates'
 
 // ─── Toggle Mensal / Anual ─────────────────────────────────────────────────────
@@ -64,7 +64,11 @@ export function WorkloadConsolidatedTable({ teachers, schedules, absences, share
 
   // Elevar cálculo: construir array de objetos com todos os valores calculados
   const rows = teachers.map(teacher => {
-    const atribuidas = schedules.filter(s => s.teacherId === teacher.id).length
+    const atribuidas = schedules.filter(s =>
+      s.teacherId === teacher.id &&
+      !isFormationSlot(s.turma, null, sharedSeries) &&
+      !isRestSlot(s.turma, sharedSeries)
+    ).length
 
     const formacao = schedules.filter(s =>
       s.teacherId === teacher.id &&
