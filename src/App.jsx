@@ -4,6 +4,7 @@ import useAuthStore from './store/useAuthStore'
 import useAppStore from './store/useAppStore'
 import useSchoolStore from './store/useSchoolStore'
 import { loadFromFirestore, setupRealtimeListeners, teardownListeners } from './lib/db'
+import { _loadConfig } from './lib/db/config'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
 import PendingPage from './pages/PendingPage'
@@ -48,7 +49,16 @@ export default function App() {
       return
     }
     if (role === 'pending') {
-      hydrate({})                // marca loaded para sair do spinner
+      // Professor pendente: carrega APENAS o config (subjects/areas/segments)
+      // para a PendingPage exibir matérias. Rules permitem via isPendingIn.
+      // Não carrega teachers/schedules (rules bloqueariam).
+      if (currentSchoolId) {
+        _loadConfig(currentSchoolId)
+          .then(cfg => hydrate(cfg ?? {}))
+          .catch(e => { console.warn('[app] _loadConfig pending:', e); hydrate({}) })
+      } else {
+        hydrate({})
+      }
       return
     }
     if (!currentSchoolId) {
