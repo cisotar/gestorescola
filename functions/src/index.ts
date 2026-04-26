@@ -5,6 +5,8 @@ import { ACTION_MAP } from "./actions";
 
 admin.initializeApp();
 
+const region = functions.region("southamerica-east1");
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function uid(): string {
@@ -75,7 +77,7 @@ function adminActionsPath(schoolId?: string): string {
 
 // ── createAbsence ─────────────────────────────────────────────────────────────
 
-export const createAbsence = functions.https.onCall(async (data, context) => {
+export const createAbsence = region.https.onCall(async (data, context) => {
   const schoolId = data?.schoolId ? String(data.schoolId) : undefined;
   await verifyCoordinatorOrAdmin(context, schoolId);
 
@@ -144,7 +146,7 @@ export const createAbsence = functions.https.onCall(async (data, context) => {
 
 // ── updateAbsence ─────────────────────────────────────────────────────────────
 
-export const updateAbsence = functions.https.onCall(async (data, context) => {
+export const updateAbsence = region.https.onCall(async (data, context) => {
   const schoolId = data?.schoolId ? String(data.schoolId) : undefined;
   await verifyCoordinatorOrAdmin(context, schoolId);
 
@@ -187,7 +189,7 @@ export const updateAbsence = functions.https.onCall(async (data, context) => {
 
 // ── deleteAbsence ─────────────────────────────────────────────────────────────
 
-export const deleteAbsence = functions.https.onCall(async (data, context) => {
+export const deleteAbsence = region.https.onCall(async (data, context) => {
   const schoolId = data?.schoolId ? String(data.schoolId) : undefined;
   await verifyCoordinatorOrAdmin(context, schoolId);
 
@@ -215,7 +217,7 @@ export const deleteAbsence = functions.https.onCall(async (data, context) => {
 
 const VALID_PROFILES = ["teacher", "coordinator", "teacher-coordinator"];
 
-export const approveTeacher = functions.https.onCall(async (data, context) => {
+export const approveTeacher = region.https.onCall(async (data, context) => {
   const schoolId = String(data?.schoolId ?? "");
   const pendingUid = String(data?.pendingUid ?? "");
   let profile = String(data?.profile ?? "teacher");
@@ -323,7 +325,7 @@ export const approveTeacher = functions.https.onCall(async (data, context) => {
 
 // ── rejectTeacher ─────────────────────────────────────────────────────────────
 
-export const rejectTeacher = functions.https.onCall(async (data, context) => {
+export const rejectTeacher = region.https.onCall(async (data, context) => {
   const schoolId = String(data?.schoolId ?? "");
   const pendingUid = String(data?.pendingUid ?? "");
   if (!schoolId || !pendingUid) {
@@ -361,7 +363,7 @@ export const rejectTeacher = functions.https.onCall(async (data, context) => {
 
 // ── applyPendingAction ────────────────────────────────────────────────────────
 
-export const applyPendingAction = functions.https.onCall(
+export const applyPendingAction = region.https.onCall(
   async (data, context) => {
     const schoolId = data?.schoolId ? String(data.schoolId) : undefined;
     await verifyAdmin(context, schoolId);

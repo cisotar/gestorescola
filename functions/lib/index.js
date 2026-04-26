@@ -6,6 +6,7 @@ const admin = require("firebase-admin");
 const auth_1 = require("./auth");
 const actions_1 = require("./actions");
 admin.initializeApp();
+const region = functions.region("southamerica-east1");
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function uid() {
     return Math.random().toString(36).slice(2, 9);
@@ -65,7 +66,7 @@ function adminActionsPath(schoolId) {
     return schoolId ? `schools/${schoolId}/admin_actions` : "admin_actions";
 }
 // ── createAbsence ─────────────────────────────────────────────────────────────
-exports.createAbsence = functions.https.onCall(async (data, context) => {
+exports.createAbsence = region.https.onCall(async (data, context) => {
     var _a, _b;
     const schoolId = (data === null || data === void 0 ? void 0 : data.schoolId) ? String(data.schoolId) : undefined;
     await (0, auth_1.verifyCoordinatorOrAdmin)(context, schoolId);
@@ -122,7 +123,7 @@ exports.createAbsence = functions.https.onCall(async (data, context) => {
     return { id: absenceId };
 });
 // ── updateAbsence ─────────────────────────────────────────────────────────────
-exports.updateAbsence = functions.https.onCall(async (data, context) => {
+exports.updateAbsence = region.https.onCall(async (data, context) => {
     var _a, _b;
     const schoolId = (data === null || data === void 0 ? void 0 : data.schoolId) ? String(data.schoolId) : undefined;
     await (0, auth_1.verifyCoordinatorOrAdmin)(context, schoolId);
@@ -155,7 +156,7 @@ exports.updateAbsence = functions.https.onCall(async (data, context) => {
     return { ok: true };
 });
 // ── deleteAbsence ─────────────────────────────────────────────────────────────
-exports.deleteAbsence = functions.https.onCall(async (data, context) => {
+exports.deleteAbsence = region.https.onCall(async (data, context) => {
     var _a;
     const schoolId = (data === null || data === void 0 ? void 0 : data.schoolId) ? String(data.schoolId) : undefined;
     await (0, auth_1.verifyCoordinatorOrAdmin)(context, schoolId);
@@ -175,7 +176,7 @@ exports.deleteAbsence = functions.https.onCall(async (data, context) => {
 // schools/{schoolId}/pending_teachers/{pendingUid}, escreve users/{pendingUid}.
 // Migra schedules órfãos do UID pendente para o teacher.id final.
 const VALID_PROFILES = ["teacher", "coordinator", "teacher-coordinator"];
-exports.approveTeacher = functions.https.onCall(async (data, context) => {
+exports.approveTeacher = region.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const schoolId = String((_a = data === null || data === void 0 ? void 0 : data.schoolId) !== null && _a !== void 0 ? _a : "");
     const pendingUid = String((_b = data === null || data === void 0 ? void 0 : data.pendingUid) !== null && _b !== void 0 ? _b : "");
@@ -249,7 +250,7 @@ exports.approveTeacher = functions.https.onCall(async (data, context) => {
     return { ok: true, teacherId };
 });
 // ── rejectTeacher ─────────────────────────────────────────────────────────────
-exports.rejectTeacher = functions.https.onCall(async (data, context) => {
+exports.rejectTeacher = region.https.onCall(async (data, context) => {
     var _a, _b;
     const schoolId = String((_a = data === null || data === void 0 ? void 0 : data.schoolId) !== null && _a !== void 0 ? _a : "");
     const pendingUid = String((_b = data === null || data === void 0 ? void 0 : data.pendingUid) !== null && _b !== void 0 ? _b : "");
@@ -275,7 +276,7 @@ exports.rejectTeacher = functions.https.onCall(async (data, context) => {
     return { ok: true };
 });
 // ── applyPendingAction ────────────────────────────────────────────────────────
-exports.applyPendingAction = functions.https.onCall(async (data, context) => {
+exports.applyPendingAction = region.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f, _g;
     const schoolId = (data === null || data === void 0 ? void 0 : data.schoolId) ? String(data.schoolId) : undefined;
     await (0, auth_1.verifyAdmin)(context, schoolId);
