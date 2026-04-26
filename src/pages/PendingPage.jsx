@@ -221,7 +221,12 @@
         return
       }
       try {
-        await updatePendingData(currentSchoolId, user.uid, { celular: celular.replace(/\D/g, ''), apelido: apelido.trim(), subjectIds: selectedSubjs, horariosSemana })
+        await updatePendingData(currentSchoolId, user.uid, {
+          celular: (celular ?? '').replace(/\D/g, ''),
+          apelido: (apelido ?? '').trim() || '',
+          subjectIds: selectedSubjs ?? [],
+          horariosSemana: horariosSemana ?? {},
+        })
         console.log('[PendingPage] updatePendingData OK')
         setStep('schedule')
       } catch (e) {

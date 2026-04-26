@@ -131,7 +131,7 @@ const useAuthStore = create((set, get) => ({
     // ── 4. Sem role → fluxo pending ───────────────────────────────────────────
     console.log('[auth._resolveRole] step 4: registrando listener de aprovação em', `schools/${schoolId}/pending_teachers/${user.uid}`)
     set({ role: 'pending' })
-    try { await requestTeacherAccess(schoolId, user) } catch (e) { console.warn('[auth._resolveRole] requestTeacherAccess fail:', e) }
+    try { await requestTeacherAccess(schoolId, user) } catch (e) { console.error('[auth._resolveRole] requestTeacherAccess FAIL', { schoolId, uid: user.uid, code: e.code, message: e.message }) }
     get()._unsubApproval?.()
     const pendingDocRef = doc(db, 'schools', schoolId, 'pending_teachers', user.uid)
     const unsub = onSnapshot(

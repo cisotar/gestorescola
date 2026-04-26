@@ -43,7 +43,10 @@ export default function App() {
   // Professores pendentes não têm permissão para ler teachers/schedules.
   useEffect(() => {
     if (loading) return          // auth ainda não resolveu
-    if (!role) return            // não logado
+    if (!role) {                 // não logado — libera spinner para rotas públicas
+      hydrate({})
+      return
+    }
     if (role === 'pending') {
       hydrate({})                // marca loaded para sair do spinner
       return

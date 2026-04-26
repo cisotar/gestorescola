@@ -158,7 +158,20 @@ export async function requestTeacherAccess(schoolId, user) {
 }
 
 export async function updatePendingData(schoolId, uid, { celular, apelido, subjectIds, horariosSemana }) {
-  await updateDoc(getSchoolDocRef(schoolId, 'pending_teachers', uid), { celular, apelido, subjectIds, horariosSemana })
+  const payload = {
+    celular: celular ?? '',
+    apelido: apelido ?? '',
+    subjectIds: subjectIds ?? [],
+    horariosSemana: horariosSemana ?? {},
+  }
+  console.log('[db.updatePendingData] write', { schoolId, uid, keys: Object.keys(payload) })
+  try {
+    await setDoc(getSchoolDocRef(schoolId, 'pending_teachers', uid), payload, { merge: true })
+    console.log('[db.updatePendingData] OK', { schoolId, uid })
+  } catch (e) {
+    console.error('[db.updatePendingData] FAIL', { schoolId, uid, code: e.code, message: e.message })
+    throw e
+  }
 }
 
 export async function listPendingTeachers(schoolId) {
