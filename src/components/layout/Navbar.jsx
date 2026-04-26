@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import useAuthStore from '../../store/useAuthStore'
+import SchoolSwitcher from '../ui/SchoolSwitcher'
 
 const ROLE_LABELS = {
   admin:                 'Admin',
@@ -53,6 +54,7 @@ export default function Navbar() {
 
         {/* Auth bar — todos os viewports */}
         <div className="flex items-center gap-2 shrink-0">
+          <SchoolSwitcher />
           <div className="flex items-center gap-2">
             {photo ? (
               <img src={photo} alt={displayName} className="w-8 h-8 rounded-full object-cover" />
