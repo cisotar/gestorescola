@@ -310,7 +310,7 @@ export const approveTeacher = region.https.onCall(async (data, context) => {
   batch.set(
     db.collection("users").doc(pendingUid),
     {
-      schools: { [schoolId]: { role, status: "approved" } },
+      schools: { [schoolId]: { role, status: "approved", teacherDocId: teacherId } },
     },
     { merge: true }
   );

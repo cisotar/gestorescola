@@ -9,6 +9,7 @@ import { calcSubjectChange, myTimeAgo, STATUS_BADGE } from '../../../lib/setting
 import { getMyPendingActions } from '../../../lib/db'
 import { ScheduleGridModal } from '../../ui/ScheduleGrid'
 import SubjectSelector from '../shared/SubjectSelector'
+import Spinner from '../../ui/Spinner'
 
 // ─── HorarioDiaSemana ─────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ function MyRequestsSection({ actions, loading, error, onRefresh }) {
 
 export default function TabProfile({ teacher }) {
   const store = useAppStore()
-  const { teacher: authTeacher, isCoordinator } = useAuthStore()
+  const { teacher: authTeacher, isCoordinator, loading } = useAuthStore()
   const t = teacher ?? authTeacher
   const [nome,             setNome]             = useState(t?.name ?? '')
   const [celular,          setCelular]          = useState(t?.celular ?? '')
@@ -248,6 +249,12 @@ export default function TabProfile({ teacher }) {
     if (isCoordinator()) loadActions()
   }, [t?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (loading) return (
+    <div className="flex items-center gap-2 text-t3 text-sm">
+      <Spinner size={16} />
+      <span>Carregando perfil...</span>
+    </div>
+  )
   if (!t) return <p className="text-t3 text-sm">Perfil não disponível.</p>
 
   const save = async () => {

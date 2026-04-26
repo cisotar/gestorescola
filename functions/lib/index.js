@@ -240,7 +240,7 @@ exports.approveTeacher = region.https.onCall(async (data, context) => {
     const batch = db.batch();
     batch.set(db.collection(`schools/${schoolId}/teachers`).doc(teacherId), teacherData);
     batch.set(db.collection("users").doc(pendingUid), {
-        schools: { [schoolId]: { role, status: "approved" } },
+        schools: { [schoolId]: { role, status: "approved", teacherDocId: teacherId } },
     }, { merge: true });
     orphanSnap.docs.forEach((d) => {
         batch.update(d.ref, { teacherId });

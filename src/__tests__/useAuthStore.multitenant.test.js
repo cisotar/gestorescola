@@ -71,7 +71,7 @@ vi.mock('../store/useAppStore', () => ({
 }))
 
 // ─── Imports pós-mock ─────────────────────────────────────────────────────────
-import { getDoc, setDoc, onSnapshot } from 'firebase/firestore'
+import { getDoc, getDocs, setDoc, onSnapshot } from 'firebase/firestore'
 import useSchoolStore from '../store/useSchoolStore'
 import useAuthStore from '../store/useAuthStore'
 
@@ -180,6 +180,71 @@ describe('useAuthStore._resolveRole — estrutura users/{uid}.schools', () => {
     expect(useAuthStore.getState().role).toBe('pending')
   })
 
+  it('teacher com teacherDocId presente → teacher populado via getDoc sem query por e-mail', async () => {
+    const teacherData = { id: 'tdoc-1', name: 'Prof Ana', email: 'user@test.com' }
+    getDoc.mockImplementation(buildGetDocMock({
+      'users/uid-abc': {
+        schools: { [SCHOOL_ID]: { role: 'teacher', teacherDocId: 'tdoc-1' } },
+      },
+      [`schools/${SCHOOL_ID}/teachers/tdoc-1`]: teacherData,
+    }))
+    getDocs.mockResolvedValue({ empty: true, docs: [] })
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+
+    expect(useAuthStore.getState().role).toBe('teacher')
+    expect(useAuthStore.getState().teacher).toEqual(teacherData)
+    // getDocs não deve ser chamado quando teacherDocId está presente e o doc existe
+    expect(getDocs).not.toHaveBeenCalled()
+  })
+
+  it('teacher com teacherDocId mas doc inexistente → fallback por e-mail popula teacher', async () => {
+    const teacherData = { id: 'tdoc-2', name: 'Prof Beto', email: 'user@test.com' }
+    getDoc.mockImplementation(buildGetDocMock({
+      'users/uid-abc': {
+        schools: { [SCHOOL_ID]: { role: 'teacher', teacherDocId: 'tdoc-deletado' } },
+      },
+      // schools/sch-test/teachers/tdoc-deletado não existe → buildGetDocMock retorna exists: false
+    }))
+    getDocs.mockResolvedValue({ empty: false, docs: [{ data: () => teacherData }] })
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+
+    expect(useAuthStore.getState().role).toBe('teacher')
+    expect(useAuthStore.getState().teacher).toEqual(teacherData)
+    expect(getDocs).toHaveBeenCalledTimes(1)
+  })
+
+  it('teacher sem teacherDocId (dados legados) → fallback por e-mail popula teacher', async () => {
+    const teacherData = { id: 'tdoc-3', name: 'Prof Carla', email: 'user@test.com' }
+    getDoc.mockImplementation(buildGetDocMock({
+      'users/uid-abc': {
+        schools: { [SCHOOL_ID]: { role: 'teacher' } }, // sem teacherDocId
+      },
+    }))
+    getDocs.mockResolvedValue({ empty: false, docs: [{ data: () => teacherData }] })
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+
+    expect(useAuthStore.getState().role).toBe('teacher')
+    expect(useAuthStore.getState().teacher).toEqual(teacherData)
+    expect(getDocs).toHaveBeenCalledTimes(1)
+  })
+
+  it('role admin → teacher permanece null (RN-4)', async () => {
+    getDoc.mockImplementation(buildGetDocMock({
+      'users/uid-abc': {
+        schools: { [SCHOOL_ID]: { role: 'admin' } },
+      },
+    }))
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+
+    expect(useAuthStore.getState().role).toBe('admin')
+    expect(useAuthStore.getState().teacher).toBeNull()
+    expect(getDocs).not.toHaveBeenCalled()
+  })
+
   it('super-admin (email em admins/) → role admin mesmo sem entrada em schools', async () => {
     // users/uid-abc existe mas sem entrada para sch-test
     // admins/user@test.com existe → isAdmin retorna true
@@ -280,6 +345,184 @@ describe('useAuthStore — subscribe a useSchoolStore.currentSchoolId', () => {
 
     expect(useAuthStore.getState()._unsubSchoolSub).toBeNull()
     expect(schoolSubscribers.size).toBe(0)
+  })
+})
+
+describe('approvalListener — popula teacher após aprovação', () => {
+  const mockUser = { uid: 'uid-abc', email: 'user@test.com', displayName: 'Test User', photoURL: '' }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockSchoolId = SCHOOL_ID
+    useSchoolStore.getState.mockReturnValue({ currentSchoolId: mockSchoolId, init: vi.fn() })
+    resetStore()
+  })
+
+  /**
+   * Helper: coloca o store em estado 'pending' e captura o callback do onSnapshot
+   * do approvalListener para que o teste possa disparar a aprovação manualmente.
+   */
+  async function setupPendingAndCaptureListener(getDocMockForResolve) {
+    // Primeira chamada de getDoc (users/{uid}) retorna sem role → fluxo pending
+    getDoc.mockImplementation(getDocMockForResolve)
+    setDoc.mockResolvedValue(undefined)
+
+    let capturedCallback = null
+    onSnapshot.mockImplementation((_ref, cb) => {
+      capturedCallback = cb
+      return vi.fn() // unsub
+    })
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+    expect(useAuthStore.getState().role).toBe('pending')
+    return capturedCallback
+  }
+
+  it('aprovação com teacherDocId presente → teacher populado via getDoc (sem getDocs)', async () => {
+    const teacherData = { id: 'tdoc-ok', name: 'Prof Aprovado', email: 'user@test.com' }
+
+    // Primeira chamada: users/{uid} sem role → pending
+    // Segunda chamada (pós-aprovação): users/{uid} com status approved + teacherDocId
+    // Terceira chamada: schools/{schoolId}/teachers/tdoc-ok
+    let callCount = 0
+    getDoc.mockImplementation(ref => {
+      const path = ref._path
+      if (path === 'users/uid-abc') {
+        callCount++
+        if (callCount === 1) return Promise.resolve({ exists: () => true, data: () => ({ schools: {} }) })
+        return Promise.resolve({ exists: () => true, data: () => ({
+          schools: { [SCHOOL_ID]: { role: 'teacher', status: 'approved', teacherDocId: 'tdoc-ok' } },
+        }) })
+      }
+      if (path === `schools/${SCHOOL_ID}/teachers/tdoc-ok`) {
+        return Promise.resolve({ exists: () => true, data: () => teacherData })
+      }
+      return Promise.resolve({ exists: () => false })
+    })
+    setDoc.mockResolvedValue(undefined)
+    getDocs.mockResolvedValue({ empty: true, docs: [] })
+
+    let snapshotCb = null
+    onSnapshot.mockImplementation((_ref, cb) => {
+      snapshotCb = cb
+      return vi.fn()
+    })
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+    expect(useAuthStore.getState().role).toBe('pending')
+
+    // Simula remoção do doc pending_teachers (aprovação)
+    await snapshotCb({ exists: () => false })
+
+    expect(useAuthStore.getState().role).toBe('teacher')
+    expect(useAuthStore.getState().teacher).toEqual(teacherData)
+    // getDocs não deve ter sido chamado pois teacherDocId estava presente e o doc existe
+    expect(getDocs).not.toHaveBeenCalled()
+  })
+
+  it('aprovação sem teacherDocId → fallback por e-mail popula teacher', async () => {
+    const teacherData = { id: 'tdoc-fallback', name: 'Prof Sem Id', email: 'user@test.com' }
+
+    let callCount = 0
+    getDoc.mockImplementation(ref => {
+      const path = ref._path
+      if (path === 'users/uid-abc') {
+        callCount++
+        if (callCount === 1) return Promise.resolve({ exists: () => true, data: () => ({ schools: {} }) })
+        return Promise.resolve({ exists: () => true, data: () => ({
+          schools: { [SCHOOL_ID]: { role: 'teacher', status: 'approved' } }, // sem teacherDocId
+        }) })
+      }
+      return Promise.resolve({ exists: () => false })
+    })
+    setDoc.mockResolvedValue(undefined)
+    getDocs.mockResolvedValue({ empty: false, docs: [{ data: () => teacherData }] })
+
+    let snapshotCb = null
+    onSnapshot.mockImplementation((_ref, cb) => {
+      snapshotCb = cb
+      return vi.fn()
+    })
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+    expect(useAuthStore.getState().role).toBe('pending')
+
+    await snapshotCb({ exists: () => false })
+
+    expect(useAuthStore.getState().role).toBe('teacher')
+    expect(useAuthStore.getState().teacher).toEqual(teacherData)
+    expect(getDocs).toHaveBeenCalledTimes(1)
+  })
+
+  it('teacherDocId presente mas doc inexistente → fallback por e-mail', async () => {
+    const teacherData = { id: 'tdoc-real', name: 'Prof Real', email: 'user@test.com' }
+
+    let callCount = 0
+    getDoc.mockImplementation(ref => {
+      const path = ref._path
+      if (path === 'users/uid-abc') {
+        callCount++
+        if (callCount === 1) return Promise.resolve({ exists: () => true, data: () => ({ schools: {} }) })
+        return Promise.resolve({ exists: () => true, data: () => ({
+          schools: { [SCHOOL_ID]: { role: 'teacher', status: 'approved', teacherDocId: 'tdoc-deletado' } },
+        }) })
+      }
+      // tdoc-deletado não existe
+      if (path === `schools/${SCHOOL_ID}/teachers/tdoc-deletado`) {
+        return Promise.resolve({ exists: () => false })
+      }
+      return Promise.resolve({ exists: () => false })
+    })
+    setDoc.mockResolvedValue(undefined)
+    getDocs.mockResolvedValue({ empty: false, docs: [{ data: () => teacherData }] })
+
+    let snapshotCb = null
+    onSnapshot.mockImplementation((_ref, cb) => {
+      snapshotCb = cb
+      return vi.fn()
+    })
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+    expect(useAuthStore.getState().role).toBe('pending')
+
+    await snapshotCb({ exists: () => false })
+
+    expect(useAuthStore.getState().role).toBe('teacher')
+    expect(useAuthStore.getState().teacher).toEqual(teacherData)
+    expect(getDocs).toHaveBeenCalledTimes(1)
+  })
+
+  it('newStatus === "rejected" → signOut chamado, teacher permanece null', async () => {
+    const { signOut } = await import('firebase/auth')
+    signOut.mockResolvedValue(undefined)
+
+    let callCount = 0
+    getDoc.mockImplementation(ref => {
+      const path = ref._path
+      if (path === 'users/uid-abc') {
+        callCount++
+        if (callCount === 1) return Promise.resolve({ exists: () => true, data: () => ({ schools: {} }) })
+        return Promise.resolve({ exists: () => true, data: () => ({
+          schools: { [SCHOOL_ID]: { role: 'rejected', status: 'rejected' } },
+        }) })
+      }
+      return Promise.resolve({ exists: () => false })
+    })
+    setDoc.mockResolvedValue(undefined)
+
+    let snapshotCb = null
+    onSnapshot.mockImplementation((_ref, cb) => {
+      snapshotCb = cb
+      return vi.fn()
+    })
+
+    await useAuthStore.getState()._resolveRole(mockUser)
+    expect(useAuthStore.getState().role).toBe('pending')
+
+    await snapshotCb({ exists: () => false })
+
+    expect(signOut).toHaveBeenCalled()
+    expect(useAuthStore.getState().teacher).toBeNull()
   })
 })
 

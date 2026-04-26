@@ -131,6 +131,33 @@ export async function removeAdmin(email) {
   await deleteDoc(doc(db, 'admins', emailKey(email)))
 }
 
+// ─── Busca de documento de professor ─────────────────────────────────────────
+
+/**
+ * Busca o documento de professor para um usuário já aprovado.
+ * Estratégia: tenta por teacherDocId primeiro; fallback por e-mail se necessário.
+ * Retorna o objeto de dados do professor, ou null se não encontrado ou em erro.
+ */
+export async function getTeacherDoc(schoolId, teacherDocId, email) {
+  try {
+    if (teacherDocId) {
+      const tSnap = await getDoc(doc(db, 'schools', schoolId, 'teachers', teacherDocId))
+      if (tSnap.exists()) return tSnap.data()
+    }
+    if (email) {
+      const tQuery = query(
+        collection(db, 'schools', schoolId, 'teachers'),
+        where('email', '==', email.toLowerCase())
+      )
+      const tSnap = await getDocs(tQuery)
+      if (!tSnap.empty) return tSnap.docs[0].data()
+    }
+  } catch (e) {
+    console.warn('[db] getTeacherDoc:', e)
+  }
+  return null
+}
+
 // ─── Professores por e-mail ───────────────────────────────────────────────────
 
 export async function getTeacherByEmail(schoolId, email, teachers) {

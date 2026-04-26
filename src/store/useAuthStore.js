@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { auth, provider, db } from '../lib/firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
-import { onSnapshot, collection, query, where, doc, getDoc, setDoc, getDocs } from 'firebase/firestore'
-import { isAdmin, requestTeacherAccess } from '../lib/db'
+import { onSnapshot, collection, query, where, doc, getDoc } from 'firebase/firestore'
+import { isAdmin, requestTeacherAccess, getTeacherDoc } from '../lib/db'
 import useAppStore from './useAppStore'
 import useSchoolStore from './useSchoolStore'
 
@@ -121,7 +121,10 @@ const useAuthStore = create((set, get) => ({
             )
             set({ role: 'admin', pendingCt: 0, _unsubPending: unsub })
           } else {
-            set({ role: normalized })
+            // Buscar documento do professor para popular useAuthStore.teacher
+            const teacherDocId = schoolEntry?.teacherDocId ?? null
+            const teacherDoc = await getTeacherDoc(schoolId, teacherDocId, user.email)
+            set({ role: normalized, teacher: teacherDoc })
           }
           return
         }
@@ -155,7 +158,12 @@ const useAuthStore = create((set, get) => ({
                   : newRole === 'teacher-coordinator' ? 'teacher-coordinator'
                   : newRole === 'admin' ? 'admin'
                   : 'teacher'
-                set({ role: normalized })
+                let teacherDoc = null
+                if (normalized !== 'admin') {
+                  const teacherDocId = entry?.teacherDocId ?? null
+                  teacherDoc = await getTeacherDoc(schoolId, teacherDocId, user.email)
+                }
+                set({ role: normalized, teacher: teacherDoc })
               } else if (newStatus === 'rejected') {
                 console.log('[auth.approvalListener] cadastro rejeitado, deslogando')
                 set({ role: null })
