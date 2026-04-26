@@ -51,17 +51,27 @@ service cloud.firestore {
     // Teacher: cria slot para si mesmo; atualiza/deleta slots próprios.
     // ownsProfileIn cobre professores cujo teacherId != auth.uid (ID interno != UID do Auth).
     match /schools/{schoolId}/schedules/{docId} {
-      allow read:  if isMemberOf(schoolId) || isSaasAdmin();
+      allow read:  if isMemberOf(schoolId) || isSaasAdmin() || isPendingIn(schoolId);
       allow write: if isSchoolAdmin(schoolId);
-      allow create: if isMemberOf(schoolId)
+      // Membros aprovados criam para si ou para teacher cujo perfil possuem.
+      // Pending teachers podem criar APENAS para si (teacherId == auth.uid),
+      // permitindo preencher a grade horária na PendingPage. Cloud Function
+      // approveTeacher migra esses schedules do pendingUid para o teacher.id real.
+      allow create: if (isMemberOf(schoolId)
         && (request.resource.data.teacherId == request.auth.uid
-            || ownsProfileIn(schoolId, request.resource.data.teacherId));
-      allow update: if isMemberOf(schoolId)
+            || ownsProfileIn(schoolId, request.resource.data.teacherId)))
+        || (isPendingIn(schoolId)
+            && request.resource.data.teacherId == request.auth.uid);
+      allow update: if (isMemberOf(schoolId)
         && (resource.data.teacherId == request.auth.uid
-            || ownsProfileIn(schoolId, resource.data.teacherId));
-      allow delete: if isMemberOf(schoolId)
+            || ownsProfileIn(schoolId, resource.data.teacherId)))
+        || (isPendingIn(schoolId)
+            && resource.data.teacherId == request.auth.uid);
+      allow delete: if (isMemberOf(schoolId)
         && (resource.data.teacherId == request.auth.uid
-            || ownsProfileIn(schoolId, resource.data.teacherId));
+            || ownsProfileIn(schoolId, resource.data.teacherId)))
+        || (isPendingIn(schoolId)
+            && resource.data.teacherId == request.auth.uid);
     }
 
     // ── Ausências ────────────────────────────────────────────────────────────

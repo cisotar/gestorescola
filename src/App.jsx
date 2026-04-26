@@ -5,6 +5,7 @@ import useAppStore from './store/useAppStore'
 import useSchoolStore from './store/useSchoolStore'
 import { loadFromFirestore, setupRealtimeListeners, teardownListeners } from './lib/db'
 import { _loadConfig } from './lib/db/config'
+import { _loadCol } from './lib/db'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
 import PendingPage from './pages/PendingPage'
@@ -49,13 +50,15 @@ export default function App() {
       return
     }
     if (role === 'pending') {
-      // Professor pendente: carrega APENAS o config (subjects/areas/segments)
-      // para a PendingPage exibir matérias. Rules permitem via isPendingIn.
-      // Não carrega teachers/schedules (rules bloqueariam).
+      // Professor pendente: carrega config (subjects/areas/segments) para a
+      // PendingPage exibir matérias, e schedules (somente os próprios) para
+      // permitir cadastro provisório da grade horária. Rules permitem via
+      // isPendingIn. Não carrega teachers (rules bloqueiam).
       if (currentSchoolId) {
-        _loadConfig(currentSchoolId)
-          .then(cfg => hydrate(cfg ?? {}))
-          .catch(e => { console.warn('[app] _loadConfig pending:', e); hydrate({}) })
+        Promise.all([
+          _loadConfig(currentSchoolId).catch(e => { console.warn('[app] _loadConfig pending:', e); return {} }),
+          _loadCol(currentSchoolId, 'schedules').catch(e => { console.warn('[app] _loadCol schedules pending:', e); return [] }),
+        ]).then(([cfg, schedules]) => hydrate({ ...(cfg ?? {}), schedules: schedules ?? [] }))
       } else {
         hydrate({})
       }
