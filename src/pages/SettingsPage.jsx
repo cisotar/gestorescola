@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
+import useSchoolStore from '../store/useSchoolStore'
 import { subscribePendingActionsCount } from '../lib/db'
 import {
   TabSegments,
@@ -34,12 +35,13 @@ export default function SettingsPage() {
   const { role, user, teacher: myTeacher, isCoordinator } = useAuthStore()
   const isAdmin = role === 'admin'
   const location = useLocation()
+  const currentSchoolId = useSchoolStore(s => s.currentSchoolId)
 
   const [pendingActionsCt, setPendingActionsCt] = useState(0)
   useEffect(() => {
-    if (!isAdmin) return
-    return subscribePendingActionsCount(setPendingActionsCt)
-  }, [isAdmin])
+    if (!isAdmin || !currentSchoolId) return
+    return subscribePendingActionsCount(currentSchoolId, setPendingActionsCt)
+  }, [isAdmin, currentSchoolId])
 
   const initialTab = (() => {
     const param = new URLSearchParams(location.search).get('tab')

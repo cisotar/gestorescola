@@ -94,25 +94,6 @@ export default function App() {
     init()
   }, [loaded])
 
-  // Rota /join/:slug — acessível antes de qualquer guard de role ou loading.
-  // O JoinPage gerencia seu próprio estado de autenticação internamente.
-  if (pathname.startsWith('/join/')) {
-    return (
-      <>
-        <Suspense fallback={
-          <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg">
-            <Spinner size={40} />
-          </div>
-        }>
-          <Routes>
-            <Route path="/join/:slug" element={<JoinPage />} />
-          </Routes>
-        </Suspense>
-        <Toast />
-      </>
-    )
-  }
-
   // Loading inicial
   if (loading || !loaded) {
     return (
@@ -126,16 +107,16 @@ export default function App() {
     )
   }
 
-  // Não logado → tela de login
-  if (!role) return (
+  // Não logado → tela de login (exceto /join/ que gerencia auth internamente)
+  if (!role && !pathname.startsWith('/join/')) return (
     <>
       <LoginPage />
       <Toast />
     </>
   )
 
-  // Pendente → página de espera
-  if (role === 'pending') return (
+  // Pendente → página de espera (exceto /join/ que pode redirecionar o pendente)
+  if (role === 'pending' && !pathname.startsWith('/join/')) return (
     <>
       <PendingPage />
       <Toast />
@@ -154,6 +135,7 @@ export default function App() {
         </div>
       }>
         <Routes>
+          <Route path="/join/:slug" element={<JoinPage />} />
           <Route element={<Layout />}>
             <Route index element={<Navigate to="/home" replace />} />
             <Route path="/home"      element={<HomePage />} />
