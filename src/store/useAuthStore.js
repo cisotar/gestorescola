@@ -8,7 +8,7 @@ import useAppStore from './useAppStore'
 // Proprietário do sistema — acesso garantido independente do estado do Firestore.
 // Nunca passa pelo fluxo de aprovação; role 'admin' é atribuído antes de qualquer
 // consulta ao banco. Adicionar outros emails apenas em casos extremos de recuperação.
-const SUPER_USERS = ['contato.tarciso@gmail.com']
+const SUPER_USERS = [import.meta.env.VITE_SUPER_ADMIN_EMAIL].filter(Boolean)
 
 const useAuthStore = create((set, get) => ({
   user:          null,

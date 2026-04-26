@@ -7,3 +7,5 @@ tasks/
 .claude/
 plan/serviceAccountKey.json
 serviceAccountKey.json
+.env.local
+.env.*.local
