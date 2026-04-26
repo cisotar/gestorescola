@@ -305,6 +305,38 @@ export async function migrateSharedSeriesActivities(schoolId, idMap = {}) {
   return migrated
 }
 
+// ─── School Slugs ─────────────────────────────────────────────────────────────
+
+/**
+ * Busca o documento de slug na coleção raiz `school_slugs`.
+ * Retorna { schoolId, ... } se encontrado, ou null se não existir.
+ * Nunca lança exceção — erros de rede retornam null.
+ */
+export async function getSchoolSlug(slug) {
+  if (!slug) return null
+  try {
+    const snap = await getDoc(doc(db, 'school_slugs', slug))
+    return snap.exists() ? snap.data() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Salva o slug de convite de uma escola:
+ * 1. Se oldSlug existe e é diferente de newSlug, apaga school_slugs/{oldSlug}.
+ * 2. Em paralelo: atualiza o campo `slug` em schools/{schoolId} e cria school_slugs/{newSlug}.
+ */
+export async function saveSchoolSlug(schoolId, newSlug, oldSlug) {
+  if (oldSlug && oldSlug !== newSlug) {
+    await deleteDoc(doc(db, 'school_slugs', oldSlug))
+  }
+  await Promise.all([
+    updateDoc(doc(db, 'schools', schoolId), { slug: newSlug }),
+    setDoc(doc(db, 'school_slugs', newSlug), { schoolId }),
+  ])
+}
+
 // ─── Pending Actions (coordenador approval workflow) ───────────────────────────
 
 export async function submitPendingAction(schoolId, { coordinatorId, coordinatorName, action, payload, summary }) {

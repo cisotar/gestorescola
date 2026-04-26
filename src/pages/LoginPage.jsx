@@ -1,7 +1,19 @@
+import { useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 
 export default function LoginPage() {
-  const { login } = useAuthStore()
+  const { login, user } = useAuthStore()
+  const location = useLocation()
+  const navigate  = useNavigate()
+  const redirect  = location.state?.redirect
+
+  // Após login bem-sucedido, redireciona para a rota de origem (ex: /join/:slug)
+  useEffect(() => {
+    if (user && redirect) {
+      navigate(redirect, { replace: true })
+    }
+  }, [user, redirect, navigate])
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-bg p-4">

@@ -1,9 +1,10 @@
   import { useState, useEffect } from 'react'
-  import { doc, getDoc } from 'firebase/firestore'
+  import { getDoc } from 'firebase/firestore'
   import useAppStore from '../store/useAppStore'
   import useAuthStore from '../store/useAuthStore'
+  import useSchoolStore from '../store/useSchoolStore'
   import { updatePendingData } from '../lib/db'
-  import { db } from '../lib/firebase'
+  import { getSchoolDocRef } from '../lib/firebase/multi-tenant'
   import { ScheduleGrid } from '../components/ui/ScheduleGrid'
   import Modal from '../components/ui/Modal'
   import { DAYS } from '../lib/constants'
@@ -101,6 +102,7 @@
   export default function PendingPage() {
     const { user, logout }               = useAuthStore()
     const store                          = useAppStore()
+    const { currentSchoolId }            = useSchoolStore()
     const [step,          setStep]       = useState('form') // 'form' | 'schedule' | 'waiting'
     const [celular,       setCelular]    = useState('')
     const [apelido,       setApelido]    = useState('')
@@ -158,7 +160,8 @@
 
     // Re-entry: se celular já foi salvo, retomar no step de grade horária
     useEffect(() => {
-      getDoc(doc(db, 'pending_teachers', user.uid)).then(snap => {
+      if (!currentSchoolId) return
+      getDoc(getSchoolDocRef(currentSchoolId, 'pending_teachers', user.uid)).then(snap => {
         if (snap.exists() && snap.data().celular) {
           setCelular(snap.data().celular)
           setApelido(snap.data().apelido ?? '')
@@ -166,7 +169,7 @@
           setStep('schedule')
         }
       })
-    }, [])
+    }, [currentSchoolId])
 
     // Agrupa segmento → área → matérias
     const segGroups = store.segments.map(seg => {
@@ -212,7 +215,7 @@
       // Salva dados iniciais e avança para o cadastro de grade de aulas
       setSaving(true); setSaveError('')
       try {
-        await updatePendingData(user.uid, { celular: celular.replace(/\D/g, ''), apelido: apelido.trim(), subjectIds: selectedSubjs, horariosSemana })
+        await updatePendingData(currentSchoolId, user.uid, { celular: celular.replace(/\D/g, ''), apelido: apelido.trim(), subjectIds: selectedSubjs, horariosSemana })
         setStep('schedule')
       } catch (e) {
         setSaveError('Erro ao salvar: ' + e.message)
@@ -237,6 +240,25 @@
     const myScheduleCount = store.schedules.filter(s => s.teacherId === user.uid).length
 
     const containerMax = step === 'schedule' ? 'max-w-7xl lg:max-w-[95vw]' : 'max-w-4xl'
+
+    if (!currentSchoolId) {
+      return (
+        <div className="fixed inset-0 bg-bg overflow-y-auto p-4">
+          <div className="min-h-full flex items-start justify-center">
+            <div className="bg-surf border border-bdr rounded-2xl shadow-xl p-8 w-full max-w-md my-8 text-center">
+              <div className="text-4xl mb-4">🔗</div>
+              <h2 className="text-xl font-extrabold mb-2">Link de convite necessário</h2>
+              <p className="text-sm text-t2 mb-6">
+                Para se cadastrar, acesse o link de convite da sua escola.
+              </p>
+              <button onClick={logout} className="btn btn-ghost w-full">
+                Sair da conta
+              </button>
+            </div>
+          </div>
+        </div>
+      )
+    }
 
     return (
       <div className="fixed inset-0 bg-bg overflow-y-auto p-4">

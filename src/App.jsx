@@ -1,5 +1,5 @@
 import { useEffect, Suspense, lazy } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import useAuthStore from './store/useAuthStore'
 import useAppStore from './store/useAppStore'
 import useSchoolStore from './store/useSchoolStore'
@@ -37,6 +37,7 @@ const ScheduleRedirect = lazy(() => import('./pages/ScheduleRedirect'))
 const SchoolScheduleRedirect = lazy(() => import('./pages/SchoolScheduleRedirect'))
 const GradesPage = lazy(() => import('./pages/GradesPage'))
 const RankingPage = lazy(() => import('./pages/RankingPage'))
+const JoinPage = lazy(() => import('./pages/JoinPage'))
 
 export default function App() {
   const { loading, role, init, isCoordinator } = useAuthStore()
@@ -44,6 +45,7 @@ export default function App() {
   const canAccessAdmin = isAdmin || isCoordinator()
   const { hydrate, loaded } = useAppStore()
   const currentSchoolId = useSchoolStore(s => s.currentSchoolId)
+  const { pathname } = useLocation()
 
   // 1. Aguarda auth resolver, inicializa escolas, carrega Firestore e inicia listeners.
   // Aguardar auth é necessário: meta/config e collections exigem isAuthenticated().
@@ -91,6 +93,25 @@ export default function App() {
     if (!loaded) return
     init()
   }, [loaded])
+
+  // Rota /join/:slug — acessível antes de qualquer guard de role ou loading.
+  // O JoinPage gerencia seu próprio estado de autenticação internamente.
+  if (pathname.startsWith('/join/')) {
+    return (
+      <>
+        <Suspense fallback={
+          <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg">
+            <Spinner size={40} />
+          </div>
+        }>
+          <Routes>
+            <Route path="/join/:slug" element={<JoinPage />} />
+          </Routes>
+        </Suspense>
+        <Toast />
+      </>
+    )
+  }
 
   // Loading inicial
   if (loading || !loaded) {

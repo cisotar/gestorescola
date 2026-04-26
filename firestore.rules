@@ -84,11 +84,25 @@ service cloud.firestore {
 
     // ── Solicitações de acesso pendentes ─────────────────────────────────────
     // Admin da escola lê/escreve tudo.
+    // Coordenador da escola pode aprovar/rejeitar professores pendentes.
     // O próprio usuário (docId == uid) pode ler e atualizar seu próprio doc
     // (necessário para PendingPage preencher celular/apelido/subjectIds).
     match /schools/{schoolId}/pending_teachers/{docId} {
       allow read, write: if isSchoolAdmin(schoolId)
+        || isCoordinator(schoolId)
         || (request.auth != null && request.auth.uid == docId);
+    }
+
+    // ── Slugs de escola (coleção raiz — leitura pública pré-autenticação) ──────
+    // Leitura: pública (usada na JoinPage antes de o usuário se autenticar).
+    // Escrita: somente admin da escola referenciada no payload ou super-admin SaaS.
+    // ATENÇÃO: o campo schoolId deve estar presente no payload ao criar/atualizar
+    // um slug; sem ele, isSchoolAdmin(null) retorna false e a escrita é negada.
+    // Esta coleção fica no nível raiz do Firestore — não é subcoleção de schools/
+    // — pois o slug é o único identificador disponível antes do login.
+    match /school_slugs/{slug} {
+      allow read: if true;
+      allow write: if isSchoolAdmin(request.resource.data.schoolId) || isSaasAdmin();
     }
 
     // ── Ações pendentes de coordenadores ─────────────────────────────────────
@@ -127,7 +141,8 @@ service cloud.firestore {
       return isAuthenticated()
         && exists(userPath)
         && get(userPath).data.schools[schoolId] != null
-        && get(userPath).data.schools[schoolId].status == 'approved';
+        && (get(userPath).data.schools[schoolId].status == 'approved'
+            || get(userPath).data.schools[schoolId].status == 'active');
     }
 
     // Alias legível — semanticamente equivalente a isMemberOf.
@@ -141,6 +156,18 @@ service cloud.firestore {
         || (isMemberOf(schoolId)
             && get(/databases/$(database)/documents/users/$(request.auth.uid))
                 .data.schools[schoolId].role == 'admin');
+    }
+
+    // Verifica se o usuário é coordenador (role 'coordinator' ou 'teacher-coordinator') da escola.
+    // Coordenadores podem aprovar/rejeitar professores pendentes.
+    // Nota: isMemberOf e o get() abaixo lêem o mesmo documento — o Firestore Rules
+    // deduplica leituras do mesmo doc na mesma requisição (custo real = 1 leitura).
+    function isCoordinator(schoolId) {
+      return isMemberOf(schoolId)
+        && (get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.schools[schoolId].role == 'coordinator'
+            || get(/databases/$(database)/documents/users/$(request.auth.uid))
+                .data.schools[schoolId].role == 'teacher-coordinator');
     }
 
     // Verifica se o usuário autenticado é dono do perfil de teacher em uma escola específica.

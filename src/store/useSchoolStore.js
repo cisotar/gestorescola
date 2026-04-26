@@ -95,14 +95,24 @@ const useSchoolStore = create((set, get) => ({
     let savedId = null
     try { savedId = localStorage.getItem(LS_KEY) } catch {}
 
-    if (!savedId) return
-
     const { availableSchools } = get()
+
+    // Se não tem escola salva mas só tem uma disponível, seleciona automaticamente
+    if (!savedId) {
+      if (availableSchools.length === 1) {
+        await get().setCurrentSchool(availableSchools[0].schoolId)
+      }
+      return
+    }
+
     const isMember = availableSchools.some(s => s.schoolId === savedId)
 
     if (!isMember) {
-      // uid não é mais membro da escola salva — limpar o LS
       try { localStorage.removeItem(LS_KEY) } catch {}
+      // Tenta selecionar a primeira disponível
+      if (availableSchools.length === 1) {
+        await get().setCurrentSchool(availableSchools[0].schoolId)
+      }
       return
     }
 

@@ -20,7 +20,10 @@ import {
   addAdmin,
   listAdmins,
   removeAdmin,
+  getSchoolSlug,
+  saveSchoolSlug,
 } from '../../../lib/db'
+import useSchoolStore from '../../../store/useSchoolStore'
 import Modal from '../../ui/Modal'
 import { ScheduleGridModal } from '../../ui/ScheduleGrid'
 import GradeTurnoCard from '../../ui/GradeTurnoCard'
@@ -205,12 +208,115 @@ function SecaoHorarios({ teacher, isEditable, onSaveAdmin }) {
   )
 }
 
+// ─── ConviteCard ──────────────────────────────────────────────────────────────
+
+function ConviteCard() {
+  const { currentSchool } = useSchoolStore()
+  const slug = currentSchool?.slug
+  const url  = slug ? `${window.location.origin}/join/${slug}` : null
+
+  const handleCopy = () => {
+    if (!url) return
+    navigator.clipboard.writeText(url)
+    toast('Link copiado!', 'ok')
+  }
+
+  return (
+    <div className="card p-4 mb-5">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="lbl !mb-0">Link de Convite</h3>
+      </div>
+      {url ? (
+        <div className="flex items-center gap-2">
+          <input
+            className="inp flex-1 font-mono text-sm"
+            value={url}
+            readOnly
+          />
+          <button className="btn btn-dark btn-sm shrink-0" onClick={handleCopy}>
+            Copiar link
+          </button>
+        </div>
+      ) : (
+        <p className="text-sm text-t3">Slug de convite não configurado</p>
+      )}
+    </div>
+  )
+}
+
+// ─── SlugEditor ───────────────────────────────────────────────────────────────
+
+const SLUG_REGEX = /^[a-z0-9-]+$/
+
+function SlugEditor() {
+  const { currentSchool, setCurrentSchool } = useSchoolStore()
+  const [value,   setValue]   = useState(currentSchool?.slug ?? '')
+  const [error,   setError]   = useState(null)
+  const [saving,  setSaving]  = useState(false)
+
+  const formatError = value.length > 0 && !SLUG_REGEX.test(value)
+    ? 'Use apenas letras minúsculas, números e hífens'
+    : null
+
+  const isValid = value.length > 0 && SLUG_REGEX.test(value)
+
+  const handleSave = async () => {
+    if (!isValid) return
+    setSaving(true)
+    setError(null)
+    try {
+      const existing = await getSchoolSlug(value)
+      if (existing && existing.schoolId !== currentSchool?.schoolId) {
+        setError('Este slug já está em uso por outra escola')
+        setSaving(false)
+        return
+      }
+      await saveSchoolSlug(currentSchool.schoolId, value, currentSchool.slug)
+      await setCurrentSchool(currentSchool.schoolId)
+      toast('Slug atualizado com sucesso', 'ok')
+    } catch (e) {
+      console.error(e)
+      toast('Erro ao salvar slug', 'err')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card p-4 mb-5">
+      <h3 className="lbl mb-2">Editar Slug de Convite</h3>
+      <div className="flex items-start gap-2">
+        <div className="flex-1">
+          <input
+            className="inp w-full font-mono text-sm"
+            value={value}
+            onChange={e => { setValue(e.target.value); setError(null) }}
+            placeholder="ex: emef-central"
+            disabled={saving}
+          />
+          {(formatError || error) && (
+            <p className="text-xs text-err mt-1">{formatError ?? error}</p>
+          )}
+        </div>
+        <button
+          className="btn btn-dark btn-sm shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={!isValid || saving}
+          onClick={handleSave}
+        >
+          {saving ? 'Salvando...' : 'Salvar'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── TabTeachers ──────────────────────────────────────────────────────────────
 
 export default function TabTeachers() {
   const store = useAppStore()
-  const { role } = useAuthStore()
+  const { role, isCoordinator } = useAuthStore()
   const isAdminUser = role === 'admin'
+  const { currentSchoolId } = useSchoolStore()
   const navigate = useNavigate()
   const modalRef = useRef(null)
   const [modal,              setModal]              = useState(false)
@@ -232,9 +338,10 @@ export default function TabTeachers() {
   const [sortConfig,         setSortConfig]         = useState({ key: 'name', dir: 'asc' })
 
   useEffect(() => {
+    if (!currentSchoolId) return
     listAdmins().then(list => setAdmins(list.map(a => a.email.toLowerCase())))
-    listPendingTeachers().then(list => { setPending(list); setPendLoaded(true) })
-  }, [])
+    listPendingTeachers(currentSchoolId).then(list => { setPending(list); setPendLoaded(true) }).catch(e => console.error('listPendingTeachers error', e))
+  }, [currentSchoolId])
 
   const isTeacherAdmin = (t) => admins.includes((t.email ?? '').toLowerCase())
 
@@ -265,16 +372,21 @@ export default function TabTeachers() {
   }
 
   const handleApprove = async (p) => {
-    await approveTeacher(p.id, store, useAppStore.setState)
+    await approveTeacher(currentSchoolId, p.id, store, useAppStore.setState)
     setPending(prev => prev.filter(x => x.id !== p.id))
     toast(`${p.name} aprovado`, 'ok')
   }
 
   const handleReject = async (p) => {
     if (!confirm(`Recusar acesso de ${p.name}?`)) return
-    await rejectTeacher(p.id, useAppStore.setState)
-    setPending(prev => prev.filter(x => x.id !== p.id))
-    toast(`${p.name} recusado`, 'warn')
+    try {
+      await rejectTeacher(currentSchoolId, p.id, useAppStore.setState)
+      setPending(prev => prev.filter(x => x.id !== p.id))
+      toast(`${p.name} recusado`, 'warn')
+    } catch (e) {
+      console.error(e)
+      toast('Erro ao rejeitar professor', 'err')
+    }
   }
 
   const handleProfileChange = async (t, newProfile) => {
@@ -389,10 +501,14 @@ export default function TabTeachers() {
 
   return (
     <div>
+      {/* Seção: Link de Convite */}
+      {(isAdminUser || isCoordinator()) && <ConviteCard />}
+      {isAdminUser && <SlugEditor />}
+
       <div className="flex gap-2 mb-5 flex-wrap">
         {isAdminUser && <button className="btn btn-dark" onClick={openAdd}>+ Novo Professor</button>}
 
-        {isAdminUser && pendLoaded && pending.length > 0 && (
+        {(isAdminUser || isCoordinator()) && pendLoaded && pending.length > 0 && (
           <button
             className="btn btn-ghost btn-sm border border-amber-400 text-amber-700 hover:bg-amber-50"
             onClick={() => setShowPendingPanel(true)}
@@ -467,7 +583,7 @@ export default function TabTeachers() {
                   </td>
                   <td className="px-3 py-2.5">
                     {t._isPending ? (
-                      isAdminUser && (
+                      (isAdminUser || isCoordinator()) && (
                         <div className="flex gap-1">
                           <button className="btn btn-dark btn-xs" onClick={() => handleApprove(t)}>Aprovar</button>
                           <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(t)}>✕</button>
@@ -682,7 +798,7 @@ export default function TabTeachers() {
                       onClick={async () => {
                         const profile = pendingProfiles[p.id]
                         try {
-                          await approveTeacher(p.id, store, useAppStore.setState, profile)
+                          await approveTeacher(currentSchoolId, p.id, store, useAppStore.setState, profile)
                           setPending(prev => prev.filter(x => x.id !== p.id))
                           setPendingProfiles(prev => { const n = { ...prev }; delete n[p.id]; return n })
                           const label = PROFILE_OPTIONS_NO_ADMIN.find(o => o.value === profile)?.label ?? profile
