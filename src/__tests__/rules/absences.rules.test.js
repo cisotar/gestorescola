@@ -1,14 +1,25 @@
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
-import { createTestEnv, asAdmin, asTeacher, asPending, seedDefaultData } from './setup.js'
+import {
+  createTestEnv,
+  asSaasAdmin,
+  asMemberOf,
+  seedMultitenantData,
+} from './setup.js'
+
+const SCHOOL_ID = 'sch-a'
+const ABSENCE_PATH = `schools/${SCHOOL_ID}/absences`
+const SEEDED_ABSENCE_ID = 'absence-seed-123'
+const SEEDED_ABSENCE_PATH = `${ABSENCE_PATH}/${SEEDED_ABSENCE_ID}`
 
 let env
 
 beforeAll(async () => {
   env = await createTestEnv()
-  await seedDefaultData(env)
+  await seedMultitenantData(env, SCHOOL_ID)
+  // Cria ausência seed para testes de leitura/update/delete
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc('absences/absence-seed-123').set({
-      teacherId: 'outro-teacher-uid',
+    await ctx.firestore().doc(SEEDED_ABSENCE_PATH).set({
+      teacherId: 'teacher-uid-school',
       slots: [{ id: 'sl-1', subjectId: 'subj-bio', date: '2026-04-14' }],
     })
   })
@@ -17,85 +28,105 @@ beforeAll(async () => {
 afterAll(() => env.cleanup())
 
 describe('absences — comportamento correto', () => {
-  it('admin cria ausência com slots normais', async () => {
-    const db = asAdmin(env)
+  it('school admin cria ausência com slots normais', async () => {
+    const db = asMemberOf(env, SCHOOL_ID, 'admin-uid-school', 'admin-school@test.com', 'admin')
     await assertSucceeds(
-      db.collection('absences').add({
-        teacherId: 'teacher-uid-123',
+      db.collection(ABSENCE_PATH).add({
+        teacherId: 'teacher-uid-school',
         slots: [{ id: 'sl-2', subjectId: 'subj-mat', date: '2026-04-15' }],
       })
     )
   })
 
-  it('usuário autenticado lê ausência', async () => {
-    const db = asTeacher(env)
-    await assertSucceeds(
-      db.doc('absences/absence-seed-123').get()
+  it('membro aprovado da escola lê ausência', async () => {
+    const db = asMemberOf(
+      env,
+      SCHOOL_ID,
+      'teacher-uid-school',
+      'teacher-school@test.com',
+      'teacher',
     )
+    await assertSucceeds(db.doc(SEEDED_ABSENCE_PATH).get())
+  })
+
+  it('saas admin lê ausência', async () => {
+    const db = asSaasAdmin(env)
+    await assertSucceeds(db.doc(SEEDED_ABSENCE_PATH).get())
   })
 
   it('admin tenta criar ausência com slots[0].subjectId = "formation-atpcg" — bloqueado', async () => {
-    const db = asAdmin(env)
+    const db = asMemberOf(env, SCHOOL_ID, 'admin-uid-school', 'admin-school@test.com', 'admin')
     await assertFails(
-      db.collection('absences').add({
-        teacherId: 'teacher-uid-123',
+      db.collection(ABSENCE_PATH).add({
+        teacherId: 'teacher-uid-school',
         slots: [{ id: 'sl-3', subjectId: 'formation-atpcg', date: '2026-04-16' }],
       })
     )
   })
 
   it('admin tenta atualizar ausência com slots[0].subjectId = "formation-atpcg" — bloqueado', async () => {
-    const db = asAdmin(env)
+    const db = asMemberOf(env, SCHOOL_ID, 'admin-uid-school', 'admin-school@test.com', 'admin')
     await assertFails(
-      db.doc('absences/absence-seed-123').update({
+      db.doc(SEEDED_ABSENCE_PATH).update({
         slots: [{ id: 'sl-1', subjectId: 'formation-atpcg', date: '2026-04-14' }],
       })
     )
   })
-})
-
-describe('absences — brechas corrigidas', () => {
-  it('usuário pending cria ausência com slots normais', async () => {
-    // brecha corrigida: pending não consegue criar ausência (ownership exigido)
-    const db = asPending(env, 'pending-uid')
-    await assertFails(
-      db.collection('absences').add({
-        teacherId: 'outro-teacher-uid',
-        slots: [{ id: 'sl-4', subjectId: 'subj-hist', date: '2026-04-17' }],
-      })
-    )
-  })
-
-  it('teacher cria ausência com teacherId diferente do próprio uid', async () => {
-    // brecha corrigida: teacher não consegue criar ausência de outro teacher
-    const db = asTeacher(env)
-    await assertFails(
-      db.collection('absences').add({
-        teacherId: 'outro-teacher-uid',
-        slots: [{ id: 'sl-5', subjectId: 'subj-geo', date: '2026-04-18' }],
-      })
-    )
-  })
-
-  it('teacher deleta ausência de outro teacher', async () => {
-    // brecha corrigida: delete restrito a admin ou dono do perfil
-    const db = asTeacher(env)
-    await assertFails(
-      db.doc('absences/absence-seed-123').delete()
-    )
-  })
 
   it('slot com formation- em slots[1] bloqueia criação', async () => {
-    // brecha corrigida: hasFormationSlot agora verifica slots[0..4]
-    const db = asAdmin(env)
+    // hasFormationSlot agora verifica slots[0..4] — slot em posição 1+ também bloqueia
+    const db = asMemberOf(env, SCHOOL_ID, 'admin-uid-school', 'admin-school@test.com', 'admin')
     await assertFails(
-      db.collection('absences').add({
-        teacherId: 'teacher-uid-123',
+      db.collection(ABSENCE_PATH).add({
+        teacherId: 'teacher-uid-school',
         slots: [
           { id: 'sl-6', subjectId: 'subj-mat', date: '2026-04-19' },
           { id: 'sl-7', subjectId: 'formation-atpcg', date: '2026-04-19' },
         ],
       })
     )
+  })
+
+  it('membro de outra escola não consegue ler ausência', async () => {
+    const db = asMemberOf(
+      env,
+      'sch-b',
+      'teacher-uid-other',
+      'teacher-other@test.com',
+      'teacher',
+    )
+    await assertFails(db.doc(SEEDED_ABSENCE_PATH).get())
+  })
+})
+
+describe('absences — brechas corrigidas', () => {
+  it('teacher (não admin) tenta criar ausência — negado', async () => {
+    // brecha corrigida: apenas school admin pode criar ausências no cliente.
+    // Cloud Function usa Admin SDK e bypassa rules.
+    const db = asMemberOf(
+      env,
+      SCHOOL_ID,
+      'teacher-uid-school',
+      'teacher-school@test.com',
+      'teacher',
+    )
+    await assertFails(
+      db.collection(ABSENCE_PATH).add({
+        teacherId: 'teacher-uid-school',
+        slots: [{ id: 'sl-4', subjectId: 'subj-hist', date: '2026-04-17' }],
+      })
+    )
+  })
+
+  it('teacher tenta deletar ausência — negado', async () => {
+    // brecha corrigida: delete restrito a school admin
+    const db = asMemberOf(
+      env,
+      SCHOOL_ID,
+      'teacher-uid-school',
+      'teacher-school@test.com',
+      'teacher',
+    )
+    await assertFails(db.doc(SEEDED_ABSENCE_PATH).delete())
   })
 })

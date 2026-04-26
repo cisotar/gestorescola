@@ -64,9 +64,12 @@ service cloud.firestore {
             && request.resource.data.teacherId == request.auth.uid);
       allow update: if (isMemberOf(schoolId)
         && (resource.data.teacherId == request.auth.uid
-            || ownsProfileIn(schoolId, resource.data.teacherId)))
+            || ownsProfileIn(schoolId, resource.data.teacherId))
+        && (request.resource.data.teacherId == request.auth.uid
+            || ownsProfileIn(schoolId, request.resource.data.teacherId)))
         || (isPendingIn(schoolId)
-            && resource.data.teacherId == request.auth.uid);
+            && resource.data.teacherId == request.auth.uid
+            && request.resource.data.teacherId == request.auth.uid);
       allow delete: if (isMemberOf(schoolId)
         && (resource.data.teacherId == request.auth.uid
             || ownsProfileIn(schoolId, resource.data.teacherId)))

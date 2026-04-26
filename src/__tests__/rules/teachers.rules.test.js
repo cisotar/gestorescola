@@ -1,13 +1,22 @@
 import { assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
-import { createTestEnv, asAdmin, asTeacher, asAnonymous, seedDefaultData } from './setup.js'
+import {
+  createTestEnv,
+  asSaasAdmin,
+  asMemberOf,
+  seedMultitenantData,
+} from './setup.js'
+
+const SCHOOL_ID = 'sch-a'
+const TEACHERS_PATH = `schools/${SCHOOL_ID}/teachers`
 
 let env
 
 beforeAll(async () => {
   env = await createTestEnv()
-  await seedDefaultData(env)
+  await seedMultitenantData(env, SCHOOL_ID)
+  // Seed de um segundo teacher na escola para testes de cross-teacher
   await env.withSecurityRulesDisabled(async (ctx) => {
-    await ctx.firestore().doc('teachers/other-teacher-456').set({
+    await ctx.firestore().doc(`${TEACHERS_PATH}/other-teacher-456`).set({
       id: 'other-teacher-456',
       email: 'other@test.com',
       name: 'Other Teacher',
@@ -20,25 +29,41 @@ beforeAll(async () => {
 afterAll(() => env.cleanup())
 
 describe('teachers — comportamento correto', () => {
-  it('admin atualiza qualquer campo de teacher', async () => {
-    const db = asAdmin(env)
+  it('school admin atualiza qualquer campo de teacher', async () => {
+    const db = asMemberOf(env, SCHOOL_ID, 'admin-uid-school', 'admin-school@test.com', 'admin')
     await assertSucceeds(
-      db.doc('teachers/teacher-uid-123').update({
-        name: 'Test Teacher Updated',
+      db.doc(`${TEACHERS_PATH}/teacher-uid-school`).update({
+        name: 'School Teacher Updated',
         status: 'approved',
         profile: 'coordinator',
       })
     )
   })
 
-  it('teacher atualiza próprios campos permitidos', async () => {
-    const db = asTeacher(env)
+  it('saas admin atualiza qualquer campo de teacher', async () => {
+    const db = asSaasAdmin(env)
     await assertSucceeds(
-      db.doc('teachers/teacher-uid-123').update({
+      db.doc(`${TEACHERS_PATH}/teacher-uid-school`).update({
+        name: 'School Teacher SaaS Updated',
+      })
+    )
+  })
+
+  it('teacher atualiza próprios campos permitidos', async () => {
+    // teacher-uid-school tem email 'teacher-school@test.com' — bate com o doc seed
+    const db = asMemberOf(
+      env,
+      SCHOOL_ID,
+      'teacher-uid-school',
+      'teacher-school@test.com',
+      'teacher',
+    )
+    await assertSucceeds(
+      db.doc(`${TEACHERS_PATH}/teacher-uid-school`).update({
         celular: '11999990000',
         whatsapp: '11999990000',
         apelido: 'Tester',
-        name: 'Test Teacher',
+        name: 'School Teacher',
         subjectIds: ['subj-mat'],
         horariosSemana: { segunda: true },
       })
@@ -46,36 +71,64 @@ describe('teachers — comportamento correto', () => {
   })
 
   it('teacher tenta atualizar próprio profile — negado', async () => {
-    const db = asTeacher(env)
+    const db = asMemberOf(
+      env,
+      SCHOOL_ID,
+      'teacher-uid-school',
+      'teacher-school@test.com',
+      'teacher',
+    )
     await assertFails(
-      db.doc('teachers/teacher-uid-123').update({
+      db.doc(`${TEACHERS_PATH}/teacher-uid-school`).update({
         profile: 'coordinator',
       })
     )
   })
 
   it('teacher tenta atualizar próprio status — negado', async () => {
-    const db = asTeacher(env)
+    const db = asMemberOf(
+      env,
+      SCHOOL_ID,
+      'teacher-uid-school',
+      'teacher-school@test.com',
+      'teacher',
+    )
     await assertFails(
-      db.doc('teachers/teacher-uid-123').update({
+      db.doc(`${TEACHERS_PATH}/teacher-uid-school`).update({
         status: 'coordinator',
       })
     )
   })
 
   it('teacher tenta atualizar documento de outro teacher — negado', async () => {
-    const db = asTeacher(env)
+    const db = asMemberOf(
+      env,
+      SCHOOL_ID,
+      'teacher-uid-school',
+      'teacher-school@test.com',
+      'teacher',
+    )
     await assertFails(
-      db.doc('teachers/other-teacher-456').update({
+      db.doc(`${TEACHERS_PATH}/other-teacher-456`).update({
         name: 'Hacked Name',
       })
     )
   })
 
-  it('usuário anônimo tenta ler coleção teachers — negado', async () => {
-    const db = asAnonymous(env)
-    await assertFails(
-      db.collection('teachers').get()
+  it('usuário não autenticado tenta ler coleção teachers — negado', async () => {
+    const ctx = env.unauthenticatedContext()
+    const db = ctx.firestore()
+    await assertFails(db.collection(TEACHERS_PATH).get())
+  })
+
+  it('membro de outra escola não consegue ler teachers', async () => {
+    const db = asMemberOf(
+      env,
+      'sch-b',
+      'teacher-uid-other',
+      'teacher-other@test.com',
+      'teacher',
     )
+    await assertFails(db.collection(TEACHERS_PATH).get())
   })
 })
