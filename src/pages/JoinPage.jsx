@@ -62,18 +62,23 @@ export default function JoinPage() {
     }
     const { schoolId } = slugData
 
-    // 1b. Validar existência do doc raiz schools/{schoolId}
-    try {
-      const schoolSnap = await getDoc(getSchoolRef(schoolId))
-      if (!schoolSnap.exists()) {
-        setStatus('invalid')
+    // 1b. Validar existência do doc raiz schools/{schoolId} — apenas se autenticado.
+    // Pré-login a regra exige isAuthenticated(); o slug em school_slugs já confirma
+    // a existência da escola (leitura pública), então a validação extra do doc raiz
+    // só agrega valor para usuários logados.
+    if (currentUser) {
+      try {
+        const schoolSnap = await getDoc(getSchoolRef(schoolId))
+        if (!schoolSnap.exists()) {
+          setStatus('invalid')
+          return
+        }
+      } catch (e) {
+        console.error('[JoinPage] erro validando schools/{schoolId}:', e)
+        setErrorMsg('Não foi possível validar a escola. Verifique sua conexão e tente novamente.')
+        setStatus('error')
         return
       }
-    } catch (e) {
-      console.error('[JoinPage] erro validando schools/{schoolId}:', e)
-      setErrorMsg('Não foi possível validar a escola. Verifique sua conexão e tente novamente.')
-      setStatus('error')
-      return
     }
 
     // 1c. Persistência precoce — grava schoolId no localStorage antes
