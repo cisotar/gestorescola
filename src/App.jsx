@@ -2,7 +2,8 @@ import { useEffect, Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuthStore from './store/useAuthStore'
 import useAppStore from './store/useAppStore'
-import { loadFromFirestore, setupRealtimeListeners } from './lib/db'
+import useSchoolStore from './store/useSchoolStore'
+import { loadFromFirestore, setupRealtimeListeners, teardownListeners } from './lib/db'
 import { auth } from './lib/firebase'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
@@ -42,27 +43,48 @@ export default function App() {
   const isAdmin        = role === 'admin'
   const canAccessAdmin = isAdmin || isCoordinator()
   const { hydrate, loaded } = useAppStore()
+  const currentSchoolId = useSchoolStore(s => s.currentSchoolId)
 
-  // 1. Aguarda auth resolver e então carrega Firestore + inicia listeners em tempo real.
+  // 1. Aguarda auth resolver, inicializa escolas, carrega Firestore e inicia listeners.
   // Aguardar auth é necessário: meta/config e collections exigem isAuthenticated().
   // Sem isso, o loadFromFirestore falha silenciosamente em primeiro acesso (sem cache)
   // e subjects/areas/segments ficam vazios na PendingPage.
+  // O useEffect depende de currentSchoolId para reagir a troca de escola em runtime.
   useEffect(() => {
     let active = true
-    let unsubscribes = []
-    waitForAuth().then(() => {
+
+    async function initApp() {
+      // Espera o Firebase Auth resolver o usuário atual
+      const user = await waitForAuth()
       if (!active) return
-      return loadFromFirestore()
-    }).then(data => {
+
+      // Inicializa as escolas disponíveis e restaura escola do localStorage
+      if (user) {
+        await useSchoolStore.getState().init(user.uid)
+      }
+      if (!active) return
+
+      const schoolId = useSchoolStore.getState().currentSchoolId
+
+      // Guard: sem schoolId não é possível carregar dados da escola
+      if (!schoolId) return
+
+      // Cancela listeners anteriores antes de registrar novos (ex: troca de escola)
+      teardownListeners()
+
+      const data = await loadFromFirestore(schoolId)
       if (!active || !data) return
+
       hydrate(data)
-      unsubscribes = setupRealtimeListeners(useAppStore.getState())
-    })
+      setupRealtimeListeners(schoolId, useAppStore.getState())
+    }
+
+    initApp()
+
     return () => {
       active = false
-      unsubscribes.forEach(unsub => unsub?.())
     }
-  }, [])
+  }, [currentSchoolId])
 
   // 2. Inicia auth depois que dados iniciais carregaram
   useEffect(() => {

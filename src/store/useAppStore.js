@@ -15,6 +15,11 @@ import {
 } from '../lib/absences'
 import { toast } from '../hooks/useToast'
 import useAuthStore from './useAuthStore'
+import useSchoolStore from './useSchoolStore'
+import { getSchoolDocRef } from '../lib/firebase/multi-tenant'
+
+// ─── Helper: obtém schoolId corrente de forma síncrona ───────────────────────
+const _schoolId = () => useSchoolStore.getState().currentSchoolId
 
 // ─── Debounce Timer ─────────────────────────────────────────────────────────
 let saveTimer = null
@@ -92,7 +97,7 @@ const useAppStore = create((set, get) => {
   }
   const _submitApproval = async (action, payload, summary) => {
     try {
-      await submitPendingAction({ ..._coordinatorCtx(), action, payload, summary })
+      await submitPendingAction(_schoolId(), { ..._coordinatorCtx(), action, payload, summary })
       toast('Solicitação enviada para aprovação do ADM', 'warn')
     } catch {
       toast('Erro ao enviar solicitação', 'error')
@@ -114,10 +119,11 @@ const useAppStore = create((set, get) => {
 
     // ─── Persistência ──────────────────────────────────────────────────────────
     save: async (schoolId) => {
+      const sid = schoolId ?? _schoolId()
       const s = get()
-      _saveToLS(schoolId, s)
+      _saveToLS(sid, s)
       try {
-        await saveToFirestore(s)
+        await saveToFirestore(sid, s)
       } catch (e) {
         console.warn('Sync falhou, salvo localmente:', e)
       }
@@ -131,7 +137,7 @@ const useAppStore = create((set, get) => {
       segments: [...s.segments, seg],
       periodConfigs: { ...s.periodConfigs, [seg.id]: { [turno]: defaultCfg(turno) } },
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   removeSegment: async (id) => {
     const seg = get().segments.find(s => s.id === id)
@@ -140,7 +146,7 @@ const useAppStore = create((set, get) => {
       const { [id]: _, ...rest } = s.periodConfigs
       return { segments: s.segments.filter(x => x.id !== id), periodConfigs: rest }
     })
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   setSegmentTurno: (segId, turno) => {
     set(s => ({
@@ -153,7 +159,7 @@ const useAppStore = create((set, get) => {
         [segId]: { ...(s.periodConfigs[segId] || {}), [turno]: s.periodConfigs[segId]?.[turno] ?? defaultCfg(turno) },
       },
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   addGrade: async (segId, gradeName) => {
     if (_isCoordinator()) return _submitApproval('addGrade', { segId, gradeName }, `Adicionar série ${gradeName.trim()}`)
@@ -164,7 +170,7 @@ const useAppStore = create((set, get) => {
           : { ...seg, grades: [...seg.grades, { name: gradeName.trim(), classes: [] }] }
       ),
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   removeGrade: async (segId, gradeName) => {
     if (_isCoordinator()) return _submitApproval('removeGrade', { segId, gradeName }, `Remover série ${gradeName}`)
@@ -173,7 +179,7 @@ const useAppStore = create((set, get) => {
         seg.id !== segId ? seg : { ...seg, grades: seg.grades.filter(g => g.name !== gradeName) }
       ),
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   addClassToGrade: async (segId, gradeName, letter) => {
     const up = letter.trim().toUpperCase()
@@ -192,7 +198,7 @@ const useAppStore = create((set, get) => {
         }
       }),
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   removeClassFromGrade: async (segId, gradeName, letter) => {
     if (_isCoordinator()) return _submitApproval('removeClassFromGrade', { segId, gradeName, letter }, `Remover turma ${gradeName}${letter}`)
@@ -206,7 +212,7 @@ const useAppStore = create((set, get) => {
         }
       ),
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
 
   removeClassFromGradeCascade: async (segId, gradeName, letter) => {
@@ -252,14 +258,15 @@ const useAppStore = create((set, get) => {
     // ── Montar operações de batch ─────────────────────────────────────────────
     const ops = [] // array de funções (batch) => void
 
+    const sid = _schoolId()
     for (const sc of schedulesToDelete) {
-      ops.push(batch => batch.delete(firestoreDoc(db, 'schedules', sc.id)))
+      ops.push(batch => batch.delete(getSchoolDocRef(sid, 'schedules', sc.id)))
     }
     for (const { absence, slotsToKeep } of absencesToUpdate) {
-      ops.push(batch => batch.update(firestoreDoc(db, 'absences', absence.id), { slots: slotsToKeep }))
+      ops.push(batch => batch.update(getSchoolDocRef(sid, 'absences', absence.id), { slots: slotsToKeep }))
     }
     for (const { absence } of absencesToDelete) {
-      ops.push(batch => batch.delete(firestoreDoc(db, 'absences', absence.id)))
+      ops.push(batch => batch.delete(getSchoolDocRef(sid, 'absences', absence.id)))
     }
 
     // ── Executar batches em chunks de 499 (limite Firestore = 500) ────────────
@@ -278,7 +285,7 @@ const useAppStore = create((set, get) => {
     const executedBy = useAuthStore.getState().user?.email ?? ''
     const actionId = uid()
     try {
-      await saveDoc('admin_actions', {
+      await saveDoc(sid, 'admin_actions', {
         id: actionId,
         type: 'removeClassFromGrade',
         removedClass: fullLabel,
@@ -345,7 +352,7 @@ const useAppStore = create((set, get) => {
         [segId]: { ...(s.periodConfigs[segId] || {}), [turno]: cfg },
       },
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
 
   // ─── Áreas ──────────────────────────────────────────────────────────────────
@@ -354,13 +361,13 @@ const useAppStore = create((set, get) => {
     set(s => ({
       areas: [...s.areas, { id: uid(), name: name.trim(), colorIdx, segmentIds, shared }],
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   updateArea: async (id, changes) => {
     const area = get().areas.find(a => a.id === id)
     if (_isCoordinator()) return _submitApproval('updateArea', { id, changes }, `Editar área ${area?.name ?? id}`)
     set(s => ({ areas: s.areas.map(a => a.id === id ? { ...a, ...changes } : a) }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   removeArea: async (id) => {
     const area = get().areas.find(a => a.id === id)
@@ -373,14 +380,14 @@ const useAppStore = create((set, get) => {
         teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => !removedSubjIds.has(sid)) })),
       }
     })
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
 
   // ─── Matérias ────────────────────────────────────────────────────────────────
   addSubject: async (name, areaId) => {
     if (_isCoordinator()) return _submitApproval('addSubject', { name, areaId }, `Adicionar disciplina ${name.trim()}`)
     set(s => ({ subjects: [...s.subjects, { id: uid(), name: name.trim(), areaId }] }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   removeSubject: async (id) => {
     const subj = get().subjects.find(x => x.id === id)
@@ -389,7 +396,7 @@ const useAppStore = create((set, get) => {
       subjects: s.subjects.filter(x => x.id !== id),
       teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => sid !== id) })),
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   saveAreaWithSubjects: async (areaId, name, subjectNames) => {
     if (_isCoordinator()) return _submitApproval('saveAreaWithSubjects', { areaId, name, subjectNames }, `Atualizar área ${name} e disciplinas`)
@@ -406,7 +413,7 @@ const useAppStore = create((set, get) => {
         teachers: s.teachers.map(t => ({ ...t, subjectIds: (t.subjectIds ?? []).filter(sid => !removedSet.has(sid)) })),
       }
     })
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
 
   // ─── Turmas compartilhadas ──────────────────────────────────────────────────
@@ -423,7 +430,7 @@ const useAppStore = create((set, get) => {
       throw new Error(`Tipo inválido: ${series.type}. Aceitos: 'formation', 'elective', 'rest'`)
     }
     set(s => ({ sharedSeries: [...s.sharedSeries, series] }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
 
   /**
@@ -439,11 +446,11 @@ const useAppStore = create((set, get) => {
       throw new Error(`Tipo inválido: ${changes.type}. Aceitos: 'formation', 'elective', 'rest'`)
     }
     set(s => ({ sharedSeries: s.sharedSeries.map(ss => ss.id === id ? { ...ss, ...changes } : ss) }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   removeSharedSeries: (id) => {
     set(s => ({ sharedSeries: s.sharedSeries.filter(ss => ss.id !== id) }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
 
   /**
@@ -468,7 +475,7 @@ const useAppStore = create((set, get) => {
       email: opts.email ?? '', whatsapp: '', celular: opts.celular ?? '', status: 'approved',
       profile: opts.profile ?? 'teacher' }
     set(s => ({ teachers: [...s.teachers, teacher] }))
-    saveDoc('teachers', teacher)
+    saveDoc(_schoolId(), 'teachers', teacher)
   },
   updateTeacher: async (id, changes) => {
     const teacher = get().teachers.find(t => t.id === id)
@@ -477,7 +484,7 @@ const useAppStore = create((set, get) => {
     Object.keys(changes).forEach(k => { original[k] = teacher?.[k] })
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
     try {
-      await updateDocById('teachers', id, changes)
+      await updateDocById(_schoolId(), 'teachers', id, changes)
     } catch (e) {
       // Reverter apenas os campos alterados para evitar sobrescrever mudanças concorrentes
       set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...original } : t) }))
@@ -486,7 +493,7 @@ const useAppStore = create((set, get) => {
   },
   updateTeacherProfile: async (id, changes) => {
     set(s => ({ teachers: s.teachers.map(t => t.id === id ? { ...t, ...changes } : t) }))
-    await patchTeacherSelf(id, changes)
+    await patchTeacherSelf(_schoolId(), id, changes)
   },
   removeTeacher: async (id) => {
     const teacher = get().teachers.find(t => t.id === id)
@@ -496,8 +503,8 @@ const useAppStore = create((set, get) => {
       teachers:  s.teachers.filter(t => t.id !== id),
       schedules: s.schedules.filter(x => x.teacherId !== id),
     }))
-    deleteDocById('teachers', id)
-    schedulesToDelete.forEach(s => deleteDocById('schedules', s.id))
+    deleteDocById(_schoolId(), 'teachers', id)
+    schedulesToDelete.forEach(s => deleteDocById(_schoolId(), 'schedules', s.id))
   },
 
   // ─── Horários ────────────────────────────────────────────────────────────────
@@ -507,7 +514,7 @@ const useAppStore = create((set, get) => {
     if (_isCoordinator() && !isOwnSchedule) return _submitApproval('addSchedule', { sched }, `Adicionar aula ${sched.turma ?? ''}`)
     const item = { id: uid(), ...sched }
     set(s => ({ schedules: [...s.schedules, item] }))
-    saveDoc('schedules', item)
+    saveDoc(_schoolId(), 'schedules', item)
     toast('Aula adicionada', 'success')
   },
   removeSchedule: async (id) => {
@@ -516,7 +523,7 @@ const useAppStore = create((set, get) => {
     const isOwnSchedule = sched?.teacherId === myTeacher?.id
     if (_isCoordinator() && !isOwnSchedule) return _submitApproval('removeSchedule', { id }, `Remover aula ${sched?.turma ?? id}`)
     set(s => ({ schedules: s.schedules.filter(x => x.id !== id) }))
-    deleteDocById('schedules', id)
+    deleteDocById(_schoolId(), 'schedules', id)
   },
   updateSchedule: async (id, changes) => {
     const sched = get().schedules.find(x => x.id === id)
@@ -527,7 +534,7 @@ const useAppStore = create((set, get) => {
     Object.keys(changes).forEach(k => { original[k] = sched?.[k] })
     set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...changes } : x) }))
     try {
-      await updateDocById('schedules', id, changes)
+      await updateDocById(_schoolId(), 'schedules', id, changes)
     } catch (e) {
       set(s => ({ schedules: s.schedules.map(x => x.id === id ? { ...x, ...original } : x) }))
       console.error('[updateSchedule]', e)
@@ -544,7 +551,7 @@ const useAppStore = create((set, get) => {
         subjectIds: (t.subjectIds ?? []).map(sid => sid === fromId ? toId : sid),
       })),
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   migrateScheduleSubject: (teacherId, fromSubjectId, toSubjectId) => {
     set(s => ({
@@ -554,7 +561,7 @@ const useAppStore = create((set, get) => {
           : x
       ),
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
   removeSchedulesBySubject: (teacherId, subjectId) => {
     set(s => ({
@@ -562,7 +569,7 @@ const useAppStore = create((set, get) => {
         x => !(x.teacherId === teacherId && x.subjectId === subjectId)
       ),
     }))
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
 
   // ─── Ausências ───────────────────────────────────────────────────────────────
@@ -615,7 +622,7 @@ const useAppStore = create((set, get) => {
       emptyAbsenceIds = updated.filter(ab => ab.slots.length === 0).map(ab => ab.id)
       return { absences: updated.filter(ab => ab.slots.length > 0) }
     })
-    emptyAbsenceIds.forEach(id => deleteDocById('absences', id))
+    emptyAbsenceIds.forEach(id => deleteDocById(_schoolId(), 'absences', id))
   },
   restoreAbsences: (absencesSnapshot) => {
     set({ absences: absencesSnapshot })
@@ -665,22 +672,22 @@ const useAppStore = create((set, get) => {
       .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
       .filter(ab => !afterAbsences.find(a => a.id === ab.id))
       .map(ab => ab.id)
-    deletedIds.forEach(id => deleteDocById('absences', id))
+    deletedIds.forEach(id => deleteDocById(_schoolId(), 'absences', id))
     afterAbsences
       .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
-      .forEach(ab => updateDocById('absences', ab.id, { slots: ab.slots, status: ab.status }).catch(e => { console.error('[clearDayAbsences]', e); toast('Erro ao salvar', 'err') }))
+      .forEach(ab => updateDocById(_schoolId(), 'absences', ab.id, { slots: ab.slots, status: ab.status }).catch(e => { console.error('[clearDayAbsences]', e); toast('Erro ao salvar', 'err') }))
   },
 
   // ─── Histórico ────────────────────────────────────────────────────────────────
   addHistory: (entry) => {
     set(s => ({ history: [...s.history, { id: uid(), ...entry, registeredAt: new Date().toISOString() }] }))
     const newEntry = get().history[get().history.length - 1]
-    saveDoc('history', newEntry)
+    saveDoc(_schoolId(), 'history', newEntry)
   },
 
   deleteHistory: (id) => {
     set(s => ({ history: s.history.filter(h => h.id !== id) }))
-    deleteDocById('history', id)
+    deleteDocById(_schoolId(), 'history', id)
   },
 
 
@@ -688,7 +695,7 @@ const useAppStore = create((set, get) => {
   setWorkload: async (warn, danger) => {
     if (_isCoordinator()) return _submitApproval('setWorkload', { warn, danger }, 'Atualizar limites de carga horária')
     set({ workloadWarn: warn, workloadDanger: danger })
-    saveConfig(get())
+    saveConfig(_schoolId(), get())
   },
 
   // ─── Lazy loading ──────────────────────────────────────────────────────────────
