@@ -70,7 +70,10 @@ const useSchoolStore = create((set, get) => ({
         return
       }
       const schoolsMap = userSnap.data().schools ?? {}
-      const schoolIds = Object.keys(schoolsMap).filter(k => schoolsMap[k] === true)
+      // Suporta tanto boolean map ({ [schoolId]: true }) quanto object map ({ [schoolId]: { role: '...' } })
+      const schoolIds = Object.keys(schoolsMap).filter(k =>
+        schoolsMap[k] === true || (typeof schoolsMap[k] === 'object' && schoolsMap[k] !== null)
+      )
       if (schoolIds.length === 0) return
 
       const snaps = await Promise.all(schoolIds.map(id => getDoc(getSchoolRef(id))))

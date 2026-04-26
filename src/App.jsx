@@ -41,7 +41,7 @@ export default function App() {
   const { loading, role, init, isCoordinator } = useAuthStore()
   const isAdmin        = role === 'admin'
   const canAccessAdmin = isAdmin || isCoordinator()
-  const { hydrate, setTeachers, teachers, loaded } = useAppStore()
+  const { hydrate, loaded } = useAppStore()
 
   // 1. Aguarda auth resolver e então carrega Firestore + inicia listeners em tempo real.
   // Aguardar auth é necessário: meta/config e collections exigem isAuthenticated().
@@ -64,10 +64,10 @@ export default function App() {
     }
   }, [])
 
-  // 2. Inicia auth depois que teachers carregou
+  // 2. Inicia auth depois que dados iniciais carregaram
   useEffect(() => {
     if (!loaded) return
-    init(teachers)
+    init()
   }, [loaded])
 
   // Loading inicial
