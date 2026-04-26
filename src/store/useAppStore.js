@@ -582,7 +582,7 @@ const useAppStore = create((set, get) => {
     }
     set(s => ({ absences: _createAbsence(teacherId, regularSlots, s.absences) }))
     const newAbsence = get().absences[get().absences.length - 1]
-    httpsCallable(functions, 'createAbsence')({ teacherId, slots: regularSlots })
+    httpsCallable(functions, 'createAbsence')({ schoolId: _schoolId(), teacherId, slots: regularSlots })
       .catch(err => {
         set(s => ({ absences: _deleteAbsence(newAbsence.id, s.absences) }))
         toast(err.message || 'Erro ao criar falta', 'err')
@@ -593,7 +593,7 @@ const useAppStore = create((set, get) => {
     set(s => ({ absences: _assignSubstitute(absenceId, slotId, substituteId, s.absences) }))
     const updated = get().absences.find(a => a.id === absenceId)
     if (updated) {
-      httpsCallable(functions, 'updateAbsence')({ absenceId, slots: updated.slots, substituteId })
+      httpsCallable(functions, 'updateAbsence')({ schoolId: _schoolId(), absenceId, slots: updated.slots, substituteId })
         .catch(e => { console.error('[assignSubstitute]', e); toast('Erro ao salvar substituição', 'err') })
     }
   },
@@ -601,13 +601,13 @@ const useAppStore = create((set, get) => {
     set(s => ({ absences: _deleteAbsenceSlot(absenceId, slotId, s.absences) }))
     const updated = get().absences.find(a => a.id === absenceId)
     if (updated) {
-      httpsCallable(functions, 'updateAbsence')({ absenceId, slots: updated.slots, substituteId: null })
+      httpsCallable(functions, 'updateAbsence')({ schoolId: _schoolId(), absenceId, slots: updated.slots, substituteId: null })
         .catch(e => { console.error('[deleteAbsenceSlot]', e); toast('Erro ao salvar', 'err') })
     }
   },
   deleteAbsence: (id) => {
     set(s => ({ absences: _deleteAbsence(id, s.absences) }))
-    httpsCallable(functions, 'deleteAbsence')({ absenceId: id })
+    httpsCallable(functions, 'deleteAbsence')({ schoolId: _schoolId(), absenceId: id })
       .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
   },
 
@@ -622,8 +622,9 @@ const useAppStore = create((set, get) => {
       emptyAbsenceIds = updated.filter(ab => ab.slots.length === 0).map(ab => ab.id)
       return { absences: updated.filter(ab => ab.slots.length > 0) }
     })
+    const sid = _schoolId()
     emptyAbsenceIds.forEach(id =>
-      httpsCallable(functions, 'deleteAbsence')({ absenceId: id })
+      httpsCallable(functions, 'deleteAbsence')({ schoolId: sid, absenceId: id })
         .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
     )
   },
@@ -649,7 +650,7 @@ const useAppStore = create((set, get) => {
         const slots = ab.slots.filter(sl => sl.date === date)
         if (slots.length > 0) {
           const updated = get().absences.find(a => a.id === ab.id)
-          if (updated) httpsCallable(functions, 'updateAbsence')({ absenceId: ab.id, slots: updated.slots, substituteId: null }).catch(e => { console.error('[clearDaySubstitutes]', e); toast('Erro ao salvar', 'err') })
+          if (updated) httpsCallable(functions, 'updateAbsence')({ schoolId: _schoolId(), absenceId: ab.id, slots: updated.slots, substituteId: null }).catch(e => { console.error('[clearDaySubstitutes]', e); toast('Erro ao salvar', 'err') })
         }
       }
     })
@@ -675,14 +676,15 @@ const useAppStore = create((set, get) => {
       .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
       .filter(ab => !afterAbsences.find(a => a.id === ab.id))
       .map(ab => ab.id)
+    const sid = _schoolId()
     deletedIds.forEach(id =>
-      httpsCallable(functions, 'deleteAbsence')({ absenceId: id })
+      httpsCallable(functions, 'deleteAbsence')({ schoolId: sid, absenceId: id })
         .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
     )
     afterAbsences
       .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
       .forEach(ab =>
-        httpsCallable(functions, 'updateAbsence')({ absenceId: ab.id, slots: ab.slots, substituteId: null })
+        httpsCallable(functions, 'updateAbsence')({ schoolId: sid, absenceId: ab.id, slots: ab.slots, substituteId: null })
           .catch(e => { console.error('[clearDayAbsences]', e); toast('Erro ao salvar', 'err') })
       )
   },
