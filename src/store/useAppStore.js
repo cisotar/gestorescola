@@ -113,9 +113,9 @@ const useAppStore = create((set, get) => {
     }),
 
     // ─── Persistência ──────────────────────────────────────────────────────────
-    save: async () => {
+    save: async (schoolId) => {
       const s = get()
-      _saveToLS(s)
+      _saveToLS(schoolId, s)
       try {
         await saveToFirestore(s)
       } catch (e) {
@@ -697,30 +697,30 @@ const useAppStore = create((set, get) => {
   markAbsencesLoaded: () => set({ absencesLoaded: true }),
   markHistoryLoaded: () => set({ historyLoaded: true }),
 
-  loadAbsencesIfNeeded: async () => {
+  loadAbsencesIfNeeded: async (schoolId) => {
     const { absencesLoaded, absences } = get()
     if (absencesLoaded || absences.length > 0) return
     try {
-      const loaded = await _loadCol('absences')
+      const loaded = await _loadCol(schoolId, 'absences')
       set({ absences: loaded, absencesLoaded: true })
       // Register listener after loading
       if (!absencesUnsubscribe) {
-        absencesUnsubscribe = registerAbsencesListener(get())
+        absencesUnsubscribe = registerAbsencesListener(schoolId, get())
       }
     } catch (e) {
       console.warn('[store] Falha ao carregar absences:', e)
     }
   },
 
-  loadHistoryIfNeeded: async () => {
+  loadHistoryIfNeeded: async (schoolId) => {
     const { historyLoaded, history } = get()
     if (historyLoaded || history.length > 0) return
     try {
-      const loaded = await _loadCol('history')
+      const loaded = await _loadCol(schoolId, 'history')
       set({ history: loaded, historyLoaded: true })
       // Register listener after loading
       if (!historyUnsubscribe) {
-        historyUnsubscribe = registerHistoryListener(get())
+        historyUnsubscribe = registerHistoryListener(schoolId, get())
       }
     } catch (e) {
       console.warn('[store] Falha ao carregar history:', e)

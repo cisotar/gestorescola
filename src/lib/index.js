@@ -6,7 +6,7 @@ export { getSchoolCollectionRef, getSchoolDocRef, getSchoolConfigRef, getSchoolR
 
 // DB (carregamento e persistência)
 export { loadFromFirestore, saveToFirestore, saveDoc, deleteDocById, updateDocById, saveConfig } from './db'
-export { setupRealtimeListeners, registerAbsencesListener, registerHistoryListener } from './db'
+export { setupRealtimeListeners, registerAbsencesListener, registerHistoryListener, teardownListeners } from './db'
 export { isAdmin, addAdmin, listAdmins, removeAdmin } from './db'
 export { getTeacherByEmail, requestTeacherAccess, updatePendingData, listPendingTeachers, patchTeacherSelf, approveTeacher, rejectTeacher } from './db'
 export { migrateFormationSchedules, migrateSharedSeriesActivities } from './db'

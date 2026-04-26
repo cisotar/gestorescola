@@ -1,10 +1,9 @@
-const LS_KEY = 'gestao_v8_cache'
-
-export function _saveToLS(state) {
+export function _saveToLS(schoolId, state) {
   try {
+    const key = `gestao_v9_cache_${schoolId}`
     const { segments, periodConfigs, areas, subjects, teachers,
             schedules, absences, history, sharedSeries, workloadWarn, workloadDanger } = state
-    localStorage.setItem(LS_KEY, JSON.stringify({
+    localStorage.setItem(key, JSON.stringify({
       data: {
         segments, periodConfigs, areas, subjects, teachers,
         sharedSeries: sharedSeries ?? [],
@@ -16,9 +15,10 @@ export function _saveToLS(state) {
   } catch {}
 }
 
-export function _loadFromLS() {
+export function _loadFromLS(schoolId) {
   try {
-    const raw = localStorage.getItem(LS_KEY)
+    const key = `gestao_v9_cache_${schoolId}`
+    const raw = localStorage.getItem(key)
     if (!raw) return { data: {}, timestamp: null }
     const cached = JSON.parse(raw)
     // Backward compat: se é objeto plano sem 'data' key, significa era old format

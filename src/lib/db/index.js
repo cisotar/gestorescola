@@ -13,7 +13,7 @@ import { getSchoolCollectionRef, getSchoolDocRef, getSchoolConfigRef } from '../
 
 export async function loadFromFirestore(schoolId) {
   const TTL_MS = 3600000 // 1 hora
-  const cached = _loadFromLS()
+  const cached = _loadFromLS(schoolId)
 
   // Se cache é recente (< 1h), usar cache
   if (cached.data && cached.timestamp && Date.now() - cached.timestamp < TTL_MS) {
@@ -46,7 +46,7 @@ export async function _loadCol(schoolId, name) {
 
 // ─── Listeners em tempo real ──────────────────────────────────────────────────
 
-export { setupRealtimeListeners, registerAbsencesListener, registerHistoryListener } from './listeners'
+export { setupRealtimeListeners, registerAbsencesListener, registerHistoryListener, teardownListeners } from './listeners'
 
 // ─── Exports internos necessários ─────────────────────────────────────────────
 // Funções privadas que ainda são usadas internamente pelo store
@@ -55,7 +55,7 @@ export { _saveToLS, _loadFromLS } from './cache'
 // ─── Persistência ─────────────────────────────────────────────────────────────
 
 export async function saveToFirestore(schoolId, state) {
-  _saveToLS(state)
+  _saveToLS(schoolId, state)
   try {
     const batch = writeBatch(db)
     batch.set(getSchoolConfigRef(schoolId), {
