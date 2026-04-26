@@ -185,7 +185,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
         )}
 
         {/* Matéria */}
-        {turma && (
+        {turma && !selectedSharedSeries && (
           <div>
             <label className="lbl">Matéria</label>
             {mySubjs.length === 0
