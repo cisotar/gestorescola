@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react'
 import useAppStore from '../../../store/useAppStore'
 import { toast } from '../../../hooks/useToast'
-import { getPendingActions, approvePendingAction, rejectPendingAction } from '../../../lib/db'
+import { getPendingActions } from '../../../lib/db'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../../../lib/firebase'
 import { PendingActionCard } from '../approvals'
 
 export default function TabApprovals({ adminEmail }) {
@@ -44,35 +46,34 @@ export default function TabApprovals({ adminEmail }) {
   useEffect(() => { load() }, [])
 
   const handleApprove = async (action) => {
-    const executor = ACTION_MAP[action.action]
-    if (!executor) {
-      toast(`Ação desconhecida: ${action.action}`, 'error')
-      return
-    }
     try {
-      await executor(action.payload)
+      await httpsCallable(functions, 'applyPendingAction')({
+        pendingActionId: action.id,
+        approved: true,
+      })
+      // Optimistic UI update via ACTION_MAP (state already mutated server-side)
+      const executor = ACTION_MAP[action.action]
+      if (executor) {
+        try { await executor(action.payload) } catch (e) { console.warn('[approve] local state update failed:', e) }
+      }
+      setActions(prev => prev.filter(a => a.id !== action.id))
+      toast('Ação aprovada e executada', 'ok')
     } catch (e) {
-      console.error('[approve] store action failed:', e)
-      toast('Erro ao executar ação', 'error')
-      return
+      console.error('[approve] applyPendingAction failed:', e)
+      toast(e.message || 'Erro ao aprovar ação', 'err')
     }
-    try {
-      await approvePendingAction(action.id, adminEmail)
-    } catch (e) {
-      console.error('[approve] failed to mark as approved:', e)
-      toast('Erro ao registrar aprovação', 'error')
-      return
-    }
-    setActions(prev => prev.filter(a => a.id !== action.id))
-    toast('Ação aprovada e executada', 'ok')
   }
 
   const handleReject = async (action, reason) => {
     try {
-      await rejectPendingAction(action.id, adminEmail, reason)
+      await httpsCallable(functions, 'applyPendingAction')({
+        pendingActionId: action.id,
+        approved: false,
+        rejectionReason: reason,
+      })
       setActions(prev => prev.filter(a => a.id !== action.id))
       toast('Ação rejeitada', 'warn')
-    } catch (e) { console.error('[TabApprovals] Erro ao rejeitar ação:', e); toast('Erro ao rejeitar', 'error') }
+    } catch (e) { console.error('[TabApprovals] Erro ao rejeitar ação:', e); toast(e.message || 'Erro ao rejeitar', 'err') }
   }
 
   if (!loaded) return <div className="text-center py-12 text-t3 text-sm">Carregando…</div>

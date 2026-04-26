@@ -18,6 +18,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    include: ['src/__tests__/**/*.test.js'],
     coverage: {
       provider: 'v8',
       include: ['src/lib/absences.js'],

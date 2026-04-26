@@ -4,8 +4,9 @@ import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patc
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
 import { formatISO } from '../lib/helpers/dates'
-import { db } from '../lib/firebase'
+import { db, functions } from '../lib/firebase'
 import { writeBatch, serverTimestamp, doc as firestoreDoc, collection as firestoreCollection } from 'firebase/firestore'
+import { httpsCallable } from 'firebase/functions'
 import {
   createAbsence as _createAbsence,
   assignSubstitute as _assignSubstitute,
@@ -574,26 +575,33 @@ const useAppStore = create((set, get) => {
     }
     set(s => ({ absences: _createAbsence(teacherId, regularSlots, s.absences) }))
     const newAbsence = get().absences[get().absences.length - 1]
-    saveDoc('absences', newAbsence)
+    httpsCallable(functions, 'createAbsence')({ teacherId, slots: regularSlots })
+      .catch(err => {
+        set(s => ({ absences: _deleteAbsence(newAbsence.id, s.absences) }))
+        toast(err.message || 'Erro ao criar falta', 'err')
+      })
   },
 
   assignSubstitute: (absenceId, slotId, substituteId) => {
     set(s => ({ absences: _assignSubstitute(absenceId, slotId, substituteId, s.absences) }))
     const updated = get().absences.find(a => a.id === absenceId)
     if (updated) {
-      updateDocById('absences', absenceId, { slots: updated.slots, status: updated.status }).catch(e => { console.error('[assignSubstitute]', e); toast('Erro ao salvar substituição', 'err') })
+      httpsCallable(functions, 'updateAbsence')({ absenceId, slots: updated.slots, substituteId })
+        .catch(e => { console.error('[assignSubstitute]', e); toast('Erro ao salvar substituição', 'err') })
     }
   },
   deleteAbsenceSlot: (absenceId, slotId) => {
     set(s => ({ absences: _deleteAbsenceSlot(absenceId, slotId, s.absences) }))
     const updated = get().absences.find(a => a.id === absenceId)
     if (updated) {
-      updateDocById('absences', absenceId, { slots: updated.slots, status: updated.status }).catch(e => { console.error('[deleteAbsenceSlot]', e); toast('Erro ao salvar', 'err') })
+      httpsCallable(functions, 'updateAbsence')({ absenceId, slots: updated.slots, substituteId: null })
+        .catch(e => { console.error('[deleteAbsenceSlot]', e); toast('Erro ao salvar', 'err') })
     }
   },
   deleteAbsence: (id) => {
     set(s => ({ absences: _deleteAbsence(id, s.absences) }))
-    deleteDocById('absences', id)
+    httpsCallable(functions, 'deleteAbsence')({ absenceId: id })
+      .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
   },
 
   deleteManySlots: (slotIds) => {
@@ -631,7 +639,7 @@ const useAppStore = create((set, get) => {
         const slots = ab.slots.filter(sl => sl.date === date)
         if (slots.length > 0) {
           const updated = get().absences.find(a => a.id === ab.id)
-          if (updated) updateDocById('absences', ab.id, { slots: updated.slots, status: updated.status }).catch(e => { console.error('[clearDaySubstitutes]', e); toast('Erro ao salvar', 'err') })
+          if (updated) httpsCallable(functions, 'updateAbsence')({ absenceId: ab.id, slots: updated.slots, substituteId: null }).catch(e => { console.error('[clearDaySubstitutes]', e); toast('Erro ao salvar', 'err') })
         }
       }
     })

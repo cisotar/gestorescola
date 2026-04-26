@@ -11,9 +11,18 @@ service cloud.firestore {
     // como ausências substituíveis, independentemente do cliente ou do role do usuário.
     match /absences/{doc} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && !hasFormationSlot(request.resource.data.slots);
-      allow update: if isAuthenticated() && !hasFormationSlot(request.resource.data.slots);
-      allow delete: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && !hasFormationSlot(request.resource.data.slots)
+        && (isAdmin()
+            || request.resource.data.teacherId == request.auth.uid
+            || ownsProfile(request.resource.data.teacherId));
+      allow update: if isAuthenticated()
+        && !hasFormationSlot(request.resource.data.slots)
+        && (isAdmin()
+            || resource.data.teacherId == request.auth.uid
+            || ownsProfile(resource.data.teacherId));
+      allow delete: if isAdmin()
+        || ownsProfile(resource.data.teacherId);
     }
     match /history/{doc}  { allow read: if isAuthenticated(); allow write: if isAdmin(); }
 
@@ -61,6 +70,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Auditoria: somente admins lêem/criam; log imutável (update/delete negados) ──
+    match /admin_actions/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
     // ── Somente admins ───────────────────────────────────────────────────────
     // O ID do documento é o email em lowercase (ex: "contato.tarciso@gmail.com")
     match /admins/{doc} {
@@ -84,11 +100,16 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()));
     }
 
-    // Retorna true se o primeiro slot possui subjectId prefixado com "formation-".
+    // Retorna true se qualquer slot nas posições 0..4 possui subjectId prefixado com "formation-".
     // Usado para bloquear create/update de absences com slots de formação.
     function hasFormationSlot(slots) {
-      return slots.size() > 0
-        && slots[0].subjectId.matches('formation-.*');
+      return slots.size() > 0 && (
+        slots[0].subjectId.matches('formation-.*') ||
+        (slots.size() > 1 && slots[1].subjectId.matches('formation-.*')) ||
+        (slots.size() > 2 && slots[2].subjectId.matches('formation-.*')) ||
+        (slots.size() > 3 && slots[3].subjectId.matches('formation-.*')) ||
+        (slots.size() > 4 && slots[4].subjectId.matches('formation-.*'))
+      );
     }
   }
 }
