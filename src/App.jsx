@@ -4,25 +4,11 @@ import useAuthStore from './store/useAuthStore'
 import useAppStore from './store/useAppStore'
 import useSchoolStore from './store/useSchoolStore'
 import { loadFromFirestore, setupRealtimeListeners, teardownListeners } from './lib/db'
-import { auth } from './lib/firebase'
 import Layout from './components/layout/Layout'
 import LoginPage from './pages/LoginPage'
 import PendingPage from './pages/PendingPage'
 import Toast from './components/ui/Toast'
 import Spinner from './components/ui/Spinner'
-
-// Aguarda o Firebase Auth resolver a sessão antes de retornar.
-// Necessário para garantir que leituras autenticadas do Firestore (meta/config,
-// teachers, schedules) não sejam disparadas antes do usuário estar autenticado,
-// o que causaria falha silenciosa e store vazio (subjects: []).
-function waitForAuth() {
-  return new Promise(resolve => {
-    const unsub = auth.onAuthStateChanged(user => {
-      unsub()
-      resolve(user)
-    })
-  })
-}
 
 // Lazy-load pages to reduce initial bundle size
 const HomePage = lazy(() => import('./pages/HomePage'))
@@ -47,56 +33,42 @@ export default function App() {
   const currentSchoolId = useSchoolStore(s => s.currentSchoolId)
   const { pathname } = useLocation()
 
-  // 1. Aguarda auth resolver, inicializa escolas, carrega Firestore e inicia listeners.
-  // Aguardar auth é necessário: meta/config e collections exigem isAuthenticated().
-  // Sem isso, o loadFromFirestore falha silenciosamente em primeiro acesso (sem cache)
-  // e subjects/areas/segments ficam vazios na PendingPage.
-  // O useEffect depende de currentSchoolId para reagir a troca de escola em runtime.
+  // 1. Inicializa auth (resolve role) assim que o componente monta.
   useEffect(() => {
-    let active = true
+    init()
+  }, [])
 
-    async function initApp() {
-      // Espera o Firebase Auth resolver o usuário atual
-      const user = await waitForAuth()
-      if (!active) return
-
-      // Inicializa as escolas disponíveis e restaura escola do localStorage
-      if (user) {
-        await useSchoolStore.getState().init(user.uid)
-      }
-      if (!active) return
-
-      const schoolId = useSchoolStore.getState().currentSchoolId
-
-      // Sem escola: marcar como loaded e inicializar auth para sair do spinner.
-      // Cobre o caso do professor novo que ainda não foi aprovado em nenhuma escola.
-      if (!schoolId) {
-        hydrate({})
-        return
-      }
-
-      // Cancela listeners anteriores antes de registrar novos (ex: troca de escola)
-      teardownListeners()
-
-      const data = await loadFromFirestore(schoolId)
-      if (!active || !data) return
-
-      hydrate(data)
-      setupRealtimeListeners(schoolId, useAppStore.getState())
+  // 2. Carrega dados do Firestore e inicia listeners quando o role e schoolId
+  // estiverem resolvidos — mas apenas para usuários aprovados (não pending).
+  // Professores pendentes não têm permissão para ler teachers/schedules.
+  useEffect(() => {
+    if (loading) return          // auth ainda não resolveu
+    if (!role) return            // não logado
+    if (role === 'pending') {
+      hydrate({})                // marca loaded para sair do spinner
+      return
+    }
+    if (!currentSchoolId) {
+      hydrate({})
+      return
     }
 
-    initApp()
+    let active = true
+
+    async function loadData() {
+      teardownListeners()
+      const data = await loadFromFirestore(currentSchoolId)
+      if (!active || !data) return
+      hydrate(data)
+      setupRealtimeListeners(currentSchoolId, useAppStore.getState())
+    }
+
+    loadData()
 
     return () => {
       active = false
     }
-  }, [currentSchoolId])
-
-  // 2. Inicia auth depois que dados iniciais carregaram
-  useEffect(() => {
-    if (!loaded) return
-    init()
-  }, [loaded])
+  }, [role, currentSchoolId, loading])
 
   // Loading inicial
   if (loading || !loaded) {
