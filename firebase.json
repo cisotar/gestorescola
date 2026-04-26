@@ -8,7 +8,7 @@
     "indexes": "firestore.indexes.json"
   },
   "hosting": {
-    "site": "gestordesubstituicoes-react",
+    "site": "saasgestaoescolar",
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
