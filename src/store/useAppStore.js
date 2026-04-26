@@ -622,7 +622,10 @@ const useAppStore = create((set, get) => {
       emptyAbsenceIds = updated.filter(ab => ab.slots.length === 0).map(ab => ab.id)
       return { absences: updated.filter(ab => ab.slots.length > 0) }
     })
-    emptyAbsenceIds.forEach(id => deleteDocById(_schoolId(), 'absences', id))
+    emptyAbsenceIds.forEach(id =>
+      httpsCallable(functions, 'deleteAbsence')({ absenceId: id })
+        .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
+    )
   },
   restoreAbsences: (absencesSnapshot) => {
     set({ absences: absencesSnapshot })
@@ -672,10 +675,16 @@ const useAppStore = create((set, get) => {
       .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
       .filter(ab => !afterAbsences.find(a => a.id === ab.id))
       .map(ab => ab.id)
-    deletedIds.forEach(id => deleteDocById(_schoolId(), 'absences', id))
+    deletedIds.forEach(id =>
+      httpsCallable(functions, 'deleteAbsence')({ absenceId: id })
+        .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
+    )
     afterAbsences
       .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
-      .forEach(ab => updateDocById(_schoolId(), 'absences', ab.id, { slots: ab.slots, status: ab.status }).catch(e => { console.error('[clearDayAbsences]', e); toast('Erro ao salvar', 'err') }))
+      .forEach(ab =>
+        httpsCallable(functions, 'updateAbsence')({ absenceId: ab.id, slots: ab.slots, substituteId: null })
+          .catch(e => { console.error('[clearDayAbsences]', e); toast('Erro ao salvar', 'err') })
+      )
   },
 
   // ─── Histórico ────────────────────────────────────────────────────────────────
