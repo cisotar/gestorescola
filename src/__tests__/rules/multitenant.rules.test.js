@@ -84,6 +84,17 @@ describe('isolamento cross-tenant', () => {
     )
   })
 
+  it('teacher de sch-a NÃO consegue criar schedule em sch-b', async () => {
+    const db = asSchoolTeacher(SCHOOL_A)
+    await assertFails(
+      db.collection(`schools/${SCHOOL_B}/schedules`).add({
+        teacherId: 'teacher-uid-school',
+        date: '2026-05-01',
+        timeSlot: '1',
+      })
+    )
+  })
+
   it('teacher de sch-b NÃO consegue ler config de sch-a', async () => {
     const db = asOtherSchoolTeacher()
     await assertFails(
@@ -346,6 +357,28 @@ describe('usuário sem documento users/{uid}', () => {
   it('NÃO consegue ler teachers da escola', async () => {
     const ctx = env.authenticatedContext('no-user-doc-uid', {
       email: 'ghost@test.com',
+      email_verified: true,
+    })
+    const db = ctx.firestore()
+    await assertFails(
+      db.collection(`schools/${SCHOOL_A}/teachers`).get()
+    )
+  })
+})
+
+// ── isMemberOf — usuário com schools vazio é negado ──────────────────────────
+
+describe('isMemberOf — usuário com schools vazio', () => {
+  it('usuário com documento users/{uid} existente mas schools:{} NÃO consegue ler teachers', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('users/empty-schools-uid').set({
+        uid: 'empty-schools-uid',
+        email: 'empty@test.com',
+        schools: {},
+      })
+    })
+    const ctx = env.authenticatedContext('empty-schools-uid', {
+      email: 'empty@test.com',
       email_verified: true,
     })
     const db = ctx.firestore()
