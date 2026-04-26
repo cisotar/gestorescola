@@ -26,13 +26,15 @@ const SchoolScheduleRedirect = lazy(() => import('./pages/SchoolScheduleRedirect
 const GradesPage = lazy(() => import('./pages/GradesPage'))
 const RankingPage = lazy(() => import('./pages/RankingPage'))
 const JoinPage = lazy(() => import('./pages/JoinPage'))
+const CreateSchoolPage = lazy(() => import('./pages/CreateSchoolPage'))
 
 export default function App() {
   const { loading, role, init, isCoordinator } = useAuthStore()
   const isAdmin        = role === 'admin'
   const canAccessAdmin = isAdmin || isCoordinator()
   const { hydrate, loaded } = useAppStore()
-  const currentSchoolId = useSchoolStore(s => s.currentSchoolId)
+  const currentSchoolId    = useSchoolStore(s => s.currentSchoolId)
+  const availableSchools   = useSchoolStore(s => s.availableSchools)
   const { pathname } = useLocation()
 
   // 1. Inicializa auth (resolve role) assim que o componente monta.
@@ -112,6 +114,18 @@ export default function App() {
       <LoginPage />
       <Toast />
     </>
+  )
+
+  // Sem escola vinculada → página de criação de escola (RN-8)
+  // Cobre admins SaaS recém-criados (role='admin' com availableSchools=[]) e
+  // qualquer usuário autenticado que ainda não pertence a nenhuma escola.
+  // Posição: após !role (usuário não logado não deve ver esta tela) e
+  // antes de role==='pending' (admin sem escola tem role='admin', não 'pending').
+  if (!currentSchoolId && availableSchools.length === 0 && !pathname.startsWith('/join/')) return (
+    <Suspense fallback={<Spinner />}>
+      <CreateSchoolPage />
+      <Toast />
+    </Suspense>
   )
 
   // Pendente → página de espera (exceto /join/ que pode redirecionar o pendente)

@@ -20,9 +20,11 @@ service cloud.firestore {
     // Leitura liberada para qualquer autenticado: contém apenas nome/metadados,
     // sem dados sensíveis. Necessário para o fluxo de convite (/join/:slug)
     // onde o professor ainda não é membro mas precisa ler o nome da escola.
+    // Create liberado para qualquer autenticado: necessário para o onboarding,
+    // quando o usuário ainda não tem vínculo com a escola que está criando.
     match /schools/{schoolId} {
       allow read:   if isAuthenticated();
-      allow create: if isSaasAdmin();
+      allow create: if request.auth != null;
       allow update: if isSchoolAdmin(schoolId);
       allow delete: if isSaasAdmin();
     }
@@ -30,9 +32,14 @@ service cloud.firestore {
     // ── Configuração da escola ───────────────────────────────────────────────
     // Leitura liberada também para pending: professor precisa ver matérias/segmentos
     // para preencher o formulário de cadastro na PendingPage.
+    // Create restrito ao criador da escola (campo createdBy): garante que apenas
+    // quem criou o documento schools/{schoolId} pode inicializar a config.
     match /schools/{schoolId}/config/{doc} {
-      allow read:  if isMemberOf(schoolId) || isSaasAdmin() || isPendingIn(schoolId);
-      allow write: if isSchoolAdmin(schoolId);
+      allow read:   if isMemberOf(schoolId) || isSaasAdmin() || isPendingIn(schoolId);
+      allow create: if request.auth != null
+        && request.auth.uid == get(/databases/$(database)/documents/schools/$(schoolId)).data.createdBy;
+      allow update: if isSchoolAdmin(schoolId);
+      allow delete: if isSchoolAdmin(schoolId);
     }
 
     // ── Professores ──────────────────────────────────────────────────────────
@@ -115,14 +122,21 @@ service cloud.firestore {
 
     // ── Slugs de escola (coleção raiz — leitura pública pré-autenticação) ──────
     // Leitura: pública (usada na JoinPage antes de o usuário se autenticar).
-    // Escrita: somente admin da escola referenciada no payload ou super-admin SaaS.
-    // ATENÇÃO: o campo schoolId deve estar presente no payload ao criar/atualizar
+    // Create: qualquer autenticado pode criar — necessário para o onboarding, pois
+    // no momento da criação o usuário ainda não é schoolAdmin (users/{uid}.schools
+    // ainda não foi populado). A unicidade é garantida pelo Firestore (create falha
+    // se o documento já existe). O campo schoolId não é exigido aqui — o criador
+    // acabou de criar a escola e ainda não tem o vínculo que isSchoolAdmin requer.
+    // Update/delete: somente admin da escola referenciada no payload ou super-admin.
+    // ATENÇÃO: o campo schoolId deve estar presente no payload ao atualizar
     // um slug; sem ele, isSchoolAdmin(null) retorna false e a escrita é negada.
     // Esta coleção fica no nível raiz do Firestore — não é subcoleção de schools/
     // — pois o slug é o único identificador disponível antes do login.
     match /school_slugs/{slug} {
-      allow read: if true;
-      allow write: if isSchoolAdmin(request.resource.data.schoolId) || isSaasAdmin();
+      allow read:   if true;
+      allow create: if request.auth != null;
+      allow update: if isSchoolAdmin(request.resource.data.schoolId) || isSaasAdmin();
+      allow delete: if isSchoolAdmin(resource.data.schoolId) || isSaasAdmin();
     }
 
     // ── Ações pendentes de coordenadores ─────────────────────────────────────

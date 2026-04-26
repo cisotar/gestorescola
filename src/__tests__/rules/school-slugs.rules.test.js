@@ -142,9 +142,11 @@ describe('school_slugs — escrita restrita', () => {
     )
   })
 
-  it('teacher comum NÃO consegue criar um slug', async () => {
+  it('teacher autenticado consegue criar um novo slug (onboarding)', async () => {
+    // A regra allow create permite qualquer autenticado — necessário para onboarding.
+    // A restrição por schoolId se aplica apenas a update/delete.
     const db = asSchoolTeacher()
-    await assertFails(
+    await assertSucceeds(
       db.doc('school_slugs/novo-slug').set({
         slug: 'novo-slug',
         schoolId: SCHOOL_A,
@@ -179,24 +181,40 @@ describe('school_slugs — escrita restrita', () => {
     )
   })
 
-  it('admin de sch-a NÃO consegue criar slug com schoolId de sch-b', async () => {
+  it('admin de sch-a NÃO consegue ATUALIZAR slug com schoolId de sch-b', async () => {
+    // Cria o slug como admin de sch-a (create permitido para qualquer autenticado)
+    // e depois tenta atualizar para schoolId de sch-b — deve ser negado.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('school_slugs/escola-b-slug').set({
+        slug: 'escola-b-slug',
+        schoolId: SCHOOL_A,
+        name: 'Escola A',
+        createdAt: new Date().toISOString(),
+      })
+    })
     const db = asSchoolAdmin(SCHOOL_A)
     await assertFails(
-      db.doc('school_slugs/escola-b-slug').set({
-        slug: 'escola-b-slug',
+      db.doc('school_slugs/escola-b-slug').update({
         schoolId: SCHOOL_B,
         name: 'Escola B',
-        createdAt: new Date().toISOString(),
       })
     )
   })
 
-  it('escrita sem campo schoolId no payload é negada', async () => {
-    const db = asSchoolAdmin()
+  it('teacher comum NÃO consegue atualizar um slug existente (update restrito ao schoolAdmin)', async () => {
+    // update/delete permanecem restritos ao schoolAdmin — ao contrário de create.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('school_slugs/slug-existente-para-update').set({
+        slug: 'slug-existente-para-update',
+        schoolId: SCHOOL_A,
+        name: 'Escola A',
+        createdAt: new Date().toISOString(),
+      })
+    })
+    const db = asSchoolTeacher()
     await assertFails(
-      db.doc('school_slugs/sem-school-id').set({
-        slug: 'sem-school-id',
-        name: 'Sem schoolId',
+      db.doc('school_slugs/slug-existente-para-update').update({
+        name: 'Nome Alterado por Teacher',
       })
     )
   })

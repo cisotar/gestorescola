@@ -5,7 +5,7 @@ export { app, db, auth, provider } from './firebase'
 export { getSchoolCollectionRef, getSchoolDocRef, getSchoolConfigRef, getSchoolRef } from './firebase/multi-tenant'
 
 // DB (carregamento e persistência)
-export { loadFromFirestore, saveToFirestore, saveDoc, deleteDocById, updateDocById, saveConfig } from './db'
+export { loadFromFirestore, saveToFirestore, saveDoc, deleteDocById, updateDocById, saveConfig, createSchool } from './db'
 export { setupRealtimeListeners, registerAbsencesListener, registerHistoryListener, teardownListeners } from './db'
 export { isAdmin, addAdmin, listAdmins, removeAdmin } from './db'
 export { getTeacherByEmail, requestTeacherAccess, updatePendingData, listPendingTeachers, patchTeacherSelf, approveTeacher, rejectTeacher } from './db'

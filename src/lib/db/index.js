@@ -326,6 +326,27 @@ export async function saveSchoolSlug(schoolId, newSlug, oldSlug) {
   ])
 }
 
+// ─── Criação de Escola ────────────────────────────────────────────────────────
+
+/**
+ * Cria uma nova escola com as quatro escritas independentes no Firestore.
+ * As operações são executadas em paralelo via Promise.all (sem writeBatch — RN-4).
+ * Erros propagam diretamente ao caller sem serem silenciados.
+ *
+ * @param {string} schoolId - Document ID da escola (gerado pelo caller via uid())
+ * @param {string} name     - Nome legível da escola
+ * @param {string} slug     - Identificador de URL amigável (único)
+ * @param {string} uid      - UID do Firebase Auth do criador
+ */
+export async function createSchool(schoolId, name, slug, uid) {
+  await Promise.all([
+    setDoc(doc(db, 'schools', schoolId), { name, slug, createdAt: serverTimestamp(), createdBy: uid, plan: 'free' }),
+    setDoc(doc(db, 'schools', schoolId, 'config', 'main'), { updatedAt: serverTimestamp() }),
+    setDoc(doc(db, 'school_slugs', slug), { schoolId }),
+    setDoc(doc(db, 'users', uid), { schools: { [schoolId]: { role: 'admin', status: 'approved' } } }, { merge: true }),
+  ])
+}
+
 // ─── Pending Actions (coordenador approval workflow) ───────────────────────────
 
 export async function submitPendingAction(schoolId, { coordinatorId, coordinatorName, action, payload, summary }) {
