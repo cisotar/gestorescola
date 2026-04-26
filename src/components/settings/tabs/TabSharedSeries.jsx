@@ -105,6 +105,58 @@ function SharedSeriesModal({ open, onClose, store, editingSeries }) {
   )
 }
 
+// ─── SubjectListInline ────────────────────────────────────────────────────────
+
+function SubjectListInline({ series }) {
+  const store = useAppStore()
+  const subjects = series.subjects ?? []
+  const [inputValue, setInputValue] = useState('')
+
+  const handleAdd = () => {
+    const trimmed = inputValue.trim()
+    if (!trimmed) return
+    const already = (series.subjects ?? []).some(s => s.toLowerCase() === trimmed.toLowerCase())
+    if (already) { alert('Matéria já cadastrada.'); return }
+    store.updateSharedSeries(series.id, { subjects: [...(series.subjects ?? []), trimmed] })
+    setInputValue('')
+    toast('Matéria adicionada', 'ok')
+  }
+
+  const handleRemove = (s) => {
+    store.updateSharedSeries(series.id, { subjects: (series.subjects ?? []).filter(x => x !== s) })
+    toast('Matéria removida', 'ok')
+  }
+  const handleKeyDown = (e) => { if (e.key === 'Enter') handleAdd() }
+
+  return (
+    <div className="space-y-2">
+      <span className="lbl">Matérias</span>
+      {subjects.length === 0 ? (
+        <p className="text-sm text-t3 italic">Nenhuma matéria cadastrada</p>
+      ) : (
+        <ul className="space-y-1 max-h-40 overflow-y-auto scroll-thin">
+          {subjects.map(s => (
+            <li key={s} className="flex items-center justify-between gap-2 text-sm text-t1 bg-surf2 rounded-lg px-3 py-1.5">
+              <span>{s}</span>
+              <button className="text-t3 hover:text-err transition-colors leading-none" onClick={() => handleRemove(s)}>×</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex gap-2">
+        <input
+          className="inp flex-1 text-sm"
+          placeholder="Nome da matéria…"
+          value={inputValue}
+          onChange={e => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <button className="btn btn-dark btn-xs" onClick={handleAdd}>Adicionar</button>
+      </div>
+    </div>
+  )
+}
+
 // ─── TabSharedSeries ──────────────────────────────────────────────────────────
 
 export default function TabSharedSeries() {
@@ -187,6 +239,12 @@ export default function TabSharedSeries() {
                       ? 'Slot de descanso. Não requer matéria nem substituto.'
                       : 'Ausência requer substituto. Professores escolhem matérias da lista.'}
                 </p>
+                {series.type !== 'rest' && (
+                  <>
+                    <hr className="border-bdr my-3" />
+                    <SubjectListInline series={series} />
+                  </>
+                )}
               </div>
             )
           })}

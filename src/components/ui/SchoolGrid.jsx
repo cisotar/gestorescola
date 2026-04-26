@@ -93,11 +93,13 @@ export default function SchoolGrid({ seg, schedules, store, showTeacher = true, 
                                   <>
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name || '—')}</div>
                                     <div className="text-[#4a4740] text-[10px]">{isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subject?.name ?? '—')}</div>
+                                    {s.sharedSubject && <span className="text-[9px] text-t3 truncate italic">{s.sharedSubject}</span>}
                                   </>
                                 ) : (
                                   <>
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{s.turma ?? '—'}</div>
                                     <div className="text-[#4a4740] text-[10px]">{isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subject?.name ?? '—')}</div>
+                                    {s.sharedSubject && <span className="text-[9px] text-t3 truncate italic">{s.sharedSubject}</span>}
                                   </>
                                 )}
                               </div>
@@ -140,11 +142,13 @@ export default function SchoolGrid({ seg, schedules, store, showTeacher = true, 
                                   <>
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{useApelido ? (teacher?.apelido || teacher?.name || '—') : (teacher?.name || '—')}</div>
                                     <div className="text-[#4a4740] text-[10px]">{isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subject?.name ?? '—')}</div>
+                                    {s.sharedSubject && <span className="text-[9px] text-t3 truncate italic">{s.sharedSubject}</span>}
                                   </>
                                 ) : (
                                   <>
                                     <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide">{s.turma ?? '—'}</div>
                                     <div className="text-[#4a4740] text-[10px]">{isRestSlot(s.turma, store.sharedSeries) ? 'almoço/janta' : (subject?.name ?? '—')}</div>
+                                    {s.sharedSubject && <span className="text-[9px] text-t3 truncate italic">{s.sharedSubject}</span>}
                                   </>
                                 )}
                               </div>

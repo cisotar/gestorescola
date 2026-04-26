@@ -50,11 +50,12 @@ const INITIAL_STATE = {
   subjects:      [],
   /**
    * Turmas compartilhadas (FORMAÇÃO, etc.)
-   * @type {Array<{id: string, name: string, type: 'formation'|'elective'|'rest'}>}
+   * @type {Array<{id: string, name: string, type: 'formation'|'elective'|'rest', subjects?: string[]}>}
    *
    * - type: 'formation' — não demanda substituto (ex: ATPCG, ATPCA)
    * - type: 'elective' — demanda substituto como aulas regulares
    * - type: 'rest'     — período de descanso/almoço; não demanda substituto
+   * - subjects — lista opcional de matérias da turma; ausente em registros antigos (ler com `?? []`)
    */
   sharedSeries:  [],
   teachers:      [],
@@ -429,6 +430,7 @@ const useAppStore = create((set, get) => {
    * @param {string} id - ID da turma a atualizar
    * @param {Object} changes - Campos a atualizar
    * @param {'formation'|'elective'|'rest'} [changes.type] - Tipo (opcional), validado se presente
+   * @param {string[]} [changes.subjects] - Lista de matérias da turma (opcional); leituras downstream devem usar `series.subjects ?? []`
    * @throws {Error} Se type for inválido
    */
   updateSharedSeries: (id, changes) => {
