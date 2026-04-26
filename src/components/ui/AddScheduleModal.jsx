@@ -84,7 +84,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
           { alert('Esta turma está reservada para área compartilhada.'); return }
       }
     }
-    if (isSharedAndNeedsSubject && !subjId)
+    if (isSharedAndNeedsSubject && !sharedSubject && !subjId)
       { alert('Selecione a matéria.'); return }
     const finalSubjectId = isRestType ? null : (subjId || null)
     onSave({ teacherId: teacher.id, subjectId: finalSubjectId, turma, day, timeSlot: slot, sharedSubject: sharedSubject || null })
@@ -169,16 +169,18 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
         {!isRestType && selectedSharedSeries?.subjects?.length > 0 && (
           <div>
             <label className="lbl">Matéria da Turma Compartilhada</label>
-            <select
-              className="inp mt-1"
-              value={sharedSubject}
-              onChange={e => setSharedSubject(e.target.value)}
-            >
-              <option value="">Selecione a matéria…</option>
+            <div className="flex flex-wrap gap-2 mt-1">
               {selectedSharedSeries.subjects.map(s => (
-                <option key={s} value={s}>{s}</option>
+                <button
+                  key={s}
+                  type="button"
+                  className={sharedSubject === s ? pillOn : pillOff}
+                  onClick={() => { setSharedSubject(sharedSubject === s ? '' : s); setSubjId('') }}
+                >
+                  {s}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
         )}
 
@@ -191,7 +193,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
                 <button
                   type="button"
                   className={subjId === '' ? pillOn : pillOff}
-                  onClick={() => setSubjId('')}
+                  onClick={() => { setSharedSubject(''); setSubjId('') }}
                 >
                   — sem matéria —
                 </button>
@@ -200,7 +202,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
                     key={s.id}
                     type="button"
                     className={subjId === s.id ? pillOn : pillOff}
-                    onClick={() => setSubjId(s.id)}
+                    onClick={() => { setSharedSubject(''); setSubjId(s.id) }}
                   >
                     {s.name}
                   </button>
@@ -213,7 +215,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
           <button
             className="btn btn-dark flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
             onClick={save}
-            disabled={!turma || (!isRestType && selectedSharedSeries?.subjects?.length > 0 && !sharedSubject)}
+            disabled={!turma || (isSharedAndNeedsSubject && !sharedSubject && !subjId)}
           >
             Adicionar
           </button>
