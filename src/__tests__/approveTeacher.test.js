@@ -38,8 +38,17 @@ vi.mock('../lib/helpers/ids', () => ({
   uid: vi.fn(() => 'mock-teacher-id-123'),
 }))
 
+vi.mock('../lib/firebase/multi-tenant', () => ({
+  getSchoolCollectionRef: vi.fn((schoolId, sub) => ({ _path: `schools/${schoolId}/${sub}` })),
+  getSchoolDocRef: vi.fn((schoolId, sub, id) => ({ _path: `schools/${schoolId}/${sub}/${id}` })),
+  getSchoolConfigRef: vi.fn((schoolId) => ({ _path: `schools/${schoolId}/config/main` })),
+  getSchoolRef: vi.fn((schoolId) => ({ _path: `schools/${schoolId}` })),
+}))
+
 import { getDoc, setDoc, deleteDoc, getDocs, writeBatch } from 'firebase/firestore'
 import { approveTeacher } from '../lib/db/index.js'
+
+const SCHOOL_ID = 'sch-default'
 
 const pendingData = {
   id: 'pending-uid', uid: 'pending-uid',
@@ -63,23 +72,23 @@ function setupMocks() {
 describe('approveTeacher — validação de profile', () => {
   it('aceita "teacher"', async () => {
     setupMocks()
-    await expect(approveTeacher('pending-uid', mockState, vi.fn(), 'teacher')).resolves.not.toThrow()
+    await expect(approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), 'teacher')).resolves.not.toThrow()
   })
 
   it('aceita "coordinator"', async () => {
     setupMocks()
-    await expect(approveTeacher('pending-uid', mockState, vi.fn(), 'coordinator')).resolves.not.toThrow()
+    await expect(approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), 'coordinator')).resolves.not.toThrow()
   })
 
   it('aceita "teacher-coordinator"', async () => {
     setupMocks()
-    await expect(approveTeacher('pending-uid', mockState, vi.fn(), 'teacher-coordinator')).resolves.not.toThrow()
+    await expect(approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), 'teacher-coordinator')).resolves.not.toThrow()
   })
 
   it('usa "teacher" como default sem emitir warning', async () => {
     setupMocks()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await approveTeacher('pending-uid', mockState, vi.fn())
+    await approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn())
     expect(warnSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
@@ -87,7 +96,7 @@ describe('approveTeacher — validação de profile', () => {
   it('faz fallback para "teacher" e emite console.warn para valor inválido', async () => {
     setupMocks()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await approveTeacher('pending-uid', mockState, vi.fn(), 'admin')
+    await approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), 'admin')
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('admin'))
     warnSpy.mockRestore()
   })
@@ -95,7 +104,7 @@ describe('approveTeacher — validação de profile', () => {
   it('faz fallback para "teacher" para string vazia', async () => {
     setupMocks()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await approveTeacher('pending-uid', mockState, vi.fn(), '')
+    await approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), '')
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
@@ -104,7 +113,7 @@ describe('approveTeacher — validação de profile', () => {
     getDoc.mockResolvedValue({ exists: () => false })
     const batch = { set: vi.fn(), update: vi.fn(), delete: vi.fn(), commit: vi.fn() }
     writeBatch.mockReturnValue(batch)
-    await approveTeacher('nao-existe', mockState, vi.fn(), 'teacher')
+    await approveTeacher(SCHOOL_ID, 'nao-existe', mockState, vi.fn(), 'teacher')
     expect(batch.commit).not.toHaveBeenCalled()
   })
 })

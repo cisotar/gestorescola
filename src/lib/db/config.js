@@ -1,5 +1,6 @@
 import { db } from '../firebase'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { getSchoolConfigRef } from '../firebase/multi-tenant'
 
 /**
  * Seed padrão de turmas compartilhadas.
@@ -26,11 +27,12 @@ const DEFAULT_SHARED_SERIES = [
   },
 ]
 
-export async function _loadConfig() {
-  const snap = await getDoc(doc(db, 'meta', 'config'))
+export async function _loadConfig(schoolId) {
+  const ref = getSchoolConfigRef(schoolId)
+  const snap = await getDoc(ref)
   if (!snap.exists()) {
     try {
-      await setDoc(doc(db, 'meta', 'config'), { sharedSeries: DEFAULT_SHARED_SERIES }, { merge: true })
+      await setDoc(ref, { sharedSeries: DEFAULT_SHARED_SERIES }, { merge: true })
     } catch (e) {
       console.warn('[db] Falha ao persistir seed de sharedSeries:', e)
     }
@@ -43,7 +45,7 @@ export async function _loadConfig() {
   if (!data.sharedSeries?.length) {
     result.sharedSeries = DEFAULT_SHARED_SERIES
     try {
-      await setDoc(doc(db, 'meta', 'config'), { sharedSeries: DEFAULT_SHARED_SERIES }, { merge: true })
+      await setDoc(ref, { sharedSeries: DEFAULT_SHARED_SERIES }, { merge: true })
     } catch (e) {
       console.warn('[db] Falha ao persistir seed de sharedSeries:', e)
     }
@@ -51,9 +53,9 @@ export async function _loadConfig() {
   return result
 }
 
-export async function saveConfig(state) {
+export async function saveConfig(schoolId, state) {
   try {
-    await setDoc(doc(db, 'meta', 'config'), {
+    await setDoc(getSchoolConfigRef(schoolId), {
       segments: state.segments, periodConfigs: state.periodConfigs,
       areas: state.areas, subjects: state.subjects, sharedSeries: state.sharedSeries ?? [],
       workloadWarn: state.workloadWarn, workloadDanger: state.workloadDanger,
