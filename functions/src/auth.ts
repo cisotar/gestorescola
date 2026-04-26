@@ -93,3 +93,38 @@ export async function verifyAdmin(
 
   throw new functions.https.HttpsError("permission-denied", "Admin required");
 }
+
+/**
+ * Verifica que o chamador é admin ou coordenador da escola, lendo de
+ * users/{uid}.schools[schoolId].role. Usado em operações onde coordenadores
+ * podem agir junto com admins (ex: aprovar/rejeitar professores pendentes).
+ */
+export async function verifyAdminOrCoordinatorViaUsers(
+  context: functions.https.CallableContext,
+  schoolId: string
+): Promise<void> {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Login required");
+  }
+  const email = (context.auth.token.email ?? "").toLowerCase();
+  const uid = context.auth.uid;
+
+  // Super-admin SaaS sempre passa
+  const adminSnap = await admin.firestore().collection("admins").doc(email).get();
+  if (adminSnap.exists) return;
+
+  const userSnap = await admin.firestore().collection("users").doc(uid).get();
+  if (userSnap.exists) {
+    const userData = userSnap.data() as Record<string, unknown>;
+    const schools = (userData.schools ?? {}) as Record<string, { role: string; status: string }>;
+    const entry = schools[schoolId];
+    if (
+      entry &&
+      (entry.status === "approved" || entry.status === "active") &&
+      (entry.role === "admin" || entry.role === "coordinator" || entry.role === "teacher-coordinator")
+    ) {
+      return;
+    }
+  }
+  throw new functions.https.HttpsError("permission-denied", "Admin ou coordenador requerido");
+}

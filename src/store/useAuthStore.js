@@ -58,6 +58,7 @@ const useAuthStore = create((set, get) => ({
 
   _resolveRole: async (user) => {
     const schoolId = useSchoolStore.getState().currentSchoolId
+    console.log('[auth._resolveRole] start', { uid: user.uid, email: user.email, schoolId })
 
     // ── 1. Super-admin SaaS: bypass total, role admin garantido ──────────────
     const isSuperUser = SUPER_USERS.includes(user.email?.toLowerCase())
@@ -81,6 +82,7 @@ const useAuthStore = create((set, get) => ({
 
     // ── 2. Guard: sem schoolId não é possível determinar role ────────────────
     if (!schoolId) {
+      console.log('[auth._resolveRole] step 2: sem schoolId → role=pending')
       set({ role: 'pending' })
       return
     }
@@ -88,11 +90,19 @@ const useAuthStore = create((set, get) => ({
     // ── 3. Lê role de users/{uid}.schools[schoolId] ──────────────────────────
     try {
       const userSnap = await getDoc(doc(db, 'users', user.uid))
+      console.log('[auth._resolveRole] step 3: users/{uid} exists?', userSnap.exists(), 'data:', userSnap.exists() ? userSnap.data() : null)
       if (userSnap.exists()) {
         const schoolEntry = userSnap.data().schools?.[schoolId]
         const localRole = typeof schoolEntry === 'object' && schoolEntry !== null
           ? schoolEntry?.role ?? null
           : null
+        console.log('[auth._resolveRole] step 3: localRole =', localRole)
+        if (localRole === 'rejected') {
+          console.log('[auth._resolveRole] cadastro rejeitado, deslogando')
+          set({ role: null })
+          await signOut(auth)
+          return
+        }
         if (localRole && localRole !== 'pending') {
           const normalized = localRole === 'coordinator' ? 'coordinator'
             : localRole === 'teacher-coordinator' ? 'teacher-coordinator'
@@ -119,35 +129,39 @@ const useAuthStore = create((set, get) => ({
     } catch (e) { console.warn('[auth] leitura users/{uid}:', e) }
 
     // ── 4. Sem role → fluxo pending ───────────────────────────────────────────
+    console.log('[auth._resolveRole] step 4: registrando listener de aprovação em', `schools/${schoolId}/pending_teachers/${user.uid}`)
     set({ role: 'pending' })
-    try { await requestTeacherAccess(schoolId, user) } catch {}
+    try { await requestTeacherAccess(schoolId, user) } catch (e) { console.warn('[auth._resolveRole] requestTeacherAccess fail:', e) }
     get()._unsubApproval?.()
     const pendingDocRef = doc(db, 'schools', schoolId, 'pending_teachers', user.uid)
     const unsub = onSnapshot(
       pendingDocRef,
       async snap => {
+        console.log('[auth.approvalListener] dispara, exists?', snap.exists())
         if (!snap.exists()) {
           unsub()
           set({ _unsubApproval: null })
-          // Usar schoolId capturado em closure para garantir consistência mesmo
-          // se o usuário trocou de escola entre o registro do listener e o callback.
+          // A Cloud Function approveTeacher/rejectTeacher já escreveu users/{uid}.
+          // Releia o role do users/{uid} atualizado.
           try {
-            // Encontrar o doc do professor em teachers/ pelo email para obter o profile
-            const teachersSnap = await getDocs(
-              query(collection(db, 'schools', schoolId, 'teachers'), where('email', '==', user.email.toLowerCase()))
-            )
-            if (teachersSnap.empty) {
-              console.warn(`[approvalListener] teacher doc not found for ${user.email} in school ${schoolId}, falling back to 'teacher' (race condition entre delete pending e write teacher)`)
+            const userSnap = await getDoc(doc(db, 'users', user.uid))
+            if (userSnap.exists()) {
+              const entry = userSnap.data().schools?.[schoolId]
+              const newRole = entry?.role
+              const newStatus = entry?.status
+              console.log('[auth.approvalListener] users/{uid} atualizado:', { newRole, newStatus })
+              if (newStatus === 'approved' && newRole && newRole !== 'pending') {
+                const normalized = newRole === 'coordinator' ? 'coordinator'
+                  : newRole === 'teacher-coordinator' ? 'teacher-coordinator'
+                  : newRole === 'admin' ? 'admin'
+                  : 'teacher'
+                set({ role: normalized })
+              } else if (newStatus === 'rejected') {
+                console.log('[auth.approvalListener] cadastro rejeitado, deslogando')
+                set({ role: null })
+                await signOut(auth)
+              }
             }
-            const profile = teachersSnap.empty ? 'teacher' : (teachersSnap.docs[0].data().profile ?? 'teacher')
-            const normalizedRole = profile === 'coordinator' ? 'coordinator'
-              : profile === 'teacher-coordinator' ? 'teacher-coordinator'
-              : 'teacher'
-            // Professor escreve no próprio users/{uid} — sempre permitido pela rule
-            await setDoc(doc(db, 'users', user.uid), {
-              schools: { [schoolId]: { role: normalizedRole, status: 'approved' } },
-            }, { merge: true })
-            set({ role: normalizedRole })
           } catch (e) { console.warn('[approvalListener]', e) }
         }
       },

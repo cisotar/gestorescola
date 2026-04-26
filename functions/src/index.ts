@@ -1,6 +1,6 @@
 import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
-import { verifyCoordinatorOrAdmin, verifyAdmin } from "./auth";
+import { verifyCoordinatorOrAdmin, verifyAdmin, verifyAdminOrCoordinatorViaUsers } from "./auth";
 import { ACTION_MAP } from "./actions";
 
 admin.initializeApp();
@@ -204,6 +204,157 @@ export const deleteAbsence = functions.https.onCall(async (data, context) => {
     .collection(absencesPath(schoolId))
     .doc(absenceId)
     .delete();
+
+  return { ok: true };
+});
+
+// ── approveTeacher ────────────────────────────────────────────────────────────
+// Atomicamente: cria/atualiza schools/{schoolId}/teachers/, deleta
+// schools/{schoolId}/pending_teachers/{pendingUid}, escreve users/{pendingUid}.
+// Migra schedules órfãos do UID pendente para o teacher.id final.
+
+const VALID_PROFILES = ["teacher", "coordinator", "teacher-coordinator"];
+
+export const approveTeacher = functions.https.onCall(async (data, context) => {
+  const schoolId = String(data?.schoolId ?? "");
+  const pendingUid = String(data?.pendingUid ?? "");
+  let profile = String(data?.profile ?? "teacher");
+
+  if (!schoolId || !pendingUid) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "schoolId e pendingUid são obrigatórios"
+    );
+  }
+  if (!VALID_PROFILES.includes(profile)) profile = "teacher";
+
+  await verifyAdminOrCoordinatorViaUsers(context, schoolId);
+
+  const db = admin.firestore();
+  const pendingRef = db
+    .collection(`schools/${schoolId}/pending_teachers`)
+    .doc(pendingUid);
+  const pendingSnap = await pendingRef.get();
+  if (!pendingSnap.exists) {
+    throw new functions.https.HttpsError(
+      "not-found",
+      "Solicitação pendente não encontrada"
+    );
+  }
+  const pendingData = pendingSnap.data() as Record<string, unknown>;
+  const email = String(pendingData.email ?? "").toLowerCase();
+  if (!email) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "Doc pendente sem email"
+    );
+  }
+
+  // Procurar teacher existente por email
+  const existingSnap = await db
+    .collection(`schools/${schoolId}/teachers`)
+    .where("email", "==", email)
+    .limit(1)
+    .get();
+
+  let teacherId: string;
+  let teacherData: Record<string, unknown>;
+
+  if (!existingSnap.empty) {
+    teacherId = existingSnap.docs[0].id;
+    teacherData = {
+      ...existingSnap.docs[0].data(),
+      status: "approved",
+      profile,
+      horariosSemana:
+        pendingData.horariosSemana ??
+        existingSnap.docs[0].data().horariosSemana ??
+        null,
+    };
+  } else {
+    teacherId = uid();
+    teacherData = {
+      id: teacherId,
+      name: pendingData.name ?? "",
+      email,
+      whatsapp: "",
+      celular: pendingData.celular ?? "",
+      apelido: pendingData.apelido ?? "",
+      subjectIds: pendingData.subjectIds ?? [],
+      status: "approved",
+      profile,
+      horariosSemana: pendingData.horariosSemana ?? null,
+    };
+  }
+
+  const role =
+    profile === "coordinator"
+      ? "coordinator"
+      : profile === "teacher-coordinator"
+      ? "teacher-coordinator"
+      : "teacher";
+
+  // Migrar schedules órfãos (teacherId == pendingUid) para o teacher.id real
+  const orphanSnap = await db
+    .collection(`schools/${schoolId}/schedules`)
+    .where("teacherId", "==", pendingUid)
+    .get();
+
+  const batch = db.batch();
+  batch.set(
+    db.collection(`schools/${schoolId}/teachers`).doc(teacherId),
+    teacherData
+  );
+  batch.set(
+    db.collection("users").doc(pendingUid),
+    {
+      schools: { [schoolId]: { role, status: "approved" } },
+    },
+    { merge: true }
+  );
+  orphanSnap.docs.forEach((d) => {
+    batch.update(d.ref, { teacherId });
+  });
+  batch.delete(pendingRef);
+  await batch.commit();
+
+  return { ok: true, teacherId };
+});
+
+// ── rejectTeacher ─────────────────────────────────────────────────────────────
+
+export const rejectTeacher = functions.https.onCall(async (data, context) => {
+  const schoolId = String(data?.schoolId ?? "");
+  const pendingUid = String(data?.pendingUid ?? "");
+  if (!schoolId || !pendingUid) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "schoolId e pendingUid são obrigatórios"
+    );
+  }
+  await verifyAdminOrCoordinatorViaUsers(context, schoolId);
+
+  const db = admin.firestore();
+  const pendingRef = db
+    .collection(`schools/${schoolId}/pending_teachers`)
+    .doc(pendingUid);
+
+  // Limpar schedules órfãos do uid pendente
+  const orphanSnap = await db
+    .collection(`schools/${schoolId}/schedules`)
+    .where("teacherId", "==", pendingUid)
+    .get();
+
+  const batch = db.batch();
+  orphanSnap.docs.forEach((d) => batch.delete(d.ref));
+  // Marca users/{uid}.schools[schoolId] como rejected (cliente trata como sem acesso)
+  batch.set(
+    db.collection("users").doc(pendingUid),
+    { schools: { [schoolId]: { role: "rejected", status: "rejected" } } },
+    { merge: true }
+  );
+  batch.delete(pendingRef);
+  await batch.commit();
 
   return { ok: true };
 });

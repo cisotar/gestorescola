@@ -214,10 +214,18 @@
 
       // Salva dados iniciais e avança para o cadastro de grade de aulas
       setSaving(true); setSaveError('')
+      console.log('[PendingPage] handleSubmit', { currentSchoolId, uid: user.uid, hasHorarios: Object.keys(horariosSemana).length })
+      if (!currentSchoolId) {
+        setSaveError('Erro: escola não selecionada. Recarregue a página.')
+        setSaving(false)
+        return
+      }
       try {
         await updatePendingData(currentSchoolId, user.uid, { celular: celular.replace(/\D/g, ''), apelido: apelido.trim(), subjectIds: selectedSubjs, horariosSemana })
+        console.log('[PendingPage] updatePendingData OK')
         setStep('schedule')
       } catch (e) {
+        console.error('[PendingPage] updatePendingData FAIL', e)
         setSaveError('Erro ao salvar: ' + e.message)
       } finally {
         setSaving(false)

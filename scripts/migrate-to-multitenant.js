@@ -1,26 +1,19 @@
 /**
- * Script de migração: copia dados single-tenant para estrutura multi-tenant.
+ * Script de migração: copia dados do projeto antigo (gestordesubstituicoes)
+ * para a estrutura multi-tenant do projeto novo (saasgestaoescolar).
  *
- * O que faz:
- *   1. Cria /schools/sch-default (se não existir)
- *   2. Copia /meta/config → /schools/sch-default/config/main
- *   3. Copia cada coleção global para schools/sch-default/{colecao}/{docId}
- *   4. Popula /users/{uid} com schools["sch-default"] para teachers e admins
- *
- * Uso com serviceAccountKey.json na raiz:
+ * Uso:
  *   node scripts/migrate-to-multitenant.js
  *
- * Uso com emulador local:
- *   FIRESTORE_EMULATOR_HOST=localhost:8080 node scripts/migrate-to-multitenant.js
+ * Requer na raiz do projeto:
+ *   serviceAccountKey-old.json  → chave do projeto gestordesubstituicoes (origem)
+ *   serviceAccountKey.json      → chave do projeto saasgestaoescolar (destino)
  *
- * Uso com variável de ambiente:
- *   GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/migrate-to-multitenant.js
- *
- * Nota: script idempotente — documentos existentes no destino são pulados.
+ * Script idempotente — documentos existentes no destino são pulados.
  * Coleções originais nunca são alteradas ou deletadas.
  */
 
-import { initializeApp, cert, getApps } from 'firebase-admin/app'
+import { initializeApp, cert } from 'firebase-admin/app'
 import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { readFileSync, existsSync } from 'fs'
 import { resolve, dirname } from 'path'
@@ -28,39 +21,32 @@ import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// ─── Inicialização do Firebase Admin ──────────────────────────────────────────
+// ─── Inicialização: duas conexões Firebase ────────────────────────────────────
 
-const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST
+const oldKeyPath = resolve(__dirname, '../serviceAccountKey-old.json')
+const newKeyPath = resolve(__dirname, '../serviceAccountKey.json')
 
-if (!getApps().length) {
-  if (emulatorHost) {
-    initializeApp({ projectId: 'gestorescola' })
-    console.log(`Usando emulador Firestore em: ${emulatorHost}`)
-  } else {
-    const keyPath = resolve(__dirname, '../serviceAccountKey.json')
-    const envCred = process.env.GOOGLE_APPLICATION_CREDENTIALS
-
-    if (envCred) {
-      initializeApp({ credential: cert(envCred) })
-      console.log('Usando credencial de GOOGLE_APPLICATION_CREDENTIALS')
-    } else if (existsSync(keyPath)) {
-      const serviceAccount = JSON.parse(readFileSync(keyPath, 'utf8'))
-      initializeApp({ credential: cert(serviceAccount) })
-      console.log('Usando serviceAccountKey.json')
-    } else {
-      console.error(
-        'ERRO: Credencial não encontrada.\n' +
-        'Opções:\n' +
-        '  1. Defina GOOGLE_APPLICATION_CREDENTIALS com o caminho para o JSON de credencial.\n' +
-        '  2. Coloque serviceAccountKey.json na raiz do projeto.\n' +
-        '  3. Para emulador local: FIRESTORE_EMULATOR_HOST=localhost:8080 node scripts/migrate-to-multitenant.js'
-      )
-      process.exit(1)
-    }
-  }
+if (!existsSync(oldKeyPath)) {
+  console.error('ERRO: serviceAccountKey-old.json não encontrado na raiz do projeto.')
+  console.error('Baixe a chave do projeto gestordesubstituicoes e coloque como serviceAccountKey-old.json')
+  process.exit(1)
 }
 
-const db = getFirestore()
+if (!existsSync(newKeyPath)) {
+  console.error('ERRO: serviceAccountKey.json não encontrado na raiz do projeto.')
+  process.exit(1)
+}
+
+const oldApp = initializeApp({ credential: cert(JSON.parse(readFileSync(oldKeyPath, 'utf8'))) }, 'source')
+const newApp = initializeApp({ credential: cert(JSON.parse(readFileSync(newKeyPath, 'utf8'))) }, 'destination')
+
+const srcDb = getFirestore(oldApp)   // leitura: gestordesubstituicoes
+const dstDb = getFirestore(newApp)   // escrita:  saasgestaoescolar
+
+console.log('Origem:  gestordesubstituicoes')
+console.log('Destino: saasgestaoescolar → schools/sch-default')
+
+// ─── Configuração ─────────────────────────────────────────────────────────────
 
 const SCHOOL_ID = 'sch-default'
 const COLLECTIONS = [
@@ -73,8 +59,6 @@ const COLLECTIONS = [
   'admin_actions',
 ]
 
-// ─── Resumo global ─────────────────────────────────────────────────────────────
-
 const summary = {
   collections: {},
   usersCreated: 0,
@@ -83,16 +67,16 @@ const summary = {
   writeErrors: 0,
 }
 
-// ─── Passo 1: criar /schools/sch-default ──────────────────────────────────────
+// ─── Passo 1: criar /schools/sch-default no destino ───────────────────────────
 
 async function migrateSchoolDoc() {
-  console.log('\n[1/5] Verificando schools/sch-default...')
-  const ref = db.collection('schools').doc(SCHOOL_ID)
+  console.log('\n[1/5] Verificando schools/sch-default no destino...')
+  const ref = dstDb.collection('schools').doc(SCHOOL_ID)
   const snap = await ref.get()
 
   if (snap.exists) {
     console.log('  schools/sch-default já existe, pulando.')
-    return false
+    return
   }
 
   await ref.set({
@@ -102,28 +86,23 @@ async function migrateSchoolDoc() {
     plan: 'free',
   })
   console.log('  schools/sch-default criado.')
-  return true
 }
 
-// ─── Passo 2: copiar meta/config → schools/sch-default/config/main ───────────
+// ─── Passo 2: copiar meta/config da origem → config/main no destino ───────────
 
 async function migrateConfig() {
   console.log('\n[2/5] Migrando meta/config...')
-  const destRef = db
-    .collection('schools')
-    .doc(SCHOOL_ID)
-    .collection('config')
-    .doc('main')
 
+  const destRef = dstDb.collection('schools').doc(SCHOOL_ID).collection('config').doc('main')
   const destSnap = await destRef.get()
   if (destSnap.exists) {
-    console.log('  config/main já existe, pulando.')
+    console.log('  config/main já existe no destino, pulando.')
     return
   }
 
-  const srcSnap = await db.collection('meta').doc('config').get()
+  const srcSnap = await srcDb.collection('meta').doc('config').get()
   if (!srcSnap.exists) {
-    console.warn('  WARN: meta/config não encontrado — config/main não migrado.')
+    console.warn('  WARN: meta/config não encontrado na origem — config/main não migrado.')
     return
   }
 
@@ -131,18 +110,16 @@ async function migrateConfig() {
   console.log('  meta/config copiado para schools/sch-default/config/main.')
 }
 
-// ─── Passo 3: copiar coleções globais ─────────────────────────────────────────
+// ─── Passo 3: copiar coleções globais da origem para o destino ────────────────
 
 async function migrateCollections() {
   console.log('\n[3/5] Migrando coleções globais...')
 
-  // Lemos todos os dados em memória antes de qualquer gravação, conforme
-  // orientação do plano técnico: evitar intercalar leituras e escritas.
   const collectionData = {}
 
   for (const col of COLLECTIONS) {
     try {
-      const snap = await db.collection(col).get()
+      const snap = await srcDb.collection(col).get()
       collectionData[col] = snap.docs.map((d) => ({ id: d.id, data: d.data() }))
       console.log(`  Lidos ${collectionData[col].length} docs de ${col}`)
     } catch (err) {
@@ -152,7 +129,6 @@ async function migrateCollections() {
     }
   }
 
-  // Gravações
   for (const col of COLLECTIONS) {
     const docs = collectionData[col]
     if (docs.length === 0) {
@@ -165,11 +141,7 @@ async function migrateCollections() {
     let skipped = 0
 
     for (const { id, data } of docs) {
-      const destRef = db
-        .collection('schools')
-        .doc(SCHOOL_ID)
-        .collection(col)
-        .doc(id)
+      const destRef = dstDb.collection('schools').doc(SCHOOL_ID).collection(col).doc(id)
 
       try {
         const destSnap = await destRef.get()
@@ -192,68 +164,50 @@ async function migrateCollections() {
   return collectionData
 }
 
-// ─── Helpers para resolução de uid ────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Constrói mapa de email → uid a partir dos docs de pending_teachers.
- * O Document ID de pending_teachers é o uid do Firebase Auth.
- */
 function buildEmailToUidMap(pendingTeachersDocs) {
   const map = {}
   for (const { id, data } of pendingTeachersDocs) {
-    if (data.email) {
-      map[data.email.toLowerCase()] = id
-    }
+    if (data.email) map[data.email.toLowerCase()] = id
   }
   return map
 }
 
-/**
- * Deriva role a partir de teacher.profile conforme tabela do plano técnico.
- */
 function deriveRole(profile) {
   if (profile === 'coordinator') return 'coordinator'
   if (profile === 'teacher-coordinator') return 'teacher-coordinator'
   return 'teacher'
 }
 
-// ─── Passo 4: popular /users/ ─────────────────────────────────────────────────
+// ─── Passo 4: popular /users/ no destino ──────────────────────────────────────
 
 async function migrateUsers(collectionData) {
-  console.log('\n[4/5] Populando /users/ com schools["sch-default"]...')
+  console.log('\n[4/5] Populando /users/ no destino...')
 
   const teacherDocs = collectionData['teachers'] ?? []
   const pendingTeacherDocs = collectionData['pending_teachers'] ?? []
   const emailToUid = buildEmailToUidMap(pendingTeacherDocs)
 
-  // 4a. Teachers aprovados
+  // Teachers aprovados
   console.log(`  Processando ${teacherDocs.length} teacher(s) aprovado(s)...`)
   for (const { id: docId, data: teacher } of teacherDocs) {
     if (teacher.status !== 'approved') continue
-
     if (!teacher.email) {
-      console.warn(`  WARN: teacher ${docId} sem campo email — uid não pode ser resolvido.`)
+      console.warn(`  WARN: teacher ${docId} sem campo email — pulado.`)
       continue
     }
 
     const uid = emailToUid[teacher.email.toLowerCase()]
     if (!uid) {
-      console.warn(
-        `  WARN: teacher ${teacher.email} sem uid resolvível — /users/ não populado.`
-      )
+      console.warn(`  WARN: teacher ${teacher.email} sem uid resolvível — pulado.`)
       continue
     }
 
     const role = deriveRole(teacher.profile)
-    const userRef = db.collection('users').doc(uid)
-
     try {
-      await userRef.set(
-        {
-          schools: {
-            [SCHOOL_ID]: { role, status: 'approved' },
-          },
-        },
+      await dstDb.collection('users').doc(uid).set(
+        { schools: { [SCHOOL_ID]: { role, status: 'approved' } } },
         { merge: true }
       )
       summary.usersUpdated++
@@ -263,19 +217,13 @@ async function migrateUsers(collectionData) {
     }
   }
 
-  // 4b. Pending teachers (status === 'pending')
+  // Pending teachers
   console.log(`  Processando ${pendingTeacherDocs.length} pending_teacher(s)...`)
   for (const { id: uid, data: pt } of pendingTeacherDocs) {
     if (pt.status !== 'pending') continue
-
-    const userRef = db.collection('users').doc(uid)
     try {
-      await userRef.set(
-        {
-          schools: {
-            [SCHOOL_ID]: { role: 'pending', status: 'pending' },
-          },
-        },
+      await dstDb.collection('users').doc(uid).set(
+        { schools: { [SCHOOL_ID]: { role: 'pending', status: 'pending' } } },
         { merge: true }
       )
       summary.usersUpdated++
@@ -285,10 +233,10 @@ async function migrateUsers(collectionData) {
     }
   }
 
-  // 4c. Admins — Document ID é email sanitizado, não uid Firebase Auth
+  // Admins da origem
   let adminDocs = []
   try {
-    const adminSnap = await db.collection('admins').get()
+    const adminSnap = await srcDb.collection('admins').get()
     adminDocs = adminSnap.docs.map((d) => ({ id: d.id, data: d.data() }))
   } catch (err) {
     console.error(`  ERRO ao ler admins/: ${err.message}`)
@@ -297,24 +245,30 @@ async function migrateUsers(collectionData) {
 
   console.log(`  Processando ${adminDocs.length} admin(s)...`)
   for (const { id: docId } of adminDocs) {
-    console.warn(
-      `  WARN: admins/${docId} — Document ID é email, não uid Firebase Auth. ` +
-        `Entrada /users/${docId} criada com email como chave. ` +
-        `Conciliar manualmente se necessário.`
-    )
-    const userRef = db.collection('users').doc(docId)
+    console.warn(`  WARN: admins/${docId} — Document ID é email. Conciliar uid manualmente se necessário.`)
     try {
-      await userRef.set(
-        {
-          schools: {
-            [SCHOOL_ID]: { role: 'admin', status: 'active' },
-          },
-        },
+      await dstDb.collection('users').doc(docId).set(
+        { schools: { [SCHOOL_ID]: { role: 'admin', status: 'active' } } },
         { merge: true }
       )
       summary.usersCreated++
     } catch (err) {
       console.error(`  ERRO ao atualizar /users/${docId}: ${err.message}`)
+      summary.writeErrors++
+    }
+  }
+
+  // Copiar admins para coleção global /admins/ no destino
+  for (const { id: docId, data } of adminDocs) {
+    try {
+      const destRef = dstDb.collection('admins').doc(docId)
+      const destSnap = await destRef.get()
+      if (!destSnap.exists) {
+        await destRef.set(data)
+        console.log(`  Admin ${docId} copiado para /admins/ no destino.`)
+      }
+    } catch (err) {
+      console.error(`  ERRO ao copiar admin ${docId}: ${err.message}`)
       summary.writeErrors++
     }
   }
@@ -333,16 +287,14 @@ function printSummary() {
   }
 
   console.log('─'.repeat(52))
-  console.log(`  /users/ criados :  ${summary.usersCreated}`)
+  console.log(`  /users/ criados:     ${summary.usersCreated}`)
   console.log(`  /users/ atualizados: ${summary.usersUpdated}`)
   console.log(`  Erros de leitura:    ${summary.readErrors}`)
   console.log(`  Erros de escrita:    ${summary.writeErrors}`)
   console.log('─'.repeat(52))
 
   if (summary.readErrors > 0 || summary.writeErrors > 0) {
-    console.error(
-      `\nMigração concluída com ${summary.readErrors + summary.writeErrors} erro(s). Verifique as mensagens acima.`
-    )
+    console.error(`\nMigração concluída com ${summary.readErrors + summary.writeErrors} erro(s).`)
     process.exit(1)
   } else {
     console.log('\nMigração concluída com sucesso.')
@@ -353,7 +305,6 @@ function printSummary() {
 
 async function main() {
   console.log('=== Migração single-tenant → multi-tenant ===')
-  console.log(`Destino: schools/${SCHOOL_ID}`)
 
   await migrateSchoolDoc()
   await migrateConfig()

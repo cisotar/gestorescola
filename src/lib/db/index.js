@@ -1,4 +1,5 @@
-import { db } from '../firebase'
+import { db, functions } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   collection, writeBatch, serverTimestamp, query, where, onSnapshot, orderBy, limit,
@@ -169,73 +170,21 @@ export async function patchTeacherSelf(schoolId, id, changes) {
   await updateDoc(getSchoolDocRef(schoolId, 'teachers', id), changes)
 }
 
-export async function approveTeacher(schoolId, pendingId, state, setState, profile = 'teacher') {
-  const VALID_PROFILES = ['teacher', 'coordinator', 'teacher-coordinator']
-  if (!VALID_PROFILES.includes(profile)) {
-    console.warn(`[db] Profile inválido: ${profile}, usando default 'teacher'`)
-    profile = 'teacher'
-  }
+// approveTeacher e rejectTeacher rodam em Cloud Function (privilégios de admin
+// SDK). O frontend apenas dispara — toda gravação no Firestore é server-side.
+// Mantêm a assinatura legada (state, setState) para compatibilidade com o
+// componente, mas o state local é apenas atualizado otimisticamente; os
+// listeners realtime do Firestore vão reconciliar.
 
-  const ref  = getSchoolDocRef(schoolId, 'pending_teachers', pendingId)
-  const snap = await getDoc(ref)
-  if (!snap.exists()) return
-  const data = snap.data()
-
-  let teacher = state.teachers.find(t => t.email?.toLowerCase() === data.email)
-  if (!teacher) {
-    teacher = {
-      id: uid(), name: data.name, email: data.email, whatsapp: '',
-      celular: data.celular ?? '', apelido: data.apelido ?? '',
-      subjectIds: data.subjectIds ?? [], status: 'approved', profile,
-      horariosSemana: data.horariosSemana ?? null,
-    }
-    setState(s => ({ teachers: [...s.teachers, teacher] }))
-  } else {
-    setState(s => ({
-      teachers: s.teachers.map(t => t.id === teacher.id ? { ...t, status: 'approved', profile } : t),
-    }))
-  }
-
-  await setDoc(getSchoolDocRef(schoolId, 'teachers', teacher.id), {
-    ...teacher, status: 'approved', profile,
-    horariosSemana: data.horariosSemana ?? teacher.horariosSemana ?? null,
-  })
-
-  // Migrar schedules do UID pendente para o novo teacher.id
-  const orphanSnap = await getDocs(
-    query(getSchoolCollectionRef(schoolId, 'schedules'), where('teacherId', '==', pendingId))
-  )
-  if (!orphanSnap.empty) {
-    const batch = writeBatch(db)
-    orphanSnap.docs.forEach(d => {
-      batch.update(getSchoolDocRef(schoolId, 'schedules', d.id), { teacherId: teacher.id })
-    })
-    await batch.commit()
-    setState(s => ({
-      schedules: s.schedules.map(sc =>
-        sc.teacherId === pendingId ? { ...sc, teacherId: teacher.id } : sc
-      ),
-    }))
-  }
-
-  await deleteDoc(ref)
+export async function approveTeacher(schoolId, pendingUid, state, setState, profile = 'teacher') {
+  const fn = httpsCallable(functions, 'approveTeacher')
+  await fn({ schoolId, pendingUid, profile })
+  // Listeners realtime atualizam teachers/schedules no store automaticamente.
 }
 
-export async function rejectTeacher(schoolId, pendingId, setState) {
-  const orphanSnap = await getDocs(
-    query(getSchoolCollectionRef(schoolId, 'schedules'), where('teacherId', '==', pendingId))
-  )
-  if (!orphanSnap.empty) {
-    const batch = writeBatch(db)
-    orphanSnap.docs.forEach(d => batch.delete(getSchoolDocRef(schoolId, 'schedules', d.id)))
-    await batch.commit()
-    if (setState) {
-      setState(s => ({
-        schedules: s.schedules.filter(sc => sc.teacherId !== pendingId),
-      }))
-    }
-  }
-  await deleteDoc(getSchoolDocRef(schoolId, 'pending_teachers', pendingId))
+export async function rejectTeacher(schoolId, pendingUid, _setState) {
+  const fn = httpsCallable(functions, 'rejectTeacher')
+  await fn({ schoolId, pendingUid })
 }
 
 // ─── Migrações ────────────────────────────────────────────────────────────────

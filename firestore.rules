@@ -88,14 +88,16 @@ service cloud.firestore {
     }
 
     // ── Solicitações de acesso pendentes ─────────────────────────────────────
-    // Admin da escola lê/escreve tudo.
-    // Coordenador da escola pode aprovar/rejeitar professores pendentes.
-    // O próprio usuário (docId == uid) pode ler e atualizar seu próprio doc
-    // (necessário para PendingPage preencher celular/apelido/subjectIds).
+    // Leitura: admin, coordenador ou o próprio dono do doc.
+    // Escrita: apenas o próprio dono do doc (docId == uid). Aprovação/rejeição
+    // é feita exclusivamente via Cloud Function (approveTeacher/rejectTeacher)
+    // que usa Admin SDK e bypassa rules — admin/coordenador NÃO escreve aqui
+    // diretamente para evitar privilege escalation no client.
     match /schools/{schoolId}/pending_teachers/{docId} {
-      allow read, write: if isSchoolAdmin(schoolId)
+      allow read:  if isSchoolAdmin(schoolId)
         || isCoordinator(schoolId)
         || (request.auth != null && request.auth.uid == docId);
+      allow write: if request.auth != null && request.auth.uid == docId;
     }
 
     // ── Slugs de escola (coleção raiz — leitura pública pré-autenticação) ──────
