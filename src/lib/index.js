@@ -2,6 +2,7 @@
 
 // Firebase
 export { app, db, auth, provider } from './firebase'
+export { getSchoolCollectionRef, getSchoolDocRef, getSchoolConfigRef, getSchoolRef } from './firebase/multi-tenant'
 
 // DB (carregamento e persistência)
 export { loadFromFirestore, saveToFirestore, saveDoc, deleteDocById, updateDocById, saveConfig } from './db'
