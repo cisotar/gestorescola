@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getDoc, doc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { getSchoolSlug, requestTeacherAccess } from '../lib/db'
-import { getSchoolDocRef } from '../lib/firebase/multi-tenant'
+import { getSchoolDocRef, getSchoolRef } from '../lib/firebase/multi-tenant'
 import useAuthStore from '../store/useAuthStore'
 import useSchoolStore from '../store/useSchoolStore'
 import Spinner from '../components/ui/Spinner'
@@ -62,6 +62,25 @@ export default function JoinPage() {
     }
     const { schoolId } = slugData
 
+    // 1b. Validar existência do doc raiz schools/{schoolId}
+    try {
+      const schoolSnap = await getDoc(getSchoolRef(schoolId))
+      if (!schoolSnap.exists()) {
+        setStatus('invalid')
+        return
+      }
+    } catch (e) {
+      console.error('[JoinPage] erro validando schools/{schoolId}:', e)
+      setErrorMsg('Não foi possível validar a escola. Verifique sua conexão e tente novamente.')
+      setStatus('error')
+      return
+    }
+
+    // 1c. Persistência precoce — grava schoolId no localStorage antes
+    // mesmo do redirect para /login. Chave equivalente a LS_KEY de useSchoolStore
+    // ('gestao_active_school'). Usamos literal para evitar acoplamento com o store.
+    try { localStorage.setItem('gestao_active_school', schoolId) } catch {}
+
     // 2. Sem usuário autenticado — salvar slug e redirecionar para login
     if (!currentUser) {
       try { sessionStorage.setItem('pendingJoinSlug', slug) } catch {}
@@ -102,8 +121,8 @@ export default function JoinPage() {
       const pendingSnap = await getDoc(pendingRef)
 
       if (pendingSnap.exists()) {
-        // Já está pendente — apenas ativar escola (App.jsx vai redirecionar para PendingPage)
         await useSchoolStore.getState().setCurrentSchool(schoolId)
+        navigate('/', { replace: true })
         return
       }
     } catch (e) {
@@ -114,6 +133,7 @@ export default function JoinPage() {
     try {
       await requestTeacherAccess(schoolId, currentUser)
       await useSchoolStore.getState().setCurrentSchool(schoolId)
+      navigate('/', { replace: true })
     } catch (e) {
       console.error('[JoinPage] requestTeacherAccess falhou:', e)
       setErrorMsg('Erro ao solicitar acesso. Tente novamente.')

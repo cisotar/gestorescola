@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { auth, provider, db } from '../lib/firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
-import { onSnapshot, collection, query, where, doc, getDoc } from 'firebase/firestore'
+import { onSnapshot, collection, query, where, doc, getDoc, setDoc, getDocs } from 'firebase/firestore'
 import { isAdmin, requestTeacherAccess } from '../lib/db'
 import useAppStore from './useAppStore'
 import useSchoolStore from './useSchoolStore'
@@ -19,9 +19,30 @@ const useAuthStore = create((set, get) => ({
   pendingCt:     0,
   _unsubPending: null,
   _unsubApproval:null,
+  _unsubSchoolSub: null,
 
   // ─── Init ──────────────────────────────────────────────────────────────────
   init: () => {
+    // Idempotência: cancelar subscribe anterior em caso de re-init (HMR/reload)
+    get()._unsubSchoolSub?.()
+
+    // Subscribe em mudanças de currentSchoolId — re-resolve role quando muda
+    // após o login (ex.: JoinPage chamando setCurrentSchool, ou troca de escola
+    // via SchoolSwitcher). Sem isso, _resolveRole rodaria apenas uma vez no
+    // onAuthStateChanged inicial e o listener de aprovação ficaria na escola
+    // errada (RN-3, RN-4).
+    const unsubSchool = useSchoolStore.subscribe(async (state, prevState) => {
+      if (state.currentSchoolId === prevState.currentSchoolId) return
+      const user = get().user
+      if (!user) return
+      try {
+        await get()._resolveRole(user)
+      } catch (e) {
+        console.warn('[auth] re-resolve role on schoolId change:', e)
+      }
+    })
+    set({ _unsubSchoolSub: unsubSchool })
+
     return new Promise(resolve => {
       onAuthStateChanged(auth, async user => {
         set({ user, role: null, teacher: null })
@@ -108,25 +129,25 @@ const useAuthStore = create((set, get) => ({
         if (!snap.exists()) {
           unsub()
           set({ _unsubApproval: null })
-          // Relê role de users/{uid} após aprovação
-          const sid = useSchoolStore.getState().currentSchoolId
-          if (!sid) return
+          // Usar schoolId capturado em closure para garantir consistência mesmo
+          // se o usuário trocou de escola entre o registro do listener e o callback.
           try {
-            const userSnap = await getDoc(doc(db, 'users', user.uid))
-            if (userSnap.exists()) {
-              const schoolEntry = userSnap.data().schools?.[sid]
-              const localRole = typeof schoolEntry === 'object' && schoolEntry !== null
-                ? schoolEntry?.role ?? null
-                : null
-              if (localRole && localRole !== 'pending') {
-                set({
-                  role: localRole === 'coordinator' ? 'coordinator'
-                    : localRole === 'teacher-coordinator' ? 'teacher-coordinator'
-                    : localRole === 'admin' ? 'admin'
-                    : 'teacher',
-                })
-              }
+            // Encontrar o doc do professor em teachers/ pelo email para obter o profile
+            const teachersSnap = await getDocs(
+              query(collection(db, 'schools', schoolId, 'teachers'), where('email', '==', user.email.toLowerCase()))
+            )
+            if (teachersSnap.empty) {
+              console.warn(`[approvalListener] teacher doc not found for ${user.email} in school ${schoolId}, falling back to 'teacher' (race condition entre delete pending e write teacher)`)
             }
+            const profile = teachersSnap.empty ? 'teacher' : (teachersSnap.docs[0].data().profile ?? 'teacher')
+            const normalizedRole = profile === 'coordinator' ? 'coordinator'
+              : profile === 'teacher-coordinator' ? 'teacher-coordinator'
+              : 'teacher'
+            // Professor escreve no próprio users/{uid} — sempre permitido pela rule
+            await setDoc(doc(db, 'users', user.uid), {
+              schools: { [schoolId]: { role: normalizedRole, status: 'approved' } },
+            }, { merge: true })
+            set({ role: normalizedRole })
           } catch (e) { console.warn('[approvalListener]', e) }
         }
       },
@@ -143,7 +164,8 @@ const useAuthStore = create((set, get) => ({
   logout: () => {
     get()._unsubPending?.()
     get()._unsubApproval?.()
-    set({ _unsubPending: null, _unsubApproval: null })
+    get()._unsubSchoolSub?.()
+    set({ _unsubPending: null, _unsubApproval: null, _unsubSchoolSub: null })
     useAppStore.getState().cleanupLazyListeners()
     return signOut(auth)
   },

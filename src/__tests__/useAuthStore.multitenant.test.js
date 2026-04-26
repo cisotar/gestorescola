@@ -51,9 +51,15 @@ vi.mock('../lib/firebase/multi-tenant', () => ({
 
 // useSchoolStore — controla currentSchoolId via mockSchoolId
 let mockSchoolId = 'sch-test'
+// Listeners registrados via subscribe — testes podem dispará-los manualmente
+const schoolSubscribers = new Set()
 vi.mock('../store/useSchoolStore', () => ({
   default: {
     getState: vi.fn(() => ({ currentSchoolId: mockSchoolId, init: vi.fn() })),
+    subscribe: vi.fn((listener) => {
+      schoolSubscribers.add(listener)
+      return () => schoolSubscribers.delete(listener)
+    }),
   },
 }))
 
@@ -97,8 +103,9 @@ function resetStore() {
   useAuthStore.setState({
     user: null, role: null, teacher: null,
     loading: true, pendingCt: 0,
-    _unsubPending: null, _unsubApproval: null,
+    _unsubPending: null, _unsubApproval: null, _unsubSchoolSub: null,
   })
+  schoolSubscribers.clear()
 }
 
 // ─── Testes ───────────────────────────────────────────────────────────────────
@@ -186,6 +193,93 @@ describe('useAuthStore._resolveRole — estrutura users/{uid}.schools', () => {
     expect(useAuthStore.getState().role).toBe('admin')
     // requestTeacherAccess NÃO deve ser chamado para super-admin
     expect(setDoc).not.toHaveBeenCalled()
+  })
+})
+
+describe('useAuthStore — subscribe a useSchoolStore.currentSchoolId', () => {
+  const mockUser = { uid: 'uid-abc', email: 'user@test.com', displayName: 'Test User', photoURL: '' }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockSchoolId = SCHOOL_ID
+    useSchoolStore.getState.mockReturnValue({ currentSchoolId: mockSchoolId, init: vi.fn() })
+    onSnapshot.mockReturnValue(vi.fn())
+    resetStore()
+  })
+
+  it('init() registra subscribe em useSchoolStore e grava _unsubSchoolSub', async () => {
+    // onAuthStateChanged dispara imediatamente sem user para finalizar a Promise
+    const { onAuthStateChanged } = await import('firebase/auth')
+    onAuthStateChanged.mockImplementation((auth, cb) => { cb(null) })
+
+    await useAuthStore.getState().init()
+
+    expect(useSchoolStore.subscribe).toHaveBeenCalledTimes(1)
+    expect(typeof useAuthStore.getState()._unsubSchoolSub).toBe('function')
+    expect(schoolSubscribers.size).toBe(1)
+  })
+
+  it('mudança de currentSchoolId com user autenticado dispara _resolveRole', async () => {
+    const { onAuthStateChanged } = await import('firebase/auth')
+    onAuthStateChanged.mockImplementation((auth, cb) => { cb(null) })
+    getDoc.mockImplementation(buildGetDocMock({
+      'users/uid-abc': { schools: { 'sch-novo': { role: 'teacher' } } },
+    }))
+
+    await useAuthStore.getState().init()
+    // Simular login posterior
+    useAuthStore.setState({ user: mockUser })
+
+    // Trocar schoolId e disparar listeners
+    mockSchoolId = 'sch-novo'
+    useSchoolStore.getState.mockReturnValue({ currentSchoolId: 'sch-novo', init: vi.fn() })
+    const listener = [...schoolSubscribers][0]
+    await listener({ currentSchoolId: 'sch-novo' }, { currentSchoolId: null })
+
+    expect(useAuthStore.getState().role).toBe('teacher')
+  })
+
+  it('mudança para mesmo schoolId não dispara _resolveRole (no-op)', async () => {
+    const { onAuthStateChanged } = await import('firebase/auth')
+    onAuthStateChanged.mockImplementation((auth, cb) => { cb(null) })
+    getDoc.mockClear()
+
+    await useAuthStore.getState().init()
+    useAuthStore.setState({ user: mockUser })
+
+    const listener = [...schoolSubscribers][0]
+    await listener({ currentSchoolId: SCHOOL_ID }, { currentSchoolId: SCHOOL_ID })
+
+    // Nenhum getDoc deveria ter sido chamado pois o listener saiu cedo
+    expect(getDoc).not.toHaveBeenCalled()
+  })
+
+  it('mudança de currentSchoolId sem user autenticado não dispara _resolveRole', async () => {
+    const { onAuthStateChanged } = await import('firebase/auth')
+    onAuthStateChanged.mockImplementation((auth, cb) => { cb(null) })
+    getDoc.mockClear()
+
+    await useAuthStore.getState().init()
+    // user permanece null
+
+    const listener = [...schoolSubscribers][0]
+    await listener({ currentSchoolId: 'sch-novo' }, { currentSchoolId: null })
+
+    expect(getDoc).not.toHaveBeenCalled()
+  })
+
+  it('logout cancela _unsubSchoolSub e remove listener', async () => {
+    const { onAuthStateChanged, signOut } = await import('firebase/auth')
+    onAuthStateChanged.mockImplementation((auth, cb) => { cb(null) })
+    signOut.mockResolvedValue(undefined)
+
+    await useAuthStore.getState().init()
+    expect(schoolSubscribers.size).toBe(1)
+
+    await useAuthStore.getState().logout()
+
+    expect(useAuthStore.getState()._unsubSchoolSub).toBeNull()
+    expect(schoolSubscribers.size).toBe(0)
   })
 })
 

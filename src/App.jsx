@@ -68,8 +68,12 @@ export default function App() {
 
       const schoolId = useSchoolStore.getState().currentSchoolId
 
-      // Guard: sem schoolId não é possível carregar dados da escola
-      if (!schoolId) return
+      // Sem escola: marcar como loaded e inicializar auth para sair do spinner.
+      // Cobre o caso do professor novo que ainda não foi aprovado em nenhuma escola.
+      if (!schoolId) {
+        hydrate({})
+        return
+      }
 
       // Cancela listeners anteriores antes de registrar novos (ex: troca de escola)
       teardownListeners()
@@ -107,6 +111,13 @@ export default function App() {
     )
   }
 
+  // Gate reativo por role (RN-7 / RN-8):
+  // `role` vem de useAuthStore() (subscribe Zustand). Quando o listener de
+  // aprovação em _resolveRole faz `set({ role: 'teacher'|'coordinator'|... })`,
+  // este componente re-renderiza, sai dos retornos antecipados de pending/login
+  // e cai no bloco de <Routes> abaixo. O <Route index> com Navigate to="/home"
+  // garante que a transição pós-aprovação (ou reload pós-aprovação) leve à
+  // HomePage sem necessidade de reload manual nem de useNavigate explícito.
   // Não logado → tela de login (exceto /join/ que gerencia auth internamente)
   if (!role && !pathname.startsWith('/join/')) return (
     <>

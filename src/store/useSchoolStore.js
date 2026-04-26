@@ -97,6 +97,24 @@ const useSchoolStore = create((set, get) => ({
 
     const { availableSchools } = get()
 
+    // Caso pendente: tem savedId mas availableSchools vazio (users/{uid} inexistente
+    // ou ainda sem escolas vinculadas). Valida schools/{savedId} e mantém o contexto
+    // sem exigir membership — preserva RN-2 em reload de PendingPage.
+    if (savedId && availableSchools.length === 0) {
+      try {
+        const snap = await getDoc(getSchoolRef(savedId))
+        if (snap.exists()) {
+          await get().setCurrentSchool(savedId)
+          return
+        }
+        try { localStorage.removeItem(LS_KEY) } catch {}
+        return
+      } catch (e) {
+        console.warn('[useSchoolStore] init: validacao schools/{id} falhou', e)
+        return
+      }
+    }
+
     // Se não tem escola salva mas só tem uma disponível, seleciona automaticamente
     if (!savedId) {
       if (availableSchools.length === 1) {

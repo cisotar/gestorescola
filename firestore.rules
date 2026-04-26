@@ -17,16 +17,21 @@ service cloud.firestore {
     }
 
     // ── Documento raiz da escola ─────────────────────────────────────────────
+    // Leitura liberada para qualquer autenticado: contém apenas nome/metadados,
+    // sem dados sensíveis. Necessário para o fluxo de convite (/join/:slug)
+    // onde o professor ainda não é membro mas precisa ler o nome da escola.
     match /schools/{schoolId} {
-      allow read:   if isSaasAdmin() || isMemberOf(schoolId);
+      allow read:   if isAuthenticated();
       allow create: if isSaasAdmin();
       allow update: if isSchoolAdmin(schoolId);
       allow delete: if isSaasAdmin();
     }
 
     // ── Configuração da escola ───────────────────────────────────────────────
+    // Leitura liberada também para pending: professor precisa ver matérias/segmentos
+    // para preencher o formulário de cadastro na PendingPage.
     match /schools/{schoolId}/config/{doc} {
-      allow read:  if isMemberOf(schoolId) || isSaasAdmin();
+      allow read:  if isMemberOf(schoolId) || isSaasAdmin() || isPendingIn(schoolId);
       allow write: if isSchoolAdmin(schoolId);
     }
 
@@ -149,6 +154,14 @@ service cloud.firestore {
     function isSchoolMember(schoolId) {
       return isMemberOf(schoolId);
     }
+
+    // Verifica se o usuário tem solicitação pendente na escola.
+    // Usado para liberar leitura de config (matérias/segmentos) na PendingPage.
+    function isPendingIn(schoolId) {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/schools/$(schoolId)/pending_teachers/$(request.auth.uid));
+    }
+
 
     // Verifica se o usuário é admin da escola ou super-admin SaaS.
     function isSchoolAdmin(schoolId) {
