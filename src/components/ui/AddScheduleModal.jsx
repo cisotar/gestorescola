@@ -29,7 +29,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
       return (area?.segmentIds ?? []).includes(segId)
     })
 
-  const [subjId,       setSubjId]       = useState(mySubjs[0]?.id ?? '')
+  const [subjId,       setSubjId]       = useState('')
   const [grade,        setGrade]        = useState('')
   const [turma,        setTurma]        = useState('')
   const [sharedSubject, setSharedSubject] = useState('')
@@ -110,7 +110,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
                     key={g.name}
                     type="button"
                     className={grade === g.name ? pillOn : pillOff}
-                    onClick={() => { setGrade(g.name); setTurma(''); setSharedSubject('') }}
+                    onClick={() => { setGrade(g.name); setTurma(''); setSubjId(''); setSharedSubject('') }}
                   >
                     {g.name}
                   </button>
@@ -136,7 +136,7 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
                         type="button"
                         className={locked ? pillLock : turma === t ? pillOn : pillOff}
                         disabled={locked}
-                        onClick={() => !locked && (setTurma(t), setSharedSubject(''))}
+                        onClick={() => !locked && (setTurma(t), setSubjId(''), setSharedSubject(''))}
                       >
                         {locked ? `${t} · ${occupant}` : t}
                       </button>
@@ -185,31 +185,33 @@ export default function AddScheduleModal({ open, onClose, teacher, segId, turno,
         )}
 
         {/* Matéria */}
-        <div>
-          <label className="lbl">Matéria</label>
-          {mySubjs.length === 0
-            ? <p className="text-xs text-t3 mt-1">Nenhuma matéria vinculada a este segmento.</p>
-            : <div className="flex flex-wrap gap-2 mt-1">
-                <button
-                  type="button"
-                  className={subjId === '' ? pillOn : pillOff}
-                  onClick={() => { setSharedSubject(''); setSubjId('') }}
-                >
-                  — sem matéria —
-                </button>
-                {mySubjs.map(s => (
+        {turma && (
+          <div>
+            <label className="lbl">Matéria</label>
+            {mySubjs.length === 0
+              ? <p className="text-xs text-t3 mt-1">Nenhuma matéria vinculada a este segmento.</p>
+              : <div className="flex flex-wrap gap-2 mt-1">
                   <button
-                    key={s.id}
                     type="button"
-                    className={subjId === s.id ? pillOn : pillOff}
-                    onClick={() => { setSharedSubject(''); setSubjId(s.id) }}
+                    className={subjId === '' ? pillOn : pillOff}
+                    onClick={() => { setSharedSubject(''); setSubjId('') }}
                   >
-                    {s.name}
+                    — sem matéria —
                   </button>
-                ))}
-              </div>
-          }
-        </div>
+                  {mySubjs.map(s => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      className={subjId === s.id ? pillOn : pillOff}
+                      onClick={() => { setSharedSubject(''); setSubjId(s.id) }}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+            }
+          </div>
+        )}
 
         <div className="flex gap-2 pt-1">
           <button

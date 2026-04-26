@@ -222,8 +222,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                         onDragEnd={!readOnly ? () => { setDragSource(null); setDragTarget(null) } : undefined}
                                       >
                                         <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                        <div className="text-[#4a4740] text-[10px] truncate">{subjLabel}</div>
-                                        {s.sharedSubject && <span className="text-[9px] text-t3 truncate italic">{s.sharedSubject}</span>}
+                                        <div className="text-[#4a4740] text-[10px] truncate">{s.sharedSubject || subjLabel}</div>
                                         {!readOnly && (
                                           <button
                                             className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 bg-err text-white rounded p-1 transition-opacity duration-150"
@@ -339,8 +338,7 @@ export function ScheduleGrid({ teacher, store, readOnly = false, substitutionMap
                                       onDragEnd={!readOnly ? () => { setDragSource(null); setDragTarget(null) } : undefined}
                                     >
                                       <div className="font-semibold text-[#1a1814] text-[11px] uppercase tracking-wide truncate">{s.turma}</div>
-                                      <div className="text-[#4a4740] text-[10px] truncate">{subjLabel}</div>
-                                      {s.sharedSubject && <span className="text-[9px] text-t3 truncate italic">{s.sharedSubject}</span>}
+                                      <div className="text-[#4a4740] text-[10px] truncate">{s.sharedSubject || subjLabel}</div>
                                       {!readOnly && (
                                         <button
                                           className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 bg-err text-white rounded p-1 transition-opacity duration-150"
