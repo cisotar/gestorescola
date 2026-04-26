@@ -41,10 +41,43 @@ function calcStatus(slots: unknown[]): string {
   return "covered";
 }
 
+/**
+ * Resolve o caminho base para absences.
+ * Se schoolId for fornecido, usa schools/{schoolId}/absences.
+ * Caso contrário, mantém compatibilidade com a coleção global /absences/ (legado).
+ */
+function absencesPath(schoolId?: string): string {
+  return schoolId ? `schools/${schoolId}/absences` : "absences";
+}
+
+/**
+ * Resolve o caminho base para teachers.
+ * Se schoolId for fornecido, usa schools/{schoolId}/teachers.
+ * Caso contrário, mantém compatibilidade com a coleção global /teachers/ (legado).
+ */
+function teachersPath(schoolId?: string): string {
+  return schoolId ? `schools/${schoolId}/teachers` : "teachers";
+}
+
+/**
+ * Resolve o caminho base para pending_actions.
+ */
+function pendingActionsPath(schoolId?: string): string {
+  return schoolId ? `schools/${schoolId}/pending_actions` : "pending_actions";
+}
+
+/**
+ * Resolve o caminho base para admin_actions.
+ */
+function adminActionsPath(schoolId?: string): string {
+  return schoolId ? `schools/${schoolId}/admin_actions` : "admin_actions";
+}
+
 // ── createAbsence ─────────────────────────────────────────────────────────────
 
 export const createAbsence = functions.https.onCall(async (data, context) => {
-  await verifyCoordinatorOrAdmin(context);
+  const schoolId = data?.schoolId ? String(data.schoolId) : undefined;
+  await verifyCoordinatorOrAdmin(context, schoolId);
 
   const teacherId = String(data?.teacherId ?? "");
   if (!teacherId) {
@@ -60,14 +93,14 @@ export const createAbsence = functions.https.onCall(async (data, context) => {
   // Verify teacher exists
   const teacherDoc = await admin
     .firestore()
-    .collection("teachers")
+    .collection(teachersPath(schoolId))
     .doc(teacherId)
     .get();
   if (!teacherDoc.exists) {
-    // Try by email in case teacherId is actually an email
+    // Try by id field in case teacherId is a reference by internal id
     const teacherSnap = await admin
       .firestore()
-      .collection("teachers")
+      .collection(teachersPath(schoolId))
       .where("id", "==", teacherId)
       .limit(1)
       .get();
@@ -100,7 +133,11 @@ export const createAbsence = functions.https.onCall(async (data, context) => {
     }),
   };
 
-  await admin.firestore().collection("absences").doc(absenceId).set(absence);
+  await admin
+    .firestore()
+    .collection(absencesPath(schoolId))
+    .doc(absenceId)
+    .set(absence);
 
   return { id: absenceId };
 });
@@ -108,7 +145,8 @@ export const createAbsence = functions.https.onCall(async (data, context) => {
 // ── updateAbsence ─────────────────────────────────────────────────────────────
 
 export const updateAbsence = functions.https.onCall(async (data, context) => {
-  await verifyCoordinatorOrAdmin(context);
+  const schoolId = data?.schoolId ? String(data.schoolId) : undefined;
+  await verifyCoordinatorOrAdmin(context, schoolId);
 
   const absenceId = String(data?.absenceId ?? "");
   if (!absenceId) {
@@ -124,7 +162,7 @@ export const updateAbsence = functions.https.onCall(async (data, context) => {
   // Verify absence exists
   const absenceDoc = await admin
     .firestore()
-    .collection("absences")
+    .collection(absencesPath(schoolId))
     .doc(absenceId)
     .get();
   if (!absenceDoc.exists) {
@@ -134,11 +172,15 @@ export const updateAbsence = functions.https.onCall(async (data, context) => {
   const substituteId = data?.substituteId !== undefined ? data.substituteId : null;
   const status = calcStatus(slots);
 
-  await admin.firestore().collection("absences").doc(absenceId).update({
-    slots,
-    substituteId,
-    status,
-  });
+  await admin
+    .firestore()
+    .collection(absencesPath(schoolId))
+    .doc(absenceId)
+    .update({
+      slots,
+      substituteId,
+      status,
+    });
 
   return { ok: true };
 });
@@ -146,7 +188,8 @@ export const updateAbsence = functions.https.onCall(async (data, context) => {
 // ── deleteAbsence ─────────────────────────────────────────────────────────────
 
 export const deleteAbsence = functions.https.onCall(async (data, context) => {
-  await verifyCoordinatorOrAdmin(context);
+  const schoolId = data?.schoolId ? String(data.schoolId) : undefined;
+  await verifyCoordinatorOrAdmin(context, schoolId);
 
   const absenceId = String(data?.absenceId ?? "");
   if (!absenceId) {
@@ -156,7 +199,11 @@ export const deleteAbsence = functions.https.onCall(async (data, context) => {
     );
   }
 
-  await admin.firestore().collection("absences").doc(absenceId).delete();
+  await admin
+    .firestore()
+    .collection(absencesPath(schoolId))
+    .doc(absenceId)
+    .delete();
 
   return { ok: true };
 });
@@ -165,7 +212,8 @@ export const deleteAbsence = functions.https.onCall(async (data, context) => {
 
 export const applyPendingAction = functions.https.onCall(
   async (data, context) => {
-    await verifyAdmin(context);
+    const schoolId = data?.schoolId ? String(data.schoolId) : undefined;
+    await verifyAdmin(context, schoolId);
 
     const pendingActionId = String(data?.pendingActionId ?? "");
     if (!pendingActionId) {
@@ -184,7 +232,7 @@ export const applyPendingAction = functions.https.onCall(
 
     // Read the pending action
     const pendingDoc = await db
-      .collection("pending_actions")
+      .collection(pendingActionsPath(schoolId))
       .doc(pendingActionId)
       .get();
 
@@ -227,25 +275,31 @@ export const applyPendingAction = functions.https.onCall(
 
     // Write audit log to admin_actions
     const adminActionId = uid();
-    await db.collection("admin_actions").doc(adminActionId).set({
-      id: adminActionId,
-      actionType,
-      actorId: actorUid,
-      actorEmail,
-      pendingActionId,
-      payload,
-      approved,
-      rejectionReason,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    await db
+      .collection(adminActionsPath(schoolId))
+      .doc(adminActionId)
+      .set({
+        id: adminActionId,
+        actionType,
+        actorId: actorUid,
+        actorEmail,
+        pendingActionId,
+        payload,
+        approved,
+        rejectionReason,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
     // Update pending_actions with review result
-    await db.collection("pending_actions").doc(pendingActionId).update({
-      status: approved ? "approved" : "rejected",
-      reviewedBy: actorEmail,
-      reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
-      rejectionReason,
-    });
+    await db
+      .collection(pendingActionsPath(schoolId))
+      .doc(pendingActionId)
+      .update({
+        status: approved ? "approved" : "rejected",
+        reviewedBy: actorEmail,
+        reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+        rejectionReason,
+      });
 
     return { ok: true };
   }

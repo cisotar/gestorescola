@@ -2,106 +2,160 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Leitura pública ─────────────────────────────────────────────────────
-    match /meta/{doc}     { allow read: if isAuthenticated(); allow write: if isAdmin(); }
-    // ── Ausências: leitura pública; create/update bloqueados para slots de formação ──
-    // CONTRATO OBRIGATÓRIO: qualquer sharedSeries de type === 'formation' criada
-    // futuramente DEVE usar subjectId prefixado com "formation-" (ex: "formation-atpcg").
-    // Essa convenção é a única garantia de que slots de formação nunca sejam gravados
-    // como ausências substituíveis, independentemente do cliente ou do role do usuário.
-    match /absences/{doc} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated()
-        && !hasFormationSlot(request.resource.data.slots)
-        && (isAdmin()
-            || request.resource.data.teacherId == request.auth.uid
-            || ownsProfile(request.resource.data.teacherId));
-      allow update: if isAuthenticated()
-        && !hasFormationSlot(request.resource.data.slots)
-        && (isAdmin()
-            || resource.data.teacherId == request.auth.uid
-            || ownsProfile(resource.data.teacherId));
-      allow delete: if isAdmin()
-        || ownsProfile(resource.data.teacherId);
+    // ── Super-admins do SaaS ─────────────────────────────────────────────────
+    // Document ID = email em lowercase (ex: "admin@gestorescolar.com.br")
+    match /admins/{emailDoc} {
+      allow read: if isSaasAdmin()
+        || (request.auth != null && emailDoc == request.auth.token.email.lower());
+      allow write: if isSaasAdmin();
     }
-    match /history/{doc}  { allow read: if isAuthenticated(); allow write: if isAdmin(); }
 
-    // ── Professores: leitura pública; admin escreve; professor edita próprio perfil ──
-    match /teachers/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    // ── Perfil global do usuário (mapa de escola → role/status) ─────────────
+    match /users/{uid} {
+      allow read:  if request.auth != null && request.auth.uid == uid || isSaasAdmin();
+      allow write: if request.auth != null && request.auth.uid == uid || isSaasAdmin();
+    }
+
+    // ── Documento raiz da escola ─────────────────────────────────────────────
+    match /schools/{schoolId} {
+      allow read:   if isSaasAdmin() || isMemberOf(schoolId);
+      allow create: if isSaasAdmin();
+      allow update: if isSchoolAdmin(schoolId);
+      allow delete: if isSaasAdmin();
+    }
+
+    // ── Configuração da escola ───────────────────────────────────────────────
+    match /schools/{schoolId}/config/{doc} {
+      allow read:  if isMemberOf(schoolId) || isSaasAdmin();
+      allow write: if isSchoolAdmin(schoolId);
+    }
+
+    // ── Professores ──────────────────────────────────────────────────────────
+    match /schools/{schoolId}/teachers/{docId} {
+      allow read:  if isMemberOf(schoolId) || isSaasAdmin();
+      allow write: if isSchoolAdmin(schoolId);
+      // Professor edita apenas campos de perfil do próprio documento
       allow update: if request.auth != null
         && resource.data.email.lower() == request.auth.token.email.lower()
         && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['celular', 'whatsapp', 'apelido', 'name', 'subjectIds', 'horariosSemana']);
     }
 
-    // ── Horários: leitura pública; admin escreve; professor gerencia próprios slots ──
-    // ownsProfile cobre professores aprovados (teacherId = teacher.id no Firestore)
-    // request.auth.uid cobre professores pendentes (teacherId = user.uid no PendingPage)
-    match /schedules/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-      allow create: if request.auth != null
+    // ── Grade horária ────────────────────────────────────────────────────────
+    // Admin/school-admin: escrita total.
+    // Teacher: cria slot para si mesmo; atualiza/deleta slots próprios.
+    // ownsProfileIn cobre professores cujo teacherId != auth.uid (ID interno != UID do Auth).
+    match /schools/{schoolId}/schedules/{docId} {
+      allow read:  if isMemberOf(schoolId) || isSaasAdmin();
+      allow write: if isSchoolAdmin(schoolId);
+      allow create: if isMemberOf(schoolId)
         && (request.resource.data.teacherId == request.auth.uid
-            || ownsProfile(request.resource.data.teacherId));
-      allow update: if request.auth != null
+            || ownsProfileIn(schoolId, request.resource.data.teacherId));
+      allow update: if isMemberOf(schoolId)
         && (resource.data.teacherId == request.auth.uid
-            || ownsProfile(resource.data.teacherId));
-      allow delete: if request.auth != null
+            || ownsProfileIn(schoolId, resource.data.teacherId));
+      allow delete: if isMemberOf(schoolId)
         && (resource.data.teacherId == request.auth.uid
-            || ownsProfile(resource.data.teacherId));
+            || ownsProfileIn(schoolId, resource.data.teacherId));
     }
 
-    // ── Pendentes: admin lê/escreve; professor acessa apenas o próprio doc (por UID) ──
-    match /pending_teachers/{docId} {
-      allow read, write: if isAdmin()
+    // ── Ausências ────────────────────────────────────────────────────────────
+    // Leitura: qualquer membro da escola.
+    // Escrita: bloqueada para o cliente — exclusivamente via Cloud Function
+    // (createAbsence, updateAbsence, deleteAbsence) que usa Admin SDK e
+    // valida role coordinator/admin via verifyCoordinatorOrAdmin().
+    // O guard hasFormationSlot permanece como defesa em profundidade:
+    // se a Cloud Function for bypassada, a rule bloqueia.
+    match /schools/{schoolId}/absences/{docId} {
+      allow read:   if isMemberOf(schoolId) || isSaasAdmin();
+      allow create: if isSchoolAdmin(schoolId)
+        && !hasFormationSlot(request.resource.data.slots);
+      allow update: if isSchoolAdmin(schoolId)
+        && !hasFormationSlot(request.resource.data.slots);
+      allow delete: if isSchoolAdmin(schoolId);
+    }
+
+    // ── Histórico de substituições ───────────────────────────────────────────
+    // Registros imutáveis criados apenas por admin/school-admin.
+    match /schools/{schoolId}/history/{docId} {
+      allow read:  if isMemberOf(schoolId) || isSaasAdmin();
+      allow write: if isSchoolAdmin(schoolId);
+    }
+
+    // ── Solicitações de acesso pendentes ─────────────────────────────────────
+    // Admin da escola lê/escreve tudo.
+    // O próprio usuário (docId == uid) pode ler e atualizar seu próprio doc
+    // (necessário para PendingPage preencher celular/apelido/subjectIds).
+    match /schools/{schoolId}/pending_teachers/{docId} {
+      allow read, write: if isSchoolAdmin(schoolId)
         || (request.auth != null && request.auth.uid == docId);
     }
 
-    // ── Ações pendentes: usuários autenticados criam, admins aprovam/rejeitam ──
-    // Nota: isCoordinator() não funciona com IDs UUID dos teachers — a validação
-    // de perfil é feita no lado JS (store guards). Qualquer usuário autenticado
-    // pode criar; apenas admins podem ler/atualizar/deletar.
-    match /pending_actions/{id} {
-      allow read: if isAdmin();
-      allow create: if isAuthenticated();
-      allow update: if isAdmin();
-      allow delete: if isAdmin();
+    // ── Ações pendentes de coordenadores ─────────────────────────────────────
+    match /schools/{schoolId}/pending_actions/{id} {
+      allow read:           if isSchoolAdmin(schoolId) || isSaasAdmin();
+      allow create:         if isMemberOf(schoolId);
+      allow update, delete: if isSchoolAdmin(schoolId) || isSaasAdmin();
     }
 
-    // ── Auditoria: somente admins lêem/criam; log imutável (update/delete negados) ──
-    match /admin_actions/{id} {
-      allow read: if isAdmin();
-      allow create: if isAdmin();
+    // ── Log de auditoria (imutável) ───────────────────────────────────────────
+    match /schools/{schoolId}/admin_actions/{id} {
+      allow read:           if isSchoolAdmin(schoolId) || isSaasAdmin();
+      allow create:         if isSchoolAdmin(schoolId) || isSaasAdmin();
       allow update, delete: if false;
     }
 
-    // ── Somente admins ───────────────────────────────────────────────────────
-    // O ID do documento é o email em lowercase (ex: "contato.tarciso@gmail.com")
-    match /admins/{doc} {
-      allow read: if isAdmin()
-        || (request.auth != null && doc == request.auth.token.email.lower());
-      allow write: if isAdmin();
-    }
+    // ══════════════════════════════════════════════════════════════════════════
+    // Funções auxiliares
+    // ══════════════════════════════════════════════════════════════════════════
 
-    // ── Funções auxiliares ───────────────────────────────────────────────────
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function ownsProfile(teacherId) {
-      let teacherDoc = get(/databases/$(database)/documents/teachers/$(teacherId));
-      return teacherDoc != null && teacherDoc.data.email.lower() == request.auth.token.email.lower();
+    // Verifica se o uid autenticado possui documento em /admins/ (super-admin SaaS).
+    function isSaasAdmin() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()));
     }
 
-    function isAdmin() {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()));
+    // Verifica se o usuário é membro aprovado da escola.
+    // Lê users/{uid}.schools[schoolId].status == 'approved'.
+    // Retorna false se o documento users/{uid} não existir ou se schools não tiver a chave.
+    function isMemberOf(schoolId) {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isAuthenticated()
+        && exists(userPath)
+        && get(userPath).data.schools[schoolId] != null
+        && get(userPath).data.schools[schoolId].status == 'approved';
     }
 
-    // Retorna true se qualquer slot nas posições 0..4 possui subjectId prefixado com "formation-".
-    // Usado para bloquear create/update de absences com slots de formação.
+    // Alias legível — semanticamente equivalente a isMemberOf.
+    function isSchoolMember(schoolId) {
+      return isMemberOf(schoolId);
+    }
+
+    // Verifica se o usuário é admin da escola ou super-admin SaaS.
+    function isSchoolAdmin(schoolId) {
+      return isSaasAdmin()
+        || (isMemberOf(schoolId)
+            && get(/databases/$(database)/documents/users/$(request.auth.uid))
+                .data.schools[schoolId].role == 'admin');
+    }
+
+    // Verifica se o usuário autenticado é dono do perfil de teacher em uma escola específica.
+    // Usado em schedules para cobrir o caso em que teacherId != auth.uid
+    // (Document ID do teacher é uid() interno, diferente do Firebase Auth UID).
+    function ownsProfileIn(schoolId, teacherId) {
+      let teacherPath = /databases/$(database)/documents/schools/$(schoolId)/teachers/$(teacherId);
+      return isAuthenticated()
+        && exists(teacherPath)
+        && get(teacherPath).data.email.lower() == request.auth.token.email.lower();
+    }
+
+    // Retorna true se qualquer slot nas posições 0..4 tem subjectId prefixado com "formation-".
+    // Firestore rules não têm .some() nativo — verificação explícita posição a posição.
+    // CONTRATO: todo sharedSeries de type === 'formation' deve usar subjectId "formation-*".
     function hasFormationSlot(slots) {
       return slots.size() > 0 && (
         slots[0].subjectId.matches('formation-.*') ||
