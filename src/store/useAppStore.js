@@ -583,6 +583,17 @@ const useAppStore = create((set, get) => {
     set(s => ({ absences: _createAbsence(teacherId, regularSlots, s.absences) }))
     const newAbsence = get().absences[get().absences.length - 1]
     httpsCallable(functions, 'createAbsence')({ schoolId: _schoolId(), teacherId, slots: regularSlots })
+      .then(result => {
+        // Substituir ID otimista local pelo ID real retornado pelo servidor
+        const serverId = result?.data?.id
+        if (serverId && serverId !== newAbsence.id) {
+          set(s => ({
+            absences: s.absences.map(ab =>
+              ab.id === newAbsence.id ? { ...ab, id: serverId } : ab
+            )
+          }))
+        }
+      })
       .catch(err => {
         set(s => ({ absences: _deleteAbsence(newAbsence.id, s.absences) }))
         toast(err.message || 'Erro ao criar falta', 'err')
