@@ -17,9 +17,8 @@ import {
   listPendingTeachers,
   approveTeacher,
   rejectTeacher,
-  addAdmin,
-  listAdmins,
-  removeAdmin,
+  designateLocalAdmin,
+  syncTeacherRoleInUserDoc,
   getSchoolSlug,
   saveSchoolSlug,
 } from '../../../lib/db'
@@ -333,22 +332,17 @@ export default function TabTeachers() {
   const [showPendingPanel,   setShowPendingPanel]   = useState(false)
   const [showNoSegmentPanel, setShowNoSegmentPanel] = useState(false)
   const [pendingProfiles,    setPendingProfiles]    = useState({})
-  const [admins,             setAdmins]             = useState([])
   const [viewingHorarios,    setViewingHorarios]    = useState(null) // professor pendente cujos horários estão sendo exibidos
   const [sortConfig,         setSortConfig]         = useState({ key: 'name', dir: 'asc' })
 
   useEffect(() => {
     if (!currentSchoolId) return
-    listAdmins().then(list => setAdmins(list.map(a => a.email.toLowerCase())))
     listPendingTeachers(currentSchoolId).then(list => { setPending(list); setPendLoaded(true) }).catch(e => console.error('listPendingTeachers error', e))
   }, [currentSchoolId])
 
-  const isTeacherAdmin = (t) => admins.includes((t.email ?? '').toLowerCase())
-
-  const currentProfile = (t) => {
-    if (isTeacherAdmin(t)) return 'admin'
-    return t.profile ?? 'teacher'
-  }
+  // Profile do teacher = profile gravado no doc da escola.
+  // 'admin' aqui significa Admin LOCAL daquela escola (não SaaS Admin global).
+  const currentProfile = (t) => t.profile ?? 'teacher'
 
   const teacherSegmentNames = (t) =>
     store.segments
@@ -394,25 +388,22 @@ export default function TabTeachers() {
     if (newProfile === oldProfile) return
 
     if (newProfile === 'admin') {
-      if (!confirm(`Promover ${t.name} a Admin dará acesso total ao sistema. Confirmar?`)) return
+      if (!confirm(`Promover ${t.name} a Admin desta escola dará acesso total à gestão da unidade. Confirmar?`)) return
     } else if (oldProfile === 'admin') {
-      if (!confirm(`Remover privilégios de Admin de ${t.name}? Confirmar?`)) return
+      if (!confirm(`Remover privilégios de Admin desta escola de ${t.name}? Confirmar?`)) return
     }
 
     try {
+      // Admin LOCAL: atualiza profile do teacher na escola E role em users/{uid}.schools[schoolId].
+      // designateLocalAdmin sincroniza schools/{schoolId}.adminEmail e users/{uid}.schools[schoolId].role='admin'.
       if (newProfile === 'admin') {
-        await addAdmin(t.email, t.name)
-        setAdmins(a => [...a, (t.email ?? '').toLowerCase()])
-        const currentProfInTeachers = t.profile ?? 'teacher'
-        if (currentProfInTeachers !== 'teacher') {
-          await store.updateTeacher(t.id, { profile: 'teacher' })
-        }
+        await store.updateTeacher(t.id, { profile: 'admin' })
+        await designateLocalAdmin(currentSchoolId, t.email)
       } else {
-        if (oldProfile === 'admin') {
-          await removeAdmin(t.email)
-          setAdmins(a => a.filter(x => x !== (t.email ?? '').toLowerCase()))
-        }
         await store.updateTeacher(t.id, { profile: newProfile })
+        // Sincroniza o role em users/{uid}.schools[schoolId] imediatamente
+        // (sem esperar próximo login).
+        await syncTeacherRoleInUserDoc(currentSchoolId, t.email, newProfile)
       }
       const LABELS = { teacher: 'Professor', coordinator: 'Coord. Geral', 'teacher-coordinator': 'Prof. Coord.', admin: 'Admin' }
       toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')

@@ -463,6 +463,48 @@ export async function designateLocalAdmin(schoolId, newEmail) {
   }
 }
 
+/**
+ * Sincroniza users/{uid}.schools[schoolId].role com base no profile do teacher.
+ * Usado quando admin local altera o profile de um teacher (não-admin) na escola.
+ * Para profile='admin', use designateLocalAdmin (que também grava adminEmail).
+ *
+ * Procura o uid: primeiro pelo campo `uid` no teacher doc (legado),
+ * depois em /users/ por email.
+ *
+ * @param {string} schoolId
+ * @param {string} email
+ * @param {'teacher'|'coordinator'|'teacher-coordinator'} role
+ */
+export async function syncTeacherRoleInUserDoc(schoolId, email, role) {
+  if (!schoolId || !email) return
+  const lower = email.trim().toLowerCase()
+  if (!lower) return
+  let targetUid = null
+  try {
+    const tQuery = query(
+      collection(db, 'schools', schoolId, 'teachers'),
+      where('email', '==', lower),
+      limit(2)
+    )
+    const tSnap = await getDocs(tQuery)
+    const hit = tSnap.docs.find(d => d.data()?.uid)
+    targetUid = hit?.data()?.uid ?? null
+    if (!targetUid) {
+      const uQuery = query(collection(db, 'users'), where('email', '==', lower), limit(1))
+      const uSnap = await getDocs(uQuery)
+      if (!uSnap.empty) targetUid = uSnap.docs[0].id
+    }
+    if (!targetUid) return
+    const userRef = doc(db, 'users', targetUid)
+    const userSnap = await getDoc(userRef)
+    if (!userSnap.exists()) return
+    if (!userSnap.data()?.schools?.[schoolId]) return
+    await updateDoc(userRef, { [`schools.${schoolId}.role`]: role })
+  } catch (e) {
+    console.warn('[syncTeacherRoleInUserDoc] falha:', e)
+  }
+}
+
 // ─── Status da Escola (suspender/reativar) ───────────────────────────────────
 
 /**
