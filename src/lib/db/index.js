@@ -419,6 +419,9 @@ export async function designateLocalAdmin(schoolId, newEmail) {
   })
 
   // Passo 2 — best-effort. Falha aqui retorna { promoted: false }.
+  // Localiza o uid: tenta primeiro o campo `uid` no teacher doc (legado),
+  // depois busca em /users/ por email (rota nova: doc users/{uid} criado por
+  // approveTeacher tem campo email).
   let targetUid = null
   try {
     const tQuery = query(
@@ -429,6 +432,20 @@ export async function designateLocalAdmin(schoolId, newEmail) {
     const tSnap = await getDocs(tQuery)
     const hit = tSnap.docs.find(d => d.data()?.uid)
     targetUid = hit?.data()?.uid ?? null
+
+    if (!targetUid) {
+      // Fallback: procurar em users/ pelo email
+      const uQuery = query(
+        collection(db, 'users'),
+        where('email', '==', lower),
+        limit(1)
+      )
+      const uSnap = await getDocs(uQuery)
+      if (!uSnap.empty) {
+        targetUid = uSnap.docs[0].id
+      }
+    }
+
     if (!targetUid) return { promoted: false, targetUid: null }
 
     const userRef = doc(db, 'users', targetUid)

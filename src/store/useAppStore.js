@@ -729,10 +729,17 @@ const useAppStore = create((set, get) => {
   loadAbsencesIfNeeded: async (schoolId) => {
     const { absencesLoaded, absences } = get()
     if (absencesLoaded || absences.length > 0) return
+    // Resolver schoolId via useSchoolStore quando não passado pelo caller
+    if (!schoolId) {
+      try {
+        const { default: useSchoolStore } = await import('./useSchoolStore')
+        schoolId = useSchoolStore.getState().currentSchoolId
+      } catch {}
+    }
+    if (!schoolId) return
     try {
       const loaded = await _loadCol(schoolId, 'absences')
       set({ absences: loaded, absencesLoaded: true })
-      // Register listener after loading
       if (!absencesUnsubscribe) {
         absencesUnsubscribe = registerAbsencesListener(schoolId, get())
       }
@@ -744,10 +751,16 @@ const useAppStore = create((set, get) => {
   loadHistoryIfNeeded: async (schoolId) => {
     const { historyLoaded, history } = get()
     if (historyLoaded || history.length > 0) return
+    if (!schoolId) {
+      try {
+        const { default: useSchoolStore } = await import('./useSchoolStore')
+        schoolId = useSchoolStore.getState().currentSchoolId
+      } catch {}
+    }
+    if (!schoolId) return
     try {
       const loaded = await _loadCol(schoolId, 'history')
       set({ history: loaded, historyLoaded: true })
-      // Register listener after loading
       if (!historyUnsubscribe) {
         historyUnsubscribe = registerHistoryListener(schoolId, get())
       }

@@ -71,19 +71,21 @@ const useAuthStore = create((set, get) => ({
     set({ isSaasAdmin: isSaasAdminFlag })
     if (isSaasAdminFlag) {
       get()._unsubPending?.()
-      const pendingRef = schoolId
-        ? query(
+      // Apenas inicia o listener de pending quando há escola selecionada.
+      // Sem schoolId, o painel SaaS Admin (/admin) não exibe contador agregado.
+      if (schoolId) {
+        const unsub = onSnapshot(
+          query(
             collection(db, 'schools', schoolId, 'pending_teachers'),
             where('status', '==', 'pending')
-          )
-        : query(collection(db, 'pending_teachers'), where('status', '==', 'pending'))
-      if (!schoolId) console.warn('[auth] super-admin sem schoolId — usando fallback global de pending_teachers')
-      const unsub = onSnapshot(
-        pendingRef,
-        snap => set({ pendingCt: snap.size }),
-        err  => console.warn('[pendingCt]', err)
-      )
-      set({ role: 'admin', pendingCt: 0, _unsubPending: unsub })
+          ),
+          snap => set({ pendingCt: snap.size }),
+          err  => console.warn('[pendingCt]', err)
+        )
+        set({ role: 'admin', pendingCt: 0, _unsubPending: unsub })
+      } else {
+        set({ role: 'admin', pendingCt: 0, _unsubPending: null })
+      }
       return
     }
 
