@@ -50,7 +50,13 @@ service cloud.firestore {
 
     // ── Professores ──────────────────────────────────────────────────────────
     match /schools/{schoolId}/teachers/{docId} {
-      allow read:  if isMemberOf(schoolId) || isSaasAdmin();
+      // Leitura: membros da escola, SaaS admin, ou o próprio usuário cujo email
+      // bate com o teacher doc (necessário para auto-reconciliação quando
+      // users/{uid} foi perdido mas teacher já existe aprovado).
+      allow read:  if isMemberOf(schoolId)
+        || isSaasAdmin()
+        || (request.auth != null
+            && resource.data.email.lower() == request.auth.token.email.lower());
       allow write: if isSchoolAdmin(schoolId);
       // Professor edita apenas campos de perfil do próprio documento
       allow update: if request.auth != null
