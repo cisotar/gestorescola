@@ -85,6 +85,10 @@ export default function Navbar() {
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-accent text-white uppercase tracking-wide">
                 SaaS Admin
               </span>
+            ) : role === 'admin' ? (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/20 text-white/90 uppercase tracking-wide">
+                Admin
+              </span>
             ) : ROLE_LABELS[role] ? (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/20 text-white/90 uppercase tracking-wide">
                 {ROLE_LABELS[role]}
