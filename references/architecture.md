@@ -493,6 +493,36 @@ Document ID = email sanitizado via `email.replace(/[.#$/[\]]/g, '_')`. Complemen
 
 ---
 
+### `schools/{schoolId}` — Documento raiz da escola (multi-tenant)
+
+Cada documento em `schools/` representa uma escola (tenant). Subcoleções (`teachers/`, `schedules/`, `absences/`, `history/`, `config/`, `pending_teachers/`, `pending_actions/`, `admin_actions/`) ficam aninhadas sob `schools/{schoolId}/`.
+
+```js
+{
+  id:         "sch-abc123",
+  name:       "Escola Modelo",
+  slug:       "escola-modelo",            // referenciado em /join/:slug — único
+  plan:       "trial",                     // "trial" | "active" | etc.
+  status:     "active",                    // "active" | "suspended" — gerencia o acesso de membros
+  adminEmail: "admin@escola.com.br",       // email do admin local; lowercase. Usado no fluxo /join/:slug
+  deletedAt:  null,                        // Timestamp | null — soft delete via painel SaaS admin
+  createdBy:  "uid-do-saas-admin",         // uid do criador (SaaS admin / Cloud Function)
+  createdAt:  "2026-04-26T10:00:00.000Z"
+}
+```
+
+**Campos administrativos (apenas SaaS admin pode alterar):**
+- `status` — quando `'suspended'`, a função `isMemberOf(schoolId)` das Firestore Rules retorna `false` para membros comuns (teachers, coordinators, school admins). SaaS admin mantém acesso total. Default: `'active'`.
+- `adminEmail` — admin local da escola, promovido automaticamente ao se cadastrar via `/join/:slug`.
+- `deletedAt` — soft delete; preenchido pelo painel SaaS admin. Não exclui dados.
+
+**Comportamento das Rules (`firestore.rules`):**
+- `allow create` em `schools/{id}` e `school_slugs/{slug}` — restrito a `isSaasAdmin()`.
+- `allow update` em `schools/{id}` — `isSaasAdmin()` para qualquer campo; `isSchoolAdmin(schoolId)` apenas se a diff **não** afetar `status`/`adminEmail`/`deletedAt`.
+- `isMemberOf(schoolId)` retorna `false` quando `schools/{id}.status == 'suspended'`. Escolas sem o campo `status` (legadas) são tratadas como `'active'` por retrocompatibilidade.
+
+---
+
 ### `pending_actions/` — Aprovação de Coordenadores
 
 Ações submetidas por coordenadores que aguardam aprovação do admin antes de serem executadas.

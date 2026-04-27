@@ -17,6 +17,7 @@ const useAuthStore = create((set, get) => ({
   teacher:       null,
   loading:       true,
   pendingCt:     0,
+  isSaasAdmin:   false,  // true se email em SUPER_USERS ou em /admins/{email_key}
   _unsubPending: null,
   _unsubApproval:null,
   _unsubSchoolSub: null,
@@ -45,7 +46,7 @@ const useAuthStore = create((set, get) => ({
 
     return new Promise(resolve => {
       onAuthStateChanged(auth, async user => {
-        set({ user, role: null, teacher: null })
+        set({ user, role: null, teacher: null, isSaasAdmin: false })
         if (user) {
           await useSchoolStore.getState().init(user.uid)
           await get()._resolveRole(user)
@@ -62,7 +63,10 @@ const useAuthStore = create((set, get) => ({
 
     // ── 1. Super-admin SaaS: bypass total, role admin garantido ──────────────
     const isSuperUser = SUPER_USERS.includes(user.email?.toLowerCase())
-    if (isSuperUser || await isAdmin(user.email)) {
+    // Computa flag isSaasAdmin uma única vez (evita duas chamadas a isAdmin)
+    const isSaasAdminFlag = isSuperUser || await isAdmin(user.email)
+    set({ isSaasAdmin: isSaasAdminFlag })
+    if (isSaasAdminFlag) {
       get()._unsubPending?.()
       const pendingRef = schoolId
         ? query(
@@ -187,8 +191,10 @@ const useAuthStore = create((set, get) => ({
     get()._unsubPending?.()
     get()._unsubApproval?.()
     get()._unsubSchoolSub?.()
-    set({ _unsubPending: null, _unsubApproval: null, _unsubSchoolSub: null })
+    set({ _unsubPending: null, _unsubApproval: null, _unsubSchoolSub: null, isSaasAdmin: false })
     useAppStore.getState().cleanupLazyListeners()
+    // Cancela listener global de schools (SaaS admin) e limpa allSchools
+    useSchoolStore.getState().stopAllSchoolsListener?.()
     return signOut(auth)
   },
 

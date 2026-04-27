@@ -1,6 +1,6 @@
 // src/store/useSchoolStore.js
 import { create } from 'zustand'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, collection, query, orderBy, onSnapshot } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { getSchoolRef } from '../lib/firebase/multi-tenant'
 import { teardownListeners } from '../lib/db'
@@ -8,9 +8,11 @@ import { teardownListeners } from '../lib/db'
 const LS_KEY = 'gestao_active_school'
 
 const INITIAL_STATE = {
-  currentSchoolId:  null,   // string | null
-  currentSchool:    null,   // objeto do doc schools/{id} | null
-  availableSchools: [],     // [{ schoolId, ...schoolDoc.data() }]
+  currentSchoolId:    null,   // string | null
+  currentSchool:      null,   // objeto do doc schools/{id} | null
+  availableSchools:   [],     // [{ schoolId, ...schoolDoc.data() }]
+  allSchools:         [],     // [{ schoolId, ...schoolDoc.data() }] — apenas para SaaS admin
+  _unsubAllSchools:   null,   // unsubscribe do onSnapshot global de schools
 }
 
 const useSchoolStore = create((set, get) => ({
@@ -85,6 +87,37 @@ const useSchoolStore = create((set, get) => ({
     } catch (e) {
       console.warn('[useSchoolStore] loadAvailableSchools falhou:', e)
     }
+  },
+
+  // ─── fetchAllSchools ─────────────────────────────────────────────────────
+  // Subscribe global em /schools (apenas SaaS admin). Reflete suspensões e
+  // criações em tempo real. Ordena por createdAt desc; filtra deletedAt!=null
+  // client-side (Firestore não indexa nulls em where '==' de forma confiável,
+  // e o volume esperado é baixo). Escolas legadas sem createdAt serão
+  // omitidas pelo orderBy — comportamento aceito (migração separada).
+  fetchAllSchools: () => {
+    // Cancela subscription anterior (idempotência)
+    get()._unsubAllSchools?.()
+    const q = query(collection(db, 'schools'), orderBy('createdAt', 'desc'))
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        const allSchools = snap.docs
+          .map(d => ({ schoolId: d.id, ...d.data() }))
+          .filter(s => s.deletedAt == null)
+        set({ allSchools })
+      },
+      err => console.warn('[allSchools]', err)
+    )
+    set({ _unsubAllSchools: unsub })
+    return unsub
+  },
+
+  // ─── stopAllSchoolsListener ──────────────────────────────────────────────
+  // Cancela o listener global e limpa allSchools. Chamado no logout.
+  stopAllSchoolsListener: () => {
+    get()._unsubAllSchools?.()
+    set({ _unsubAllSchools: null, allSchools: [] })
   },
 
   // ─── init ─────────────────────────────────────────────────────────────────

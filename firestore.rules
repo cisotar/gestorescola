@@ -20,12 +20,17 @@ service cloud.firestore {
     // Leitura liberada para qualquer autenticado: contém apenas nome/metadados,
     // sem dados sensíveis. Necessário para o fluxo de convite (/join/:slug)
     // onde o professor ainda não é membro mas precisa ler o nome da escola.
-    // Create liberado para qualquer autenticado: necessário para o onboarding,
-    // quando o usuário ainda não tem vínculo com a escola que está criando.
+    // Create restrito ao SaaS admin: criação de escolas é privilégio do painel
+    // SaaS, executado via Cloud Function ou pelo próprio painel admin.
+    // Update segmentado: campos administrativos (status, adminEmail, deletedAt)
+    // só podem ser alterados pelo SaaS admin; demais campos seguem isSchoolAdmin.
     match /schools/{schoolId} {
       allow read:   if isAuthenticated();
-      allow create: if request.auth != null;
-      allow update: if isSchoolAdmin(schoolId);
+      allow create: if isSaasAdmin();
+      allow update: if isSaasAdmin()
+        || (isSchoolAdmin(schoolId)
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['status', 'adminEmail', 'deletedAt']));
       allow delete: if isSaasAdmin();
     }
 
@@ -36,8 +41,9 @@ service cloud.firestore {
     // quem criou o documento schools/{schoolId} pode inicializar a config.
     match /schools/{schoolId}/config/{doc} {
       allow read:   if isMemberOf(schoolId) || isSaasAdmin() || isPendingIn(schoolId);
-      allow create: if request.auth != null
-        && request.auth.uid == get(/databases/$(database)/documents/schools/$(schoolId)).data.createdBy;
+      allow create: if isSaasAdmin()
+        || (request.auth != null
+            && request.auth.uid == get(/databases/$(database)/documents/schools/$(schoolId)).data.createdBy);
       allow update: if isSchoolAdmin(schoolId);
       allow delete: if isSchoolAdmin(schoolId);
     }
@@ -134,7 +140,7 @@ service cloud.firestore {
     // — pois o slug é o único identificador disponível antes do login.
     match /school_slugs/{slug} {
       allow read:   if true;
-      allow create: if request.auth != null;
+      allow create: if isSaasAdmin();
       allow update: if isSchoolAdmin(request.resource.data.schoolId) || isSaasAdmin();
       allow delete: if isSchoolAdmin(resource.data.schoolId) || isSaasAdmin();
     }
@@ -170,13 +176,26 @@ service cloud.firestore {
     // Verifica se o usuário é membro aprovado da escola.
     // Lê users/{uid}.schools[schoolId].status == 'approved'.
     // Retorna false se o documento users/{uid} não existir ou se schools não tiver a chave.
+    // Também retorna false se schools/{schoolId}.status == 'suspended' — membros comuns
+    // perdem acesso quando a escola está suspensa (SaaS admin tem bypass via isSchoolAdmin
+    // e nas allow rules diretas).
     function isMemberOf(schoolId) {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       return isAuthenticated()
         && exists(userPath)
         && get(userPath).data.schools[schoolId] != null
         && (get(userPath).data.schools[schoolId].status == 'approved'
-            || get(userPath).data.schools[schoolId].status == 'active');
+            || get(userPath).data.schools[schoolId].status == 'active')
+        && !isSchoolSuspended(schoolId);
+    }
+
+    // Retorna true se a escola existe e tem status == 'suspended'.
+    // Escola sem campo status (ou inexistente) é tratada como "não suspensa"
+    // por retrocompatibilidade com docs criados antes da migração.
+    function isSchoolSuspended(schoolId) {
+      let schoolPath = /databases/$(database)/documents/schools/$(schoolId);
+      return exists(schoolPath)
+        && get(schoolPath).data.get('status', 'active') == 'suspended';
     }
 
     // Alias legível — semanticamente equivalente a isMemberOf.

@@ -3,6 +3,7 @@ import { httpsCallable } from 'firebase/functions'
 import {
   doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   collection, writeBatch, serverTimestamp, query, where, onSnapshot, orderBy, limit,
+  runTransaction,
 } from 'firebase/firestore'
 import { uid } from '../helpers/ids'
 import { _loadConfig, saveConfig } from './config'
@@ -329,22 +330,155 @@ export async function saveSchoolSlug(schoolId, newSlug, oldSlug) {
 // ─── Criação de Escola ────────────────────────────────────────────────────────
 
 /**
- * Cria uma nova escola com as quatro escritas independentes no Firestore.
- * As operações são executadas em paralelo via Promise.all (sem writeBatch — RN-4).
- * Erros propagam diretamente ao caller sem serem silenciados.
+ * Cria escola pelo SaaS admin: schools/{schoolId}, schools/{schoolId}/config/main e
+ * school_slugs/{slug} de forma atômica via runTransaction.
  *
- * @param {string} schoolId - Document ID da escola (gerado pelo caller via uid())
- * @param {string} name     - Nome legível da escola
- * @param {string} slug     - Identificador de URL amigável (único)
- * @param {string} uid      - UID do Firebase Auth do criador
+ * NÃO grava nada em users/{currentUserUid}.schools: o SaaS admin não vira membro
+ * da escola criada. O admin local entra via /join/{slug}.
+ *
+ * @param {{ slug: string, adminEmail: string, currentUserUid: string }} params
+ * @returns {Promise<{ schoolId: string }>}
+ * @throws {Error} com `code === 'slug-taken'` se o slug já existir.
  */
-export async function createSchool(schoolId, name, slug, uid) {
-  await Promise.all([
-    setDoc(doc(db, 'schools', schoolId), { name, slug, createdAt: serverTimestamp(), createdBy: uid, plan: 'free' }),
-    setDoc(doc(db, 'schools', schoolId, 'config', 'main'), { updatedAt: serverTimestamp() }),
-    setDoc(doc(db, 'school_slugs', slug), { schoolId }),
-    setDoc(doc(db, 'users', uid), { schools: { [schoolId]: { role: 'admin', status: 'approved' } } }, { merge: true }),
-  ])
+export async function createSchoolFromAdmin({ slug, adminEmail, currentUserUid }) {
+  if (!slug || !adminEmail || !currentUserUid) {
+    throw new Error('createSchoolFromAdmin: slug, adminEmail e currentUserUid são obrigatórios')
+  }
+
+  const normalizedEmail = adminEmail.trim().toLowerCase()
+
+  // Verificação prévia (otimização — race ainda é coberta dentro da transação)
+  const slugRef = doc(db, 'school_slugs', slug)
+  const preCheck = await getDoc(slugRef)
+  if (preCheck.exists()) {
+    const err = new Error('Slug já está em uso')
+    err.code = 'slug-taken'
+    throw err
+  }
+
+  const schoolId = uid()
+  const schoolRef = doc(db, 'schools', schoolId)
+  const configRef = doc(db, 'schools', schoolId, 'config', 'main')
+
+  await runTransaction(db, async (tx) => {
+    const slugSnap = await tx.get(slugRef)
+    if (slugSnap.exists()) {
+      const err = new Error('Slug já está em uso')
+      err.code = 'slug-taken'
+      throw err
+    }
+
+    tx.set(schoolRef, {
+      slug,
+      adminEmail: normalizedEmail,
+      status: 'active',
+      createdAt: serverTimestamp(),
+      createdBy: currentUserUid,
+      deletedAt: null,
+    })
+    tx.set(configRef, {})
+    tx.set(slugRef, { schoolId })
+  })
+
+  return { schoolId }
+}
+
+// ─── Designar admin local ─────────────────────────────────────────────────────
+
+/**
+ * Atualiza o `adminEmail` (lowercase) de uma escola e, se possível, eleva o role
+ * do usuário-alvo para `'admin'` em `users/{uid}.schools[schoolId]`.
+ *
+ * Estratégia para localizar `users/{uid}` pelo email:
+ * 1. Procura `schools/{schoolId}/teachers` com `email == lower`.
+ * 2. Para o primeiro hit com campo `uid`, lê `users/{uid}` e, se houver entry
+ *    para essa escola, atualiza o role via dot-path.
+ *
+ * Caso o usuário-alvo ainda não seja membro, o `JoinPage` faz a promoção lazy
+ * no próximo login (via comparação `userEmail === schools/{id}.adminEmail`).
+ *
+ * Falhas no segundo passo (promoção) NÃO revertem o primeiro (`adminEmail`).
+ * Retornam `{ promoted: false, targetUid }` para o caller decidir o toast.
+ *
+ * @param {string} schoolId
+ * @param {string} newEmail
+ * @returns {Promise<{ promoted: boolean, targetUid: string | null }>}
+ */
+export async function designateLocalAdmin(schoolId, newEmail) {
+  if (!schoolId) throw new Error('designateLocalAdmin: schoolId obrigatório')
+  if (!newEmail || typeof newEmail !== 'string') {
+    throw new Error('designateLocalAdmin: newEmail obrigatório')
+  }
+  const lower = newEmail.trim().toLowerCase()
+  if (!lower) throw new Error('designateLocalAdmin: newEmail vazio')
+
+  // Passo 1 — sempre executa. Se falhar, propaga.
+  await updateDoc(doc(db, 'schools', schoolId), {
+    adminEmail: lower,
+    adminEmailUpdatedAt: serverTimestamp(),
+  })
+
+  // Passo 2 — best-effort. Falha aqui retorna { promoted: false }.
+  let targetUid = null
+  try {
+    const tQuery = query(
+      collection(db, 'schools', schoolId, 'teachers'),
+      where('email', '==', lower),
+      limit(2)
+    )
+    const tSnap = await getDocs(tQuery)
+    const hit = tSnap.docs.find(d => d.data()?.uid)
+    targetUid = hit?.data()?.uid ?? null
+    if (!targetUid) return { promoted: false, targetUid: null }
+
+    const userRef = doc(db, 'users', targetUid)
+    const userSnap = await getDoc(userRef)
+    if (!userSnap.exists()) return { promoted: false, targetUid }
+    const data = userSnap.data()
+    if (!data?.schools?.[schoolId]) {
+      return { promoted: false, targetUid }
+    }
+    await updateDoc(userRef, { [`schools.${schoolId}.role`]: 'admin' })
+    return { promoted: true, targetUid }
+  } catch (e) {
+    console.warn('[designateLocalAdmin] falha ao promover role (adminEmail já gravado):', e)
+    return { promoted: false, targetUid }
+  }
+}
+
+// ─── Status da Escola (suspender/reativar) ───────────────────────────────────
+
+/**
+ * Atualiza o `status` de uma escola entre 'active' e 'suspended'.
+ * SaaS admin only — Rules (issue 410) impedem outros perfis.
+ *
+ * @param {string} schoolId
+ * @param {'active' | 'suspended'} status
+ */
+export async function setSchoolStatus(schoolId, status) {
+  if (!schoolId) throw new Error('setSchoolStatus: schoolId obrigatório')
+  if (status !== 'active' && status !== 'suspended') {
+    throw new Error(`setSchoolStatus: status inválido (${status})`)
+  }
+  await updateDoc(doc(db, 'schools', schoolId), {
+    status,
+    statusUpdatedAt: serverTimestamp(),
+  })
+}
+
+// ─── Soft delete da Escola ────────────────────────────────────────────────────
+/**
+ * Marca uma escola como excluída via soft delete (`deletedAt = serverTimestamp()`).
+ * SaaS admin only — Rules (issue 410) impedem outros perfis.
+ * NÃO cascateia: subcoleções permanecem; limpeza física é script manual.
+ *
+ * @param {string} schoolId
+ */
+export async function softDeleteSchool(schoolId) {
+  if (!schoolId) throw new Error('softDeleteSchool: schoolId obrigatório')
+  await updateDoc(doc(db, 'schools', schoolId), {
+    deletedAt: serverTimestamp(),
+  })
 }
 
 // ─── Pending Actions (coordenador approval workflow) ───────────────────────────

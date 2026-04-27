@@ -193,6 +193,9 @@ export async function seedMultitenantData(env, schoolId = 'sch-a', otherSchoolId
       id: schoolId,
       name: 'Escola A',
       plan: 'trial',
+      status: 'active',
+      adminEmail: 'admin-school@test.com',
+      deletedAt: null,
       createdAt: new Date().toISOString(),
     })
 
@@ -201,6 +204,9 @@ export async function seedMultitenantData(env, schoolId = 'sch-a', otherSchoolId
       id: otherSchoolId,
       name: 'Escola B',
       plan: 'trial',
+      status: 'active',
+      adminEmail: 'admin-other@test.com',
+      deletedAt: null,
       createdAt: new Date().toISOString(),
     })
 
@@ -218,6 +224,22 @@ export async function seedMultitenantData(env, schoolId = 'sch-a', otherSchoolId
       schoolName: 'Escola A',
       turmas: [],
       subjects: [],
+    })
+  })
+}
+
+/**
+ * Marca uma escola como suspensa (status: 'suspended').
+ * Útil para testar bloqueio de acesso de membros comuns a escolas suspensas.
+ *
+ * @param {object} env - TestEnvironment
+ * @param {string} schoolId - ID da escola a suspender
+ */
+export async function seedSuspendedSchool(env, schoolId) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore()
+    await db.doc(`schools/${schoolId}`).update({
+      status: 'suspended',
     })
   })
 }

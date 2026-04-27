@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getDoc, doc } from 'firebase/firestore'
+import { getDoc, doc, setDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 import { getSchoolSlug, requestTeacherAccess } from '../lib/db'
 import { getSchoolDocRef, getSchoolRef } from '../lib/firebase/multi-tenant'
@@ -43,6 +43,23 @@ function SlugErrorState() {
   )
 }
 
+function SuspendedSchoolState() {
+  return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg p-4">
+      <div className="bg-surf border border-bdr rounded-2xl shadow-xl p-10 w-full max-w-sm text-center">
+        <div className="text-3xl font-extrabold tracking-tight mb-2">
+          <span className="text-accent">Gestão</span>
+          <span className="text-navy">Escolar</span>
+        </div>
+        <div className="mt-6 mb-2 text-err font-semibold text-base">Escola suspensa</div>
+        <p className="text-sm text-t2 leading-relaxed">
+          Esta escola está suspensa. Entre em contato com o administrador do sistema.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // ─── JoinPage ─────────────────────────────────────────────────────────────────
 
 export default function JoinPage() {
@@ -50,7 +67,7 @@ export default function JoinPage() {
   const navigate        = useNavigate()
   const { user, loading: authLoading } = useAuthStore()
 
-  const [status, setStatus]   = useState('loading') // 'loading' | 'invalid' | 'error'
+  const [status, setStatus]   = useState('loading') // 'loading' | 'invalid' | 'error' | 'suspended'
   const [errorMsg, setErrorMsg] = useState('')
 
   async function resolveJoin(currentUser) {
@@ -66,6 +83,7 @@ export default function JoinPage() {
     // Pré-login a regra exige isAuthenticated(); o slug em school_slugs já confirma
     // a existência da escola (leitura pública), então a validação extra do doc raiz
     // só agrega valor para usuários logados.
+    let schoolData = null
     if (currentUser) {
       try {
         const schoolSnap = await getDoc(getSchoolRef(schoolId))
@@ -73,6 +91,7 @@ export default function JoinPage() {
           setStatus('invalid')
           return
         }
+        schoolData = schoolSnap.data()
       } catch (e) {
         console.error('[JoinPage] erro validando schools/{schoolId}:', e)
         setErrorMsg('Não foi possível validar a escola. Verifique sua conexão e tente novamente.')
@@ -95,6 +114,38 @@ export default function JoinPage() {
 
     // 3. Usuário autenticado — consumir pendingJoinSlug se presente
     try { sessionStorage.removeItem('pendingJoinSlug') } catch {}
+
+    // 3b. Gate de escola suspensa — bloquear acesso, exceto para SaaS admin.
+    if (schoolData?.status === 'suspended') {
+      const isSaasAdmin = useAuthStore.getState().isSaasAdmin === true
+      if (!isSaasAdmin) {
+        console.error('[JoinPage] escola suspensa:', { schoolId, status: schoolData?.status })
+        setStatus('suspended')
+        return
+      }
+    }
+
+    // 3c. Detecção de admin local — se email do usuário bate com adminEmail da escola,
+    // auto-aprovar como admin sem passar por pending_teachers.
+    const userEmail = currentUser.email?.toLowerCase().trim()
+    const adminEmail = schoolData?.adminEmail?.toLowerCase().trim()
+    if (userEmail && adminEmail && userEmail === adminEmail) {
+      try {
+        await setDoc(
+          doc(db, 'users', currentUser.uid),
+          { schools: { [schoolId]: { role: 'admin', status: 'approved' } } },
+          { merge: true }
+        )
+        await useSchoolStore.getState().setCurrentSchool(schoolId)
+        navigate('/dashboard', { replace: true })
+        return
+      } catch (e) {
+        console.error('[JoinPage] falha ao registrar admin local:', e)
+        setErrorMsg('Não foi possível registrar acesso de administrador. Tente novamente.')
+        setStatus('error')
+        return
+      }
+    }
 
     // 4. Verificar se usuário já está aprovado na escola via users/{uid}.schools
     try {
@@ -159,6 +210,8 @@ export default function JoinPage() {
   // Enquanto isso, manter o spinner.
 
   if (status === 'invalid') return <SlugErrorState />
+
+  if (status === 'suspended') return <SuspendedSchoolState />
 
   if (status === 'error') {
     return (

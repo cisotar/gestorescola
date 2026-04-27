@@ -26,10 +26,11 @@ const SchoolScheduleRedirect = lazy(() => import('./pages/SchoolScheduleRedirect
 const GradesPage = lazy(() => import('./pages/GradesPage'))
 const RankingPage = lazy(() => import('./pages/RankingPage'))
 const JoinPage = lazy(() => import('./pages/JoinPage'))
-const CreateSchoolPage = lazy(() => import('./pages/CreateSchoolPage'))
+const NoSchoolPage = lazy(() => import('./pages/NoSchoolPage'))
+const AdminPanelPage = lazy(() => import('./pages/AdminPanelPage'))
 
 export default function App() {
-  const { loading, role, init, isCoordinator } = useAuthStore()
+  const { loading, role, init, isCoordinator, isSaasAdmin } = useAuthStore()
   const isAdmin        = role === 'admin'
   const canAccessAdmin = isAdmin || isCoordinator()
   const { hydrate, loaded } = useAppStore()
@@ -116,22 +117,28 @@ export default function App() {
     </>
   )
 
-  // Sem escola vinculada → página de criação de escola (RN-8)
-  // Cobre admins SaaS recém-criados (role='admin' com availableSchools=[]) e
-  // qualquer usuário autenticado que ainda não pertence a nenhuma escola.
-  // Posição: após !role (usuário não logado não deve ver esta tela) e
-  // antes de role==='pending' (admin sem escola tem role='admin', não 'pending').
-  if (!currentSchoolId && availableSchools.length === 0 && !pathname.startsWith('/join/')) return (
-    <Suspense fallback={<Spinner />}>
-      <CreateSchoolPage />
-      <Toast />
-    </Suspense>
-  )
-
   // Pendente → página de espera (exceto /join/ que pode redirecionar o pendente)
   if (role === 'pending' && !pathname.startsWith('/join/')) return (
     <>
       <PendingPage />
+      <Toast />
+    </>
+  )
+
+  // SaaS admin → /admin (prevalece mesmo que tenha escolas em availableSchools)
+  // Exceções: já está em /admin/* ou em /join/:slug.
+  if (isSaasAdmin && !pathname.startsWith('/admin') && !pathname.startsWith('/join/')) return (
+    <>
+      <Navigate to="/admin" replace />
+      <Toast />
+    </>
+  )
+
+  // Usuário sem escola e não-SaaS admin → /no-school
+  // Exceções: já está em /no-school ou em /join/:slug.
+  if (!isSaasAdmin && availableSchools.length === 0 && pathname !== '/no-school' && !pathname.startsWith('/join/')) return (
+    <>
+      <Navigate to="/no-school" replace />
       <Toast />
     </>
   )
@@ -149,6 +156,7 @@ export default function App() {
       }>
         <Routes>
           <Route path="/join/:slug" element={<JoinPage />} />
+          <Route path="/no-school" element={<NoSchoolPage />} />
           <Route element={<Layout />}>
             <Route index element={<Navigate to="/home" replace />} />
             <Route path="/home"      element={<HomePage />} />
@@ -164,6 +172,8 @@ export default function App() {
             <Route path="/schedule"  element={<ScheduleRedirect />} />
             <Route path="/school-schedule" element={<SchoolScheduleRedirect />} />
             <Route path="/grades"  element={<GradesPage />} />
+            {/* /admin — painel SaaS admin. Gated por isSaasAdmin (issue 418). */}
+            <Route path="/admin"   element={isSaasAdmin ? <AdminPanelPage /> : <Navigate to="/login" replace />} />
             <Route path="*"          element={<Navigate to="/home" replace />} />
           </Route>
         </Routes>

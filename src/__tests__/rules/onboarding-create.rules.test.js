@@ -1,12 +1,17 @@
 /**
- * Testes de Firestore Security Rules para o fluxo de onboarding — issue #400.
+ * Testes de Firestore Security Rules para criação de escola — atualizado pela
+ * issue #410 (painel SaaS admin).
  *
- * Cobre os três novos `allow create` adicionados para permitir a criação de escola:
- *   1. `schools/{schoolId}` — qualquer autenticado pode criar
- *   2. `schools/{schoolId}/config/main` — apenas o criador (createdBy) pode criar
- *   3. `school_slugs/{slug}` — qualquer autenticado pode criar
+ * Comportamento atual (após #410):
+ *   1. `schools/{schoolId}` — apenas SaaS admin pode criar
+ *   2. `schools/{schoolId}/config/main` — SaaS admin OU criador (createdBy)
+ *      podem criar (createdBy permanece como fallback de compatibilidade)
+ *   3. `school_slugs/{slug}` — apenas SaaS admin pode criar
  *
- * Todos os casos de negação para usuário não autenticado também são cobertos.
+ * Os testes que antes verificavam que "qualquer autenticado podia criar"
+ * (#400, fluxo de onboarding via cliente) agora verificam o comportamento
+ * inverso (deny para não-SaaS-admin) — a criação de escola passa a ser
+ * privilégio do painel SaaS admin / Cloud Functions.
  */
 
 import {
@@ -16,6 +21,8 @@ import {
 import {
   createTestEnv,
   asAnonymous,
+  asSaasAdmin,
+  seedDefaultData,
 } from './setup.js'
 
 const SCHOOL_ID = 'onboarding-school-001'
@@ -30,6 +37,13 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await env.clearFirestore()
+  // Garante existência de admins/saas-admin@test.com para asSaasAdmin()
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().doc('admins/saas-admin@test.com').set({
+      email: 'saas-admin@test.com',
+      name: 'SaaS Admin',
+    })
+  })
 })
 
 afterAll(async () => {
@@ -54,15 +68,31 @@ function asOtherUser() {
   return ctx.firestore()
 }
 
-// ── 1. schools/{schoolId} — create ──────────────────────────────────────────
+// ── 1. schools/{schoolId} — create restrito a SaaS admin ────────────────────
 
-describe('schools/{schoolId} — create durante onboarding', () => {
-  it('usuário autenticado consegue criar schools/{schoolId}', async () => {
-    const db = asCreator()
+describe('schools/{schoolId} — create restrito a SaaS admin', () => {
+  it('SaaS admin consegue criar schools/{schoolId}', async () => {
+    const db = asSaasAdmin(env)
     await assertSucceeds(
       db.doc(`schools/${SCHOOL_ID}`).set({
         id: SCHOOL_ID,
-        name: 'Escola de Onboarding',
+        name: 'Escola SaaS',
+        createdBy: 'saas-admin-uid',
+        plan: 'trial',
+        status: 'active',
+        adminEmail: 'admin@escola.com',
+        deletedAt: null,
+        createdAt: new Date().toISOString(),
+      })
+    )
+  })
+
+  it('usuário autenticado comum NÃO consegue criar schools/{schoolId}', async () => {
+    const db = asCreator()
+    await assertFails(
+      db.doc(`schools/${SCHOOL_ID}`).set({
+        id: SCHOOL_ID,
+        name: 'Escola comum',
         createdBy: CREATOR_UID,
         plan: 'trial',
         createdAt: new Date().toISOString(),
@@ -83,9 +113,9 @@ describe('schools/{schoolId} — create durante onboarding', () => {
     )
   })
 
-  it('outro usuário autenticado também consegue criar uma escola diferente', async () => {
+  it('outro usuário autenticado também NÃO consegue criar (deny consistente)', async () => {
     const db = asOtherUser()
-    await assertSucceeds(
+    await assertFails(
       db.doc('schools/outra-escola-999').set({
         id: 'outra-escola-999',
         name: 'Outra Escola',
@@ -95,28 +125,11 @@ describe('schools/{schoolId} — create durante onboarding', () => {
       })
     )
   })
-
-  it('update de schools/{schoolId} permanece restrito — autenticado comum NÃO pode atualizar', async () => {
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await ctx.firestore().doc(`schools/${SCHOOL_ID}`).set({
-        id: SCHOOL_ID,
-        name: 'Escola',
-        createdBy: CREATOR_UID,
-        plan: 'trial',
-        createdAt: new Date().toISOString(),
-      })
-    })
-    // Criador NÃO é schoolAdmin (users/{uid}.schools ainda não foi populado)
-    const db = asCreator()
-    await assertFails(
-      db.doc(`schools/${SCHOOL_ID}`).update({ name: 'Nome Alterado' })
-    )
-  })
 })
 
-// ── 2. schools/{schoolId}/config/{doc} — create restrito ao createdBy ────────
+// ── 2. schools/{schoolId}/config/{doc} — create por SaaS admin ou createdBy ──
 
-describe('schools/{schoolId}/config/main — create restrito ao createdBy', () => {
+describe('schools/{schoolId}/config/main — create restrito ao createdBy ou SaaS admin', () => {
   beforeEach(async () => {
     // Cria o documento schools/{schoolId} com campo createdBy
     await env.withSecurityRulesDisabled(async (ctx) => {
@@ -125,6 +138,7 @@ describe('schools/{schoolId}/config/main — create restrito ao createdBy', () =
         name: 'Escola de Onboarding',
         createdBy: CREATOR_UID,
         plan: 'trial',
+        status: 'active',
         createdAt: new Date().toISOString(),
       })
     })
@@ -135,6 +149,17 @@ describe('schools/{schoolId}/config/main — create restrito ao createdBy', () =
     await assertSucceeds(
       db.doc(`schools/${SCHOOL_ID}/config/main`).set({
         schoolName: 'Escola de Onboarding',
+        turmas: [],
+        subjects: [],
+      })
+    )
+  })
+
+  it('SaaS admin consegue criar config/main mesmo não sendo createdBy', async () => {
+    const db = asSaasAdmin(env)
+    await assertSucceeds(
+      db.doc(`schools/${SCHOOL_ID}/config/main`).set({
+        schoolName: 'Config via SaaS admin',
         turmas: [],
         subjects: [],
       })
@@ -162,52 +187,30 @@ describe('schools/{schoolId}/config/main — create restrito ao createdBy', () =
       })
     )
   })
-
-  it('create de config/main sem documento schools/{schoolId} existente é negado', async () => {
-    // schools/{schoolId} não existe — get() retorna documento inexistente,
-    // acesso a .data.createdBy resulta em PERMISSION_DENIED.
-    const db = asCreator()
-    await assertFails(
-      db.doc('schools/escola-inexistente/config/main').set({
-        schoolName: 'Escola sem pai',
-        turmas: [],
-        subjects: [],
-      })
-    )
-  })
-
-  it('create de config/main quando campo createdBy está ausente é negado', async () => {
-    // Cria a escola SEM o campo createdBy
-    await env.withSecurityRulesDisabled(async (ctx) => {
-      await ctx.firestore().doc('schools/escola-sem-createdBy').set({
-        id: 'escola-sem-createdBy',
-        name: 'Escola Sem createdBy',
-        plan: 'trial',
-        createdAt: new Date().toISOString(),
-        // createdBy ausente intencionalmente
-      })
-    })
-    const db = asCreator()
-    await assertFails(
-      db.doc('schools/escola-sem-createdBy/config/main').set({
-        schoolName: 'Config sem createdBy',
-        turmas: [],
-        subjects: [],
-      })
-    )
-  })
 })
 
-// ── 3. school_slugs/{slug} — create ──────────────────────────────────────────
+// ── 3. school_slugs/{slug} — create restrito a SaaS admin ───────────────────
 
-describe('school_slugs/{slug} — create durante onboarding', () => {
-  it('usuário autenticado consegue criar school_slugs/{slug}', async () => {
-    const db = asCreator()
+describe('school_slugs/{slug} — create restrito a SaaS admin', () => {
+  it('SaaS admin consegue criar school_slugs/{slug}', async () => {
+    const db = asSaasAdmin(env)
     await assertSucceeds(
       db.doc('school_slugs/minha-nova-escola').set({
         slug: 'minha-nova-escola',
         schoolId: SCHOOL_ID,
-        name: 'Escola de Onboarding',
+        name: 'Escola SaaS',
+        createdAt: new Date().toISOString(),
+      })
+    )
+  })
+
+  it('usuário autenticado comum NÃO consegue criar school_slugs/{slug}', async () => {
+    const db = asCreator()
+    await assertFails(
+      db.doc('school_slugs/slug-comum').set({
+        slug: 'slug-comum',
+        schoolId: SCHOOL_ID,
+        name: 'Escola',
         createdAt: new Date().toISOString(),
       })
     )
@@ -220,18 +223,6 @@ describe('school_slugs/{slug} — create durante onboarding', () => {
         slug: 'slug-anon',
         schoolId: SCHOOL_ID,
         name: 'Anon Escola',
-        createdAt: new Date().toISOString(),
-      })
-    )
-  })
-
-  it('outro usuário autenticado também consegue criar um slug diferente', async () => {
-    const db = asOtherUser()
-    await assertSucceeds(
-      db.doc('school_slugs/outro-slug').set({
-        slug: 'outro-slug',
-        schoolId: 'outra-escola-999',
-        name: 'Outra Escola',
         createdAt: new Date().toISOString(),
       })
     )

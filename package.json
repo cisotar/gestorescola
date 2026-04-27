@@ -11,7 +11,8 @@
     "test:coverage": "vitest run --coverage",
     "test:rules": "firebase emulators:exec --only firestore 'vitest run --passWithNoTests src/__tests__/rules/'",
     "seed:admins": "node scripts/seed-admins.js",
-    "migrate": "node scripts/migrate-to-multitenant.js"
+    "migrate": "node scripts/migrate-to-multitenant.js",
+    "create:school": "node scripts/createSchool.js"
   },
   "dependencies": {
     "firebase": "^10.12.2",
