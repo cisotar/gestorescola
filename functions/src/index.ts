@@ -215,7 +215,7 @@ export const deleteAbsence = region.https.onCall(async (data, context) => {
 // schools/{schoolId}/pending_teachers/{pendingUid}, escreve users/{pendingUid}.
 // Migra schedules órfãos do UID pendente para o teacher.id final.
 
-const VALID_PROFILES = ["teacher", "coordinator", "teacher-coordinator"];
+const VALID_PROFILES = ["teacher", "coordinator", "teacher-coordinator", "admin"];
 
 export const approveTeacher = region.https.onCall(async (data, context) => {
   const schoolId = String(data?.schoolId ?? "");
