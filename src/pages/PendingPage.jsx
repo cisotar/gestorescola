@@ -4,6 +4,7 @@
   import useAuthStore from '../store/useAuthStore'
   import useSchoolStore from '../store/useSchoolStore'
   import { updatePendingData } from '../lib/db'
+  import { _loadConfig } from '../lib/db/config'
   import { getSchoolDocRef } from '../lib/firebase/multi-tenant'
   import { ScheduleGrid } from '../components/ui/ScheduleGrid'
   import Modal from '../components/ui/Modal'
@@ -169,6 +170,21 @@
           setStep('schedule')
         }
       })
+    }, [currentSchoolId])
+
+    // Carrega config de escola (subjects, areas, segments, periodConfigs) se ainda não foi carregada
+    useEffect(() => {
+      if (!currentSchoolId) return
+      if (store.subjects.length > 0) return // Já carregada
+
+      _loadConfig(currentSchoolId)
+        .then(cfg => {
+          if (cfg && Object.keys(cfg).length > 0) {
+            store.hydrate({ ...cfg, schedules: store.schedules || [] })
+            console.log(`[PendingPage] Loaded config for schoolId: ${currentSchoolId}`)
+          }
+        })
+        .catch(e => console.warn('[PendingPage] Falha ao carregar config:', e))
     }, [currentSchoolId])
 
     // Agrupa segmento → área → matérias
