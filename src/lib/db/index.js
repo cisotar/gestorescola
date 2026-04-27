@@ -476,33 +476,38 @@ export async function designateLocalAdmin(schoolId, newEmail) {
  * @param {'teacher'|'coordinator'|'teacher-coordinator'} role
  */
 export async function syncTeacherRoleInUserDoc(schoolId, email, role) {
-  if (!schoolId || !email) return
+  if (!schoolId || !email) return { synced: false, reason: 'missing_args' }
   const lower = email.trim().toLowerCase()
-  if (!lower) return
+  if (!lower) return { synced: false, reason: 'empty_email' }
   let targetUid = null
-  try {
-    const tQuery = query(
-      collection(db, 'schools', schoolId, 'teachers'),
-      where('email', '==', lower),
-      limit(2)
-    )
-    const tSnap = await getDocs(tQuery)
-    const hit = tSnap.docs.find(d => d.data()?.uid)
-    targetUid = hit?.data()?.uid ?? null
-    if (!targetUid) {
-      const uQuery = query(collection(db, 'users'), where('email', '==', lower), limit(1))
-      const uSnap = await getDocs(uQuery)
-      if (!uSnap.empty) targetUid = uSnap.docs[0].id
-    }
-    if (!targetUid) return
-    const userRef = doc(db, 'users', targetUid)
-    const userSnap = await getDoc(userRef)
-    if (!userSnap.exists()) return
-    if (!userSnap.data()?.schools?.[schoolId]) return
-    await updateDoc(userRef, { [`schools.${schoolId}.role`]: role })
-  } catch (e) {
-    console.warn('[syncTeacherRoleInUserDoc] falha:', e)
+  const tQuery = query(
+    collection(db, 'schools', schoolId, 'teachers'),
+    where('email', '==', lower),
+    limit(2)
+  )
+  const tSnap = await getDocs(tQuery)
+  const hit = tSnap.docs.find(d => d.data()?.uid)
+  targetUid = hit?.data()?.uid ?? null
+  if (!targetUid) {
+    const uQuery = query(collection(db, 'users'), where('email', '==', lower), limit(1))
+    const uSnap = await getDocs(uQuery)
+    if (!uSnap.empty) targetUid = uSnap.docs[0].id
   }
+  if (!targetUid) {
+    // Sem user doc — ok. O role será derivado do teacher.profile na próxima
+    // sessão via auto-reconciliação em _resolveRole step 3.5.
+    return { synced: false, reason: 'no_user_doc', deferred: true }
+  }
+  const userRef = doc(db, 'users', targetUid)
+  const userSnap = await getDoc(userRef)
+  if (!userSnap.exists()) return { synced: false, reason: 'user_doc_missing' }
+  if (!userSnap.data()?.schools?.[schoolId]) {
+    // Cria a entrada da escola — usuário foi promovido sem ainda ter sessão nessa escola
+    await updateDoc(userRef, { [`schools.${schoolId}`]: { role, status: 'approved' } })
+    return { synced: true, created: true, targetUid }
+  }
+  await updateDoc(userRef, { [`schools.${schoolId}.role`]: role })
+  return { synced: true, targetUid }
 }
 
 // ─── Status da Escola (suspender/reativar) ───────────────────────────────────

@@ -393,23 +393,32 @@ export default function TabTeachers() {
       if (!confirm(`Remover privilégios de Admin desta escola de ${t.name}? Confirmar?`)) return
     }
 
+    const LABELS = { teacher: 'Professor', coordinator: 'Coord. Geral', 'teacher-coordinator': 'Prof. Coord.', admin: 'Admin' }
     try {
       // Admin LOCAL: atualiza profile do teacher na escola E role em users/{uid}.schools[schoolId].
       // designateLocalAdmin sincroniza schools/{schoolId}.adminEmail e users/{uid}.schools[schoolId].role='admin'.
       if (newProfile === 'admin') {
         await store.updateTeacher(t.id, { profile: 'admin' })
-        await designateLocalAdmin(currentSchoolId, t.email)
+        const result = await designateLocalAdmin(currentSchoolId, t.email)
+        if (result?.promoted) {
+          toast(`${t.name} agora é ${LABELS.admin}`, 'ok')
+        } else {
+          toast(`${t.name} marcado como ${LABELS.admin}. Acesso elevado entrará em vigor no próximo login.`, 'ok')
+        }
       } else {
         await store.updateTeacher(t.id, { profile: newProfile })
-        // Sincroniza o role em users/{uid}.schools[schoolId] imediatamente
-        // (sem esperar próximo login).
-        await syncTeacherRoleInUserDoc(currentSchoolId, t.email, newProfile)
+        const result = await syncTeacherRoleInUserDoc(currentSchoolId, t.email, newProfile)
+        if (result?.synced) {
+          toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')
+        } else if (result?.deferred) {
+          toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}. (Sincronização entrará em vigor no próximo login dele.)`, 'ok')
+        } else {
+          toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')
+        }
       }
-      const LABELS = { teacher: 'Professor', coordinator: 'Coord. Geral', 'teacher-coordinator': 'Prof. Coord.', admin: 'Admin' }
-      toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')
     } catch (e) {
-      console.error(e)
-      toast('Erro ao atualizar perfil', 'err')
+      console.error('[handleProfileChange]', e)
+      toast(`Erro ao atualizar perfil de ${t.name}: ${e?.message ?? e}`, 'err')
     }
   }
 
