@@ -38,6 +38,13 @@ export default function App() {
   const availableSchools   = useSchoolStore(s => s.availableSchools)
   const { pathname } = useLocation()
 
+  // Track role changes from pending to approved (for diagnostics)
+  useEffect(() => {
+    if (role && role !== 'pending') {
+      console.log('[app] Role mudou para aprovado:', role, '— re-renderizando Routes')
+    }
+  }, [role])
+
   // 1. Inicializa auth (resolve role) assim que o componente monta.
   useEffect(() => {
     init()

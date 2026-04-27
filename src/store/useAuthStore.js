@@ -19,7 +19,7 @@ const useAuthStore = create((set, get) => ({
   pendingCt:     0,
   isSaasAdmin:   false,  // true se email em SUPER_USERS ou em /admins/{email_key}
   _unsubPending: null,
-  _unsubApproval:null,
+  _unsubApproval: null,  // unsub fn do listener pending_teachers/{uid}; sempre chamar antes de criar novo
   _unsubSchoolSub: null,
 
   // ─── Init ──────────────────────────────────────────────────────────────────
@@ -37,6 +37,9 @@ const useAuthStore = create((set, get) => ({
       const user = get().user
       if (!user) return
       try {
+        // Cancelar listener de aprovação anterior antes de re-resolve na nova escola
+        get()._unsubApproval?.()
+        set({ _unsubApproval: null })
         await get()._resolveRole(user)
       } catch (e) {
         console.warn('[auth] re-resolve role on schoolId change:', e)
@@ -139,12 +142,16 @@ const useAuthStore = create((set, get) => ({
     console.log('[auth._resolveRole] step 4: registrando listener de aprovação em', `schools/${schoolId}/pending_teachers/${user.uid}`)
     set({ role: 'pending' })
     try { await requestTeacherAccess(schoolId, user) } catch (e) { console.error('[auth._resolveRole] requestTeacherAccess FAIL', { schoolId, uid: user.uid, code: e.code, message: e.message }) }
+
+    // Cancelar listener anterior, se existir (idempotência)
     get()._unsubApproval?.()
+    set({ _unsubApproval: null })
+
     const pendingDocRef = doc(db, 'schools', schoolId, 'pending_teachers', user.uid)
     const unsub = onSnapshot(
       pendingDocRef,
       async snap => {
-        console.log('[auth.approvalListener] dispara, exists?', snap.exists())
+        console.log('[auth.approvalListener] dispara, exists?', snap.exists(), `— listening to schools/${schoolId}/pending_teachers/${user.uid}`)
         if (!snap.exists()) {
           unsub()
           set({ _unsubApproval: null })
@@ -156,7 +163,7 @@ const useAuthStore = create((set, get) => ({
               const entry = userSnap.data().schools?.[schoolId]
               const newRole = entry?.role
               const newStatus = entry?.status
-              console.log('[auth.approvalListener] users/{uid} atualizado:', { newRole, newStatus })
+              console.log('[auth.approvalListener] users/{uid} atualizado:', { newRole, newStatus, schoolId })
               if (newStatus === 'approved' && newRole && newRole !== 'pending') {
                 const normalized = newRole === 'coordinator' ? 'coordinator'
                   : newRole === 'teacher-coordinator' ? 'teacher-coordinator'
@@ -167,6 +174,7 @@ const useAuthStore = create((set, get) => ({
                   const teacherDocId = entry?.teacherDocId ?? null
                   teacherDoc = await getTeacherDoc(schoolId, teacherDocId, user.email)
                 }
+                console.log('[auth.approvalListener] role atualizado para:', normalized)
                 set({ role: normalized, teacher: teacherDoc })
               } else if (newStatus === 'rejected') {
                 console.log('[auth.approvalListener] cadastro rejeitado, deslogando')
@@ -174,10 +182,10 @@ const useAuthStore = create((set, get) => ({
                 await signOut(auth)
               }
             }
-          } catch (e) { console.warn('[approvalListener]', e) }
+          } catch (e) { console.warn('[approvalListener] erro ao re-ler users/{uid}:', e) }
         }
       },
-      err => console.warn('[approvalListener]', err)
+      err => console.warn('[approvalListener] listener error:', err)
     )
     set({ _unsubApproval: unsub })
   },

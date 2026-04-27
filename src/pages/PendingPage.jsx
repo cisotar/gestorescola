@@ -164,6 +164,7 @@
       if (!currentSchoolId) return
       getDoc(getSchoolDocRef(currentSchoolId, 'pending_teachers', user.uid)).then(snap => {
         if (snap.exists() && snap.data().celular) {
+          console.log('[PendingPage] re-entry: dados salvos encontrados, retomando no step schedule')
           setCelular(snap.data().celular)
           setApelido(snap.data().apelido ?? '')
           setSelSubjs(snap.data().subjectIds ?? [])
