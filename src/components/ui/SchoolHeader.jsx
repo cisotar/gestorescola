@@ -1,12 +1,17 @@
 import useSchoolStore from '../../store/useSchoolStore'
 import useAuthStore from '../../store/useAuthStore'
+import { useLocation } from 'react-router-dom'
 
 const ALLOWED_ROLES = new Set(['admin', 'coordinator', 'teacher-coordinator'])
 
 export default function SchoolHeader() {
   const currentSchool = useSchoolStore(s => s.currentSchool)
   const role          = useAuthStore(s => s.role)
+  const isSaasAdmin   = useAuthStore(s => s.isSaasAdmin)
+  const { pathname }  = useLocation()
 
+  // Não exibir no painel SaaS admin (a escola ativa ali é contexto de navegação, não da sessão)
+  if (isSaasAdmin && pathname.startsWith('/admin')) return null
   if (!currentSchool || !ALLOWED_ROLES.has(role)) return null
 
   return (

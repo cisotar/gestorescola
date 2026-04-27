@@ -16,7 +16,8 @@ export default function Navbar() {
   const displayName    = user?.displayName ?? 'Usuário'
   const photo          = user?.photoURL
   const { pathname }   = useLocation()
-  const showBackToAdmin = isSaasAdmin && pathname !== '/admin'
+  const showBackToAdmin  = isSaasAdmin && pathname !== '/admin'
+  const isInAdminPanel   = isSaasAdmin && pathname === '/admin'
 
   return (
     <nav className="bg-navy sticky top-0 z-50 shadow-sm">
@@ -32,7 +33,7 @@ export default function Navbar() {
 
         {/* Links de navegação */}
         <div className="flex items-center gap-3">
-          {showBackToAdmin ? (
+          {isInAdminPanel ? null : showBackToAdmin ? (
             <NavLink
               to="/admin"
               className="flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent/80 transition-colors"
@@ -70,7 +71,7 @@ export default function Navbar() {
 
         {/* Auth bar — todos os viewports */}
         <div className="flex items-center gap-2 shrink-0">
-          <SchoolSwitcher />
+          {!isInAdminPanel && <SchoolSwitcher />}
           <div className="flex items-center gap-2">
             {photo ? (
               <img src={photo} alt={displayName} className="w-8 h-8 rounded-full object-cover" />
@@ -80,11 +81,15 @@ export default function Navbar() {
               </div>
             )}
             <span className="hidden sm:block text-white/90 text-sm font-semibold max-w-[160px] truncate">{displayName}</span>
-            {ROLE_LABELS[role] && (
+            {isSaasAdmin ? (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-accent text-white uppercase tracking-wide">
+                SaaS Admin
+              </span>
+            ) : ROLE_LABELS[role] ? (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/20 text-white/90 uppercase tracking-wide">
                 {ROLE_LABELS[role]}
               </span>
-            )}
+            ) : null}
           </div>
           <button
             onClick={logout}

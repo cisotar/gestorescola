@@ -174,7 +174,8 @@ export default function App() {
             <Route path="/school-schedule" element={<SchoolScheduleRedirect />} />
             <Route path="/grades"  element={<GradesPage />} />
             {/* /admin — painel SaaS admin. Gated por isSaasAdmin (issue 418). */}
-            <Route path="/admin"   element={isSaasAdmin ? <AdminPanelPage /> : <Navigate to="/login" replace />} />
+            {/* Fallback → /home (não /login): admin local está autenticado e não deve ser deslogado visualmente. */}
+            <Route path="/admin"   element={isSaasAdmin ? <AdminPanelPage /> : <Navigate to="/home" replace />} />
             <Route path="*"          element={<Navigate to="/home" replace />} />
           </Route>
         </Routes>
