@@ -1,24 +1,13 @@
-// AdminPanelPage — casca do painel SaaS admin (`/admin`).
-// Issue 415: layout com mocks. Issue 417: integração do CreateSchoolModal com Firestore.
-// Issue 419: integração com useSchoolStore (listagem em tempo real e troca com teardown).
-
-import { useEffect, useState, lazy, Suspense } from 'react'
-import SchoolTabBar from '../components/admin/SchoolTabBar'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import SchoolActionsMenu from '../components/admin/SchoolActionsMenu'
-import AdminSubNav from '../components/admin/AdminSubNav'
 import CreateSchoolModal from '../components/admin/CreateSchoolModal'
 import DesignateAdminModal from '../components/admin/DesignateAdminModal'
 import Modal from '../components/ui/Modal'
-import Spinner from '../components/ui/Spinner'
 import { createSchoolFromAdmin, designateLocalAdmin, setSchoolStatus, softDeleteSchool } from '../lib/db'
 import useAuthStore from '../store/useAuthStore'
 import useSchoolStore from '../store/useSchoolStore'
 import { toast } from '../hooks/useToast'
-
-// Lazy-load das páginas internas para evitar inflar o bundle de /admin.
-const DashboardPage = lazy(() => import('./DashboardPage'))
-const CalendarPage  = lazy(() => import('./CalendarPage'))
-const SettingsPage  = lazy(() => import('./SettingsPage'))
 
 function buildJoinLink(slug) {
   if (typeof window === 'undefined') return `/join/${slug}`
@@ -31,9 +20,7 @@ async function copyToClipboard(text) {
       await navigator.clipboard.writeText(text)
       return true
     }
-  } catch {
-    // fallback abaixo
-  }
+  } catch { /* fallback */ }
   try {
     const ta = document.createElement('textarea')
     ta.value = text
@@ -44,54 +31,36 @@ async function copyToClipboard(text) {
     document.execCommand('copy')
     document.body.removeChild(ta)
     return true
-  } catch {
-    return false
-  }
+  } catch { return false }
 }
 
 export default function AdminPanelPage() {
-  const [section, setSection] = useState('dashboard')
   const [modalOpen, setModalOpen] = useState(false)
-  // confirm: { action: 'suspend' | 'reactivate' | 'delete', school, submitting } | null
   const [confirm, setConfirm] = useState(null)
-  // designateState: { school } | null
   const [designateState, setDesignateState] = useState(null)
+  const navigate = useNavigate()
+
   const user = useAuthStore(s => s.user)
+  const displayName = user?.displayName ?? 'Admin'
 
-  const allSchools         = useSchoolStore(s => s.allSchools)
-  const currentSchoolId    = useSchoolStore(s => s.currentSchoolId)
-  const fetchAllSchools    = useSchoolStore(s => s.fetchAllSchools)
-  const stopAllSchools     = useSchoolStore(s => s.stopAllSchoolsListener)
-  const switchSchool       = useSchoolStore(s => s.switchSchool)
+  const allSchools      = useSchoolStore(s => s.allSchools)
+  const fetchAllSchools = useSchoolStore(s => s.fetchAllSchools)
+  const stopAllSchools  = useSchoolStore(s => s.stopAllSchoolsListener)
+  const switchSchool    = useSchoolStore(s => s.switchSchool)
 
-  // Subscribe global em /schools no mount; teardown no unmount.
   useEffect(() => {
     fetchAllSchools()
     return () => { stopAllSchools() }
   }, [fetchAllSchools, stopAllSchools])
 
-  // Auto-select da primeira escola quando a lista chega e ainda não há contexto.
-  useEffect(() => {
-    if (currentSchoolId == null && allSchools.length > 0) {
-      switchSchool(allSchools[0].schoolId).catch(e => {
-        console.warn('[AdminPanelPage] auto-select switchSchool falhou:', e)
-      })
-    }
-  }, [currentSchoolId, allSchools, switchSchool])
-
-  // Fallback: se currentSchoolId não bate com nenhum item (suspensão/delete), usa o primeiro.
-  const activeSchool =
-    allSchools.find(s => s.schoolId === currentSchoolId) ?? allSchools[0] ?? null
-
-  const handleSelect = (id) => {
-    switchSchool(id).catch(e => {
+  const handleSchoolClick = async (school) => {
+    try {
+      await switchSchool(school.schoolId)
+      navigate('/home')
+    } catch (e) {
       console.warn('[AdminPanelPage] switchSchool falhou:', e)
       toast('Não foi possível carregar a escola', 'err')
-    })
-  }
-
-  const handleCreate = () => {
-    setModalOpen(true)
+    }
   }
 
   const handleSubmit = async ({ slug, adminEmail }) => {
@@ -105,24 +74,14 @@ export default function AdminPanelPage() {
       adminEmail,
       currentUserUid: user.uid,
     })
-
-    // Sucesso: fechar modal e ativar tab nova (lista real chega via onSnapshot).
     setModalOpen(false)
-    try {
-      await switchSchool(schoolId)
-    } catch (e) {
-      console.warn('[AdminPanelPage] switchSchool após criar falhou:', e)
-    }
-
-    // Toast com link copiável para /join/{slug}.
     const link = buildJoinLink(slug)
     copyToClipboard(link).then(ok => {
-      if (ok) {
-        toast(`Escola criada! Link copiado: ${link}`, 'ok')
-      } else {
-        toast(`Escola criada! Link: ${link}`, 'ok')
-      }
+      toast(ok ? `Escola criada! Link copiado: ${link}` : `Escola criada! Link: ${link}`, 'ok')
     })
+    try { await switchSchool(schoolId) } catch (e) {
+      console.warn('[AdminPanelPage] switchSchool após criar falhou:', e)
+    }
   }
 
   const handleAction = (action, school) => {
@@ -134,10 +93,7 @@ export default function AdminPanelPage() {
     if (action === 'designate') {
       if (!school?.schoolId) return
       setDesignateState({ school })
-      return
     }
-    // eslint-disable-next-line no-console
-    console.log('[AdminPanelPage] Ação na escola:', action, school?.schoolId)
   }
 
   const handleDesignateSubmit = async ({ adminEmail }) => {
@@ -148,11 +104,12 @@ export default function AdminPanelPage() {
     }
     const result = await designateLocalAdmin(designateState.school.schoolId, adminEmail)
     setDesignateState(null)
-    if (result?.promoted) {
-      toast('Admin local atualizado. O novo admin já tem acesso elevado.', 'ok')
-    } else {
-      toast('Admin local atualizado. O novo admin terá acesso ao fazer login.', 'ok')
-    }
+    toast(
+      result?.promoted
+        ? 'Admin local atualizado. O novo admin já tem acesso elevado.'
+        : 'Admin local atualizado. O novo admin terá acesso ao fazer login.',
+      'ok'
+    )
   }
 
   const handleConfirm = async () => {
@@ -171,68 +128,80 @@ export default function AdminPanelPage() {
       setConfirm(null)
     } catch (e) {
       console.warn('[AdminPanelPage] handleConfirm falhou:', e)
-      if (action === 'delete') {
-        if (e?.code === 'permission-denied') {
-          toast('Sem permissão para excluir a escola', 'err')
-        } else {
-          toast('Falha ao excluir escola. Tente novamente.', 'err')
-        }
-      } else if (e?.code === 'permission-denied') {
-        toast('Sem permissão para alterar o status da escola', 'err')
-      } else {
-        toast('Falha ao atualizar escola. Tente novamente.', 'err')
-      }
-      // Reabilita botão para retry; mantém modal aberto.
+      toast(
+        e?.code === 'permission-denied'
+          ? 'Sem permissão para realizar esta ação'
+          : 'Falha ao atualizar escola. Tente novamente.',
+        'err'
+      )
       setConfirm(c => (c ? { ...c, submitting: false } : c))
     }
   }
 
   return (
-    <div>
-      <div className="mb-5">
-        <h1 className="text-xl font-extrabold tracking-tight">Painel Admin SaaS</h1>
-        <p className="text-sm text-t3 mt-1">Gerencie todas as escolas em um único painel.</p>
+    <div className="max-w-4xl">
+      {/* Greeting */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-extrabold tracking-tight text-t1">
+          Olá, {displayName}!
+        </h1>
+        <p className="text-sm text-t3 mt-1">Selecione uma escola ou adicione uma nova.</p>
       </div>
 
-      <SchoolTabBar
-        schools={allSchools}
-        currentSchoolId={activeSchool?.schoolId ?? null}
-        onSelect={handleSelect}
-        onCreate={handleCreate}
-      />
+      {/* Card grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
-      {activeSchool ? (
-        <>
-          <div className="flex items-center gap-2 mb-4">
-            <h2 className="text-lg font-bold text-t1">{activeSchool.name}</h2>
-            <span className="text-xs text-t3">/{activeSchool.slug}</span>
-            <SchoolActionsMenu school={activeSchool} onAction={handleAction} />
-          </div>
+        {/* Add school card */}
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed border-bdr bg-surf hover:border-accent hover:bg-surf2 transition-colors text-t3 hover:text-accent group"
+        >
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="transition-colors">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          <span className="text-sm font-semibold">Adicionar escola</span>
+        </button>
 
-          <AdminSubNav section={section} onChange={setSection} />
-
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center py-10">
-                <Spinner />
-              </div>
-            }
+        {/* One card per school */}
+        {allSchools.map(school => (
+          <div
+            key={school.schoolId}
+            className="relative flex flex-col h-32 rounded-xl border border-bdr bg-surf hover:border-t3 hover:shadow-sm transition-all"
           >
-            {/* key força unmount/remount limpo ao trocar de escola, evitando estado stale
-                em modais/forms internos das páginas reutilizadas. */}
-            <div key={activeSchool.schoolId}>
-              {section === 'dashboard' && <DashboardPage />}
-              {section === 'calendar'  && <CalendarPage />}
-              {section === 'settings'  && <SettingsPage />}
-            </div>
-          </Suspense>
-        </>
-      ) : (
-        <div className="rounded-lg border border-bdr bg-surf p-6 text-sm text-t3">
-          Nenhuma escola selecionada.
-        </div>
-      )}
+            {/* Clickable area — navigates to school home */}
+            <button
+              type="button"
+              onClick={() => handleSchoolClick(school)}
+              className="flex-1 flex flex-col items-start justify-center px-4 text-left"
+            >
+              <span className="font-bold text-t1 text-base leading-tight line-clamp-2">
+                {school.name || school.slug}
+              </span>
+              {school.status === 'suspended' && (
+                <span className="mt-1 text-[10px] font-bold uppercase tracking-wide text-warn bg-warn/10 px-1.5 py-0.5 rounded-full">
+                  Suspensa
+                </span>
+              )}
+            </button>
 
+            {/* 3-dot menu — bottom-right corner, stops propagation */}
+            <div
+              className="absolute bottom-2 right-2"
+              onClick={e => e.stopPropagation()}
+            >
+              <SchoolActionsMenu
+                school={school}
+                onAction={handleAction}
+                triggerLabel=""
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Modals */}
       <CreateSchoolModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -250,11 +219,8 @@ export default function AdminPanelPage() {
         open={!!confirm}
         onClose={() => { if (!confirm?.submitting) setConfirm(null) }}
         title={
-          confirm?.action === 'suspend'
-            ? 'Suspender escola?'
-            : confirm?.action === 'delete'
-              ? 'Excluir escola?'
-              : 'Reativar escola?'
+          confirm?.action === 'suspend' ? 'Suspender escola?' :
+          confirm?.action === 'delete'  ? 'Excluir escola?'   : 'Reativar escola?'
         }
         size="sm"
       >
@@ -262,23 +228,11 @@ export default function AdminPanelPage() {
           <div className="space-y-4">
             <p className="text-sm text-t2">
               {confirm.action === 'suspend' ? (
-                <>
-                  Membros da escola <strong className="text-t1">{confirm.school.name}</strong>{' '}
-                  perderão o acesso enquanto ela estiver suspensa. Você (SaaS admin) continuará
-                  podendo visualizá-la e reativá-la a qualquer momento.
-                </>
+                <>Membros da escola <strong className="text-t1">{confirm.school.name}</strong> perderão o acesso enquanto ela estiver suspensa. Você continuará podendo reativá-la a qualquer momento.</>
               ) : confirm.action === 'delete' ? (
-                <>
-                  A escola <strong className="text-t1">{confirm.school.name}</strong> será
-                  removida do painel.{' '}
-                  <strong className="text-t1">Esta operação é reversível apenas via backend</strong>{' '}
-                  (script manual). Membros perderão acesso imediatamente.
-                </>
+                <>A escola <strong className="text-t1">{confirm.school.name}</strong> será removida do painel. <strong className="text-t1">Operação reversível apenas via backend</strong>. Membros perderão acesso imediatamente.</>
               ) : (
-                <>
-                  A escola <strong className="text-t1">{confirm.school.name}</strong> voltará a
-                  ficar acessível aos membros conforme suas permissões.
-                </>
+                <>A escola <strong className="text-t1">{confirm.school.name}</strong> voltará a ficar acessível aos membros.</>
               )}
             </p>
             <div className="flex justify-end gap-2 pt-2">
@@ -286,7 +240,7 @@ export default function AdminPanelPage() {
                 type="button"
                 onClick={() => setConfirm(null)}
                 disabled={confirm.submitting}
-                className="px-4 h-9 rounded-lg border border-bdr bg-surf text-sm font-medium text-t1 hover:bg-surf2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 h-9 rounded-lg border border-bdr bg-surf text-sm font-medium text-t1 hover:bg-surf2 transition-colors disabled:opacity-50"
               >
                 Cancelar
               </button>
@@ -294,21 +248,17 @@ export default function AdminPanelPage() {
                 type="button"
                 onClick={handleConfirm}
                 disabled={confirm.submitting}
-                className={`px-4 h-9 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  confirm.action === 'suspend'
-                    ? 'bg-warn hover:brightness-110'
-                    : confirm.action === 'delete'
-                      ? 'bg-err hover:brightness-110'
-                      : 'bg-accent hover:brightness-110'
+                className={`px-4 h-9 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50 ${
+                  confirm.action === 'suspend' ? 'bg-warn hover:brightness-110' :
+                  confirm.action === 'delete'  ? 'bg-err hover:brightness-110'  :
+                  'bg-accent hover:brightness-110'
                 }`}
               >
                 {confirm.submitting
                   ? (confirm.action === 'delete' ? 'Excluindo...' : 'Salvando...')
-                  : confirm.action === 'suspend'
-                    ? 'Suspender'
-                    : confirm.action === 'delete'
-                      ? 'Excluir'
-                      : 'Reativar'}
+                  : confirm.action === 'suspend' ? 'Suspender'
+                  : confirm.action === 'delete'  ? 'Excluir'
+                  : 'Reativar'}
               </button>
             </div>
           </div>

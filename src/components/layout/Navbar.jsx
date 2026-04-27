@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import useAuthStore from '../../store/useAuthStore'
 import SchoolSwitcher from '../ui/SchoolSwitcher'
 
@@ -10,11 +10,13 @@ const ROLE_LABELS = {
 }
 
 export default function Navbar() {
-  const { user, role, logout, isCoordinator } = useAuthStore()
+  const { user, role, logout, isCoordinator, isSaasAdmin } = useAuthStore()
   const isAdmin        = role === 'admin'
   const canAccessAdmin = isAdmin || isCoordinator()
   const displayName    = user?.displayName ?? 'Usuário'
   const photo          = user?.photoURL
+  const { pathname }   = useLocation()
+  const showBackToAdmin = isSaasAdmin && pathname !== '/admin'
 
   return (
     <nav className="bg-navy sticky top-0 z-50 shadow-sm">
@@ -30,26 +32,40 @@ export default function Navbar() {
 
         {/* Links de navegação */}
         <div className="flex items-center gap-3">
-          <NavLink
-            to="/home"
-            className={({ isActive }) =>
-              `text-sm font-semibold transition-colors ${
-                isActive ? 'text-white' : 'text-white/60 hover:text-white/90'
-              }`
-            }
-          >
-            Início
-          </NavLink>
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `text-sm font-semibold transition-colors ${
-                isActive ? 'text-white' : 'text-white/60 hover:text-white/90'
-              }`
-            }
-          >
-            Configurações
-          </NavLink>
+          {showBackToAdmin ? (
+            <NavLink
+              to="/admin"
+              className="flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent/80 transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              Painel Admin
+            </NavLink>
+          ) : (
+            <>
+              <NavLink
+                to="/home"
+                className={({ isActive }) =>
+                  `text-sm font-semibold transition-colors ${
+                    isActive ? 'text-white' : 'text-white/60 hover:text-white/90'
+                  }`
+                }
+              >
+                Início
+              </NavLink>
+              <NavLink
+                to="/settings"
+                className={({ isActive }) =>
+                  `text-sm font-semibold transition-colors ${
+                    isActive ? 'text-white' : 'text-white/60 hover:text-white/90'
+                  }`
+                }
+              >
+                Configurações
+              </NavLink>
+            </>
+          )}
         </div>
 
         {/* Auth bar — todos os viewports */}

@@ -109,22 +109,42 @@ export default function SchoolActionsMenu({
 
   return (
     <div className="relative inline-block">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => !disabled && setIsOpen((o) => !o)}
-        onKeyDown={handleTriggerKeyDown}
-        disabled={disabled}
-        aria-haspopup="menu"
-        aria-expanded={isOpen}
-        aria-label="Ações da escola"
-        className="inline-flex items-center gap-1 px-3 h-8 rounded-lg border border-bdr bg-surf text-sm font-medium text-t1 hover:border-t1 hover:shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <span>{triggerLabel}</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
+      {triggerLabel ? (
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => !disabled && setIsOpen((o) => !o)}
+          onKeyDown={handleTriggerKeyDown}
+          disabled={disabled}
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          aria-label="Ações da escola"
+          className="inline-flex items-center gap-1 px-3 h-8 rounded-lg border border-bdr bg-surf text-sm font-medium text-t1 hover:border-t1 hover:shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span>{triggerLabel}</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => !disabled && setIsOpen((o) => !o)}
+          onKeyDown={handleTriggerKeyDown}
+          disabled={disabled}
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          aria-label="Ações da escola"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-t3 hover:text-t1 hover:bg-surf2 transition-colors focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="12" cy="5" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="12" cy="19" r="1.5" />
+          </svg>
+        </button>
+      )}
 
       {isOpen && (
         <div

@@ -126,8 +126,9 @@ export default function App() {
   )
 
   // SaaS admin → /admin (prevalece mesmo que tenha escolas em availableSchools)
-  // Exceções: já está em /admin/* ou em /join/:slug.
-  if (isSaasAdmin && !pathname.startsWith('/admin') && !pathname.startsWith('/join/')) return (
+  // Exceções: já está em /admin/* ou em /join/:slug, ou tem uma escola ativa
+  // (clicou em uma escola no painel e está navegando dentro dela).
+  if (isSaasAdmin && !currentSchoolId && !pathname.startsWith('/admin') && !pathname.startsWith('/join/')) return (
     <>
       <Navigate to="/admin" replace />
       <Toast />
