@@ -502,7 +502,6 @@ const useAppStore = create((set, get) => {
     const teacher = get().teachers.find(t => t.id === id)
     if (_isCoordinator()) return _submitApproval('removeTeacher', { id }, `Remover professor ${teacher?.name ?? id}`)
 
-    const schedulesToDelete = get().schedules.filter(x => x.teacherId === id)
     const prevTeachers  = get().teachers
     const prevSchedules = get().schedules
 
@@ -514,15 +513,19 @@ const useAppStore = create((set, get) => {
 
     const sid = _schoolId()
     const result = await runResilientWrite(async () => {
-      await deleteDocById(sid, 'teachers', id)
-      await Promise.all(schedulesToDelete.map(sc => deleteDocById(sid, 'schedules', sc.id)))
+      await httpsCallable(functions, 'removeTeacherFromSchool')({ schoolId: sid, teacherId: id })
     })
 
     if (!result.ok) {
       set({ teachers: prevTeachers, schedules: prevSchedules })
-      const msg = result.code === 'permission-denied'
-        ? 'Sem permissão para remover este professor'
-        : result.message ?? 'Não foi possível remover. Tente novamente.'
+      let msg
+      if (result.code === 'permission-denied') {
+        msg = 'Sem permissão para remover este professor'
+      } else if (result.code === 'failed-precondition') {
+        msg = 'Você não pode remover a si mesmo'
+      } else {
+        msg = result.message ?? 'Não foi possível remover. Tente novamente.'
+      }
       toast(msg, 'err')
       console.error('[removeTeacher]', result.code, result.message)
       return { ok: false, code: result.code }

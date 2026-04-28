@@ -2,9 +2,10 @@ import { create } from 'zustand'
 import { auth, provider, db } from '../lib/firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { onSnapshot, collection, query, where, doc, getDoc, getDocs, setDoc, deleteDoc, limit } from 'firebase/firestore'
-import { isAdmin, requestTeacherAccess, getTeacherDoc } from '../lib/db'
+import { isAdmin, requestTeacherAccess, getTeacherDoc, teardownListeners } from '../lib/db'
 import useAppStore from './useAppStore'
 import useSchoolStore from './useSchoolStore'
+import { toast } from '../hooks/useToast'
 
 // Proprietário do sistema — acesso garantido independente do estado do Firestore.
 // Nunca passa pelo fluxo de aprovação; role 'admin' é atribuído antes de qualquer
@@ -21,6 +22,7 @@ const useAuthStore = create((set, get) => ({
   _unsubPending: null,
   _unsubApproval: null,  // unsub fn do listener pending_teachers/{uid}; sempre chamar antes de criar novo
   _unsubSchoolSub: null,
+  _unsubMembership: null, // unsub fn do listener users/{uid}; detecta perda de membership em runtime
   // Flag privada — indica que o init() do auth store está em curso e a transição
   // currentSchoolId (null → schoolId) que acontece dentro de useSchoolStore.init
   // deve ser ignorada pelo subscribe (o próprio init() já chama _resolveRole
@@ -75,6 +77,11 @@ const useAuthStore = create((set, get) => ({
             // uma segunda leitura de users/{uid} dentro de _resolveRole.
             const userSnap = await useSchoolStore.getState().init(user.uid)
             await get()._resolveRole(user, userSnap)
+            // Listener leve em users/{uid} para detectar perda de membership
+            // em runtime (ex.: admin remove o professor enquanto a sessão dele
+            // está aberta). Registrado APÓS _resolveRole para evitar race com
+            // o boot inicial.
+            get()._startMembershipListener(user.uid)
           } finally {
             set({ _initInProgress: false })
           }
@@ -83,6 +90,107 @@ const useAuthStore = create((set, get) => ({
         resolve()
       })
     })
+  },
+
+  // ─── _startMembershipListener ──────────────────────────────────────────────
+  // Listener leve em users/{uid} ativo durante toda a sessão. Detecta quando
+  // a entry de currentSchoolId desaparece (admin removeu o professor) e
+  // dispara o fluxo de revogação. Idempotente — pode ser chamado várias vezes.
+  // Não dispara em SaaS admin (não depende de users/{uid}).
+  _startMembershipListener: (uid) => {
+    // Idempotência: cancelar listener anterior antes de criar novo
+    get()._unsubMembership?.()
+    set({ _unsubMembership: null })
+
+    // SaaS admin não depende de users/{uid}.schools — listener vira no-op
+    if (get().isSaasAdmin) return
+
+    // prevHasEntry mantido em closure:
+    //  - null  → ainda não vi snapshot algum (boot)
+    //  - true  → última leitura tinha a entry
+    //  - false → última leitura NÃO tinha a entry
+    // Só dispara revogação na transição true → false.
+    let prevHasEntry = null
+
+    const unsub = onSnapshot(
+      doc(db, 'users', uid),
+      snap => {
+        // Defesa em profundidade: se SaaS admin foi setado em runtime, ignorar
+        if (get().isSaasAdmin) return
+
+        // Boot inicial pode chegar antes do users/{uid} existir (usuário novo)
+        if (!snap.exists()) return
+
+        const schoolId = useSchoolStore.getState().currentSchoolId
+        if (!schoolId) {
+          // Sem escola ativa não há membership a perder; reset prev
+          prevHasEntry = false
+          return
+        }
+
+        const data = snap.data() ?? {}
+        const entry = data.schools?.[schoolId]
+        const currentHasEntry = !!entry
+
+        if (prevHasEntry === null) {
+          // Primeiro snapshot pós-resolveRole: apenas grava estado, NÃO age
+          prevHasEntry = currentHasEntry
+          return
+        }
+
+        if (prevHasEntry === true && currentHasEntry === false) {
+          // Transição de "tinha" para "não tem" → revogação
+          get()._handleMembershipRevoked()
+        }
+
+        prevHasEntry = currentHasEntry
+      },
+      err => console.warn('[membership]', err)
+    )
+
+    set({ _unsubMembership: unsub })
+  },
+
+  // ─── _handleMembershipRevoked ─────────────────────────────────────────────
+  // Acionado pelo listener de membership quando a entry da escola atual é
+  // removida em runtime. Limpa listeners de dados, recarrega availableSchools
+  // e seleciona próxima escola disponível (ou null para cair em /no-school).
+  _handleMembershipRevoked: async () => {
+    const user = get().user
+    if (!user) return
+
+    // 1. Cancelar listeners de dados da escola removida
+    try { teardownListeners() } catch (e) { console.warn('[membership] teardownListeners:', e) }
+    try { useAppStore.getState().cleanupLazyListeners() } catch (e) { console.warn('[membership] cleanupLazyListeners:', e) }
+
+    // 2. Toast informativo
+    toast('Seu acesso a esta escola foi revogado pelo administrador', 'error')
+
+    // 3. Recarrega lista de escolas do usuário
+    try {
+      await useSchoolStore.getState().loadAvailableSchools(user.uid)
+    } catch (e) {
+      console.warn('[membership] loadAvailableSchools:', e)
+    }
+
+    const remaining = useSchoolStore.getState().availableSchools ?? []
+
+    // 4. Selecionar próxima escola ou cair em /no-school
+    if (remaining.length > 0) {
+      // Multi-escola: selecionar primeira disponível.
+      // setCurrentSchool dispara o subscribe de useSchoolStore que chama
+      // _resolveRole automaticamente, atualizando role/teacher na nova escola.
+      try {
+        await useSchoolStore.getState().setCurrentSchool(remaining[0].schoolId)
+      } catch (e) {
+        console.warn('[membership] setCurrentSchool:', e)
+      }
+    } else {
+      // Sem escolas: limpa currentSchoolId. App.jsx detecta
+      // !isSaasAdmin && availableSchools.length === 0 e redireciona para /no-school.
+      useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+      try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
+    }
   },
 
   // userSnapHint: snapshot de users/{uid} já lido em loadAvailableSchools.
@@ -297,7 +405,8 @@ const useAuthStore = create((set, get) => ({
     get()._unsubPending?.()
     get()._unsubApproval?.()
     get()._unsubSchoolSub?.()
-    set({ _unsubPending: null, _unsubApproval: null, _unsubSchoolSub: null, isSaasAdmin: false })
+    get()._unsubMembership?.()
+    set({ _unsubPending: null, _unsubApproval: null, _unsubSchoolSub: null, _unsubMembership: null, isSaasAdmin: false })
     useAppStore.getState().cleanupLazyListeners()
     // Cancela listener global de schools (SaaS admin) e limpa allSchools
     useSchoolStore.getState().stopAllSchoolsListener?.()

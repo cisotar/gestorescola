@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.applyPendingAction = exports.rejectTeacher = exports.approveTeacher = exports.deleteAbsence = exports.updateAbsence = exports.createAbsence = void 0;
+exports.applyPendingAction = exports.removeTeacherFromSchool = exports.rejectTeacher = exports.approveTeacher = exports.deleteAbsence = exports.updateAbsence = exports.createAbsence = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const auth_1 = require("./auth");
@@ -275,6 +275,87 @@ exports.rejectTeacher = region.https.onCall(async (data, context) => {
     batch.delete(pendingRef);
     await batch.commit();
     return { ok: true };
+});
+// ── removeTeacherFromSchool ───────────────────────────────────────────────────
+// Revogação atômica de acesso de um professor à escola.
+// Apaga teacher doc, schedules, pending_teachers e users/{uid}.schools[schoolId].
+// Reusa verifyAdmin (SaaS admin OU admin local). Coordenador NÃO pode chamar.
+exports.removeTeacherFromSchool = region.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g;
+    // 1. context.auth presente
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Login required");
+    }
+    // 2. Validar inputs
+    const schoolId = String((_a = data === null || data === void 0 ? void 0 : data.schoolId) !== null && _a !== void 0 ? _a : "");
+    const teacherId = String((_b = data === null || data === void 0 ? void 0 : data.teacherId) !== null && _b !== void 0 ? _b : "");
+    if (!schoolId || !teacherId) {
+        throw new functions.https.HttpsError("invalid-argument", "schoolId e teacherId são obrigatórios");
+    }
+    // 3. Autorização: SaaS admin OU admin local
+    await (0, auth_1.verifyAdmin)(context, schoolId);
+    const db = admin.firestore();
+    const callerUid = context.auth.uid;
+    // 4. Buscar teacher doc — idempotência se não existe
+    const teacherRef = db.doc(`schools/${schoolId}/teachers/${teacherId}`);
+    const teacherSnap = await teacherRef.get();
+    if (!teacherSnap.exists) {
+        return { ok: true, deletedSchedules: 0, idempotent: true };
+    }
+    const teacherData = ((_c = teacherSnap.data()) !== null && _c !== void 0 ? _c : {});
+    const teacherEmail = String((_d = teacherData.email) !== null && _d !== void 0 ? _d : "").toLowerCase();
+    // 5. Resolver Firebase Auth UID do professor.
+    // O doc teachers/ não tem campo uid (approveTeacher não grava). O vínculo
+    // autoritativo está em users/{authUid}.schools[schoolId].teacherDocId === teacherId.
+    // Buscar via email (campo gravado em users/{uid} no nível raiz).
+    let teacherUid = "";
+    if (teacherEmail) {
+        const usersSnap = await db
+            .collection("users")
+            .where("email", "==", teacherEmail)
+            .limit(1)
+            .get();
+        if (!usersSnap.empty) {
+            teacherUid = usersSnap.docs[0].id;
+        }
+    }
+    // 6. Bloquear self-removal — comparar UID resolvido E teacherDocId do caller
+    // (vínculo via users/{callerUid}.schools[schoolId].teacherDocId).
+    const callerUserSnap = await db.doc(`users/${callerUid}`).get();
+    const callerSchoolEntry = (_f = ((_e = callerUserSnap.data()) !== null && _e !== void 0 ? _e : {}).schools) === null || _f === void 0 ? void 0 : _f[schoolId];
+    const callerTeacherDocId = String((_g = callerSchoolEntry === null || callerSchoolEntry === void 0 ? void 0 : callerSchoolEntry.teacherDocId) !== null && _g !== void 0 ? _g : "");
+    if (callerUid === teacherUid ||
+        (callerTeacherDocId && callerTeacherDocId === teacherId)) {
+        throw new functions.https.HttpsError("failed-precondition", "Admin não pode remover a si mesmo");
+    }
+    // 7. Query schedules deste teacher
+    const schedulesSnap = await db
+        .collection(`schools/${schoolId}/schedules`)
+        .where("teacherId", "==", teacherId)
+        .get();
+    // 8. Pré-checar users/{teacherUid} para evitar NOT_FOUND no batch.update
+    let userExists = false;
+    if (teacherUid) {
+        const userSnap = await db.doc(`users/${teacherUid}`).get();
+        userExists = userSnap.exists;
+    }
+    // 9. Montar e commitar batch atômico
+    const batch = db.batch();
+    batch.delete(teacherRef);
+    schedulesSnap.docs.forEach((d) => batch.delete(d.ref));
+    if (teacherUid) {
+        batch.delete(db.doc(`schools/${schoolId}/pending_teachers/${teacherUid}`));
+        if (userExists) {
+            batch.update(db.doc(`users/${teacherUid}`), {
+                [`schools.${schoolId}`]: admin.firestore.FieldValue.delete(),
+            });
+        }
+    }
+    await batch.commit();
+    return {
+        ok: true,
+        deletedSchedules: schedulesSnap.size,
+    };
 });
 // ── applyPendingAction ────────────────────────────────────────────────────────
 exports.applyPendingAction = region.https.onCall(async (data, context) => {

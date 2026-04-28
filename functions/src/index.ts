@@ -362,6 +362,121 @@ export const rejectTeacher = region.https.onCall(async (data, context) => {
   return { ok: true };
 });
 
+// ── removeTeacherFromSchool ───────────────────────────────────────────────────
+// Revogação atômica de acesso de um professor à escola.
+// Apaga teacher doc, schedules, pending_teachers e users/{uid}.schools[schoolId].
+// Reusa verifyAdmin (SaaS admin OU admin local). Coordenador NÃO pode chamar.
+
+export const removeTeacherFromSchool = region.https.onCall(
+  async (data, context) => {
+    // 1. context.auth presente
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Login required"
+      );
+    }
+
+    // 2. Validar inputs
+    const schoolId = String(data?.schoolId ?? "");
+    const teacherId = String(data?.teacherId ?? "");
+    if (!schoolId || !teacherId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "schoolId e teacherId são obrigatórios"
+      );
+    }
+
+    // 3. Autorização: SaaS admin OU admin local
+    await verifyAdmin(context, schoolId);
+
+    const db = admin.firestore();
+    const callerUid = context.auth.uid;
+
+    // 4. Buscar teacher doc — idempotência se não existe
+    const teacherRef = db.doc(`schools/${schoolId}/teachers/${teacherId}`);
+    const teacherSnap = await teacherRef.get();
+    if (!teacherSnap.exists) {
+      return { ok: true, deletedSchedules: 0, idempotent: true };
+    }
+
+    const teacherData = (teacherSnap.data() ?? {}) as Record<string, unknown>;
+    const teacherEmail = String(teacherData.email ?? "").toLowerCase();
+
+    // 5. Resolver Firebase Auth UID do professor.
+    // O doc teachers/ não tem campo uid (approveTeacher não grava). O vínculo
+    // autoritativo está em users/{authUid}.schools[schoolId].teacherDocId === teacherId.
+    // Buscar via email (campo gravado em users/{uid} no nível raiz).
+    let teacherUid = "";
+    if (teacherEmail) {
+      const usersSnap = await db
+        .collection("users")
+        .where("email", "==", teacherEmail)
+        .limit(1)
+        .get();
+      if (!usersSnap.empty) {
+        teacherUid = usersSnap.docs[0].id;
+      }
+    }
+
+    // 6. Bloquear self-removal — comparar UID resolvido E teacherDocId do caller
+    // (vínculo via users/{callerUid}.schools[schoolId].teacherDocId).
+    const callerUserSnap = await db.doc(`users/${callerUid}`).get();
+    const callerSchoolEntry = (
+      ((callerUserSnap.data() ?? {}) as Record<string, unknown>).schools as
+        | Record<string, { teacherDocId?: string }>
+        | undefined
+    )?.[schoolId];
+    const callerTeacherDocId = String(callerSchoolEntry?.teacherDocId ?? "");
+
+    if (
+      callerUid === teacherUid ||
+      (callerTeacherDocId && callerTeacherDocId === teacherId)
+    ) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Admin não pode remover a si mesmo"
+      );
+    }
+
+    // 7. Query schedules deste teacher
+    const schedulesSnap = await db
+      .collection(`schools/${schoolId}/schedules`)
+      .where("teacherId", "==", teacherId)
+      .get();
+
+    // 8. Pré-checar users/{teacherUid} para evitar NOT_FOUND no batch.update
+    let userExists = false;
+    if (teacherUid) {
+      const userSnap = await db.doc(`users/${teacherUid}`).get();
+      userExists = userSnap.exists;
+    }
+
+    // 9. Montar e commitar batch atômico
+    const batch = db.batch();
+    batch.delete(teacherRef);
+    schedulesSnap.docs.forEach((d) => batch.delete(d.ref));
+
+    if (teacherUid) {
+      batch.delete(
+        db.doc(`schools/${schoolId}/pending_teachers/${teacherUid}`)
+      );
+      if (userExists) {
+        batch.update(db.doc(`users/${teacherUid}`), {
+          [`schools.${schoolId}`]: admin.firestore.FieldValue.delete(),
+        });
+      }
+    }
+
+    await batch.commit();
+
+    return {
+      ok: true,
+      deletedSchedules: schedulesSnap.size,
+    };
+  }
+);
+
 // ── applyPendingAction ────────────────────────────────────────────────────────
 
 export const applyPendingAction = region.https.onCall(
