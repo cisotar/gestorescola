@@ -83,14 +83,21 @@ export default function App() {
     let active = true
 
     async function loadData() {
+      console.log('[app.loadData] start — schoolId=', currentSchoolId)
       // Sinaliza loading antes do fetch para garantir que o spinner
       // apareça durante troca de escola (ex: SaaS admin abrindo escola do painel)
       hydrate({ loaded: false })
       teardownListeners()
       const data = await loadFromFirestore(currentSchoolId)
-      if (!active) return
+      console.log('[app.loadData] firestore retornou — data keys=', Object.keys(data ?? {}))
+      if (!active) {
+        console.log('[app.loadData] effect inativo, abortando')
+        return
+      }
       hydrate(data ?? {})
+      console.log('[app.loadData] hydrate(data) OK — loaded=', useAppStore.getState().loaded)
       setupRealtimeListeners(currentSchoolId, useAppStore.getState())
+      console.log('[app.loadData] listeners registrados')
     }
 
     loadData()
