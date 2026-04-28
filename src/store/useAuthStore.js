@@ -73,9 +73,15 @@ const useAuthStore = create((set, get) => ({
           // try/finally garante reset mesmo se init() ou _resolveRole lançar.
           set({ _initInProgress: true })
           try {
+            // Pré-check síncrono: se o email está em SUPER_USERS, é saas admin
+            // com certeza. Passa a flag para o SchoolStore.init limpar o
+            // localStorage stale antes de restaurar currentSchoolId — evita
+            // que useSchoolStore.setState dentro de _resolveRole dispare o
+            // subscribe e cause re-resolves em cascata.
+            const isSuperUserEmail = SUPER_USERS.includes(user.email?.toLowerCase())
             // init retorna o userSnap lido em loadAvailableSchools para evitar
             // uma segunda leitura de users/{uid} dentro de _resolveRole.
-            const userSnap = await useSchoolStore.getState().init(user.uid)
+            const userSnap = await useSchoolStore.getState().init(user.uid, isSuperUserEmail)
             await get()._resolveRole(user, userSnap)
             // Listener leve em users/{uid} para detectar perda de membership
             // em runtime (ex.: admin remove o professor enquanto a sessão dele
@@ -209,22 +215,12 @@ const useAuthStore = create((set, get) => ({
     set({ isSaasAdmin: isSaasAdminFlag })
     if (isSaasAdminFlag) {
       get()._unsubPending?.()
-      // Saas admin sem membership real: limpa currentSchoolId stale do localStorage.
-      // O SchoolStore pode ter restaurado um schoolId do LS durante o boot mesmo
-      // quando availableSchools=[]. Limpar garante que App.jsx detecte !currentSchoolId
-      // e redirecione para /admin corretamente, sem depender de availableSchools.
-      const { availableSchools } = useSchoolStore.getState()
-      if (availableSchools.length === 0 && schoolId) {
-        useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
-        try { localStorage.removeItem('gestao_active_school') } catch {}
-      }
       // Apenas inicia o listener de pending quando há escola selecionada.
       // Sem schoolId, o painel SaaS Admin (/admin) não exibe contador agregado.
-      const effectiveSchoolId = availableSchools.length === 0 ? null : schoolId
-      if (effectiveSchoolId) {
+      if (schoolId) {
         const unsub = onSnapshot(
           query(
-            collection(db, 'schools', effectiveSchoolId, 'pending_teachers'),
+            collection(db, 'schools', schoolId, 'pending_teachers'),
             where('status', '==', 'pending')
           ),
           snap => set({ pendingCt: snap.size }),

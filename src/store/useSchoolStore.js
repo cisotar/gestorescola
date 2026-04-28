@@ -151,13 +151,26 @@ const useSchoolStore = create((set, get) => ({
   // Chamado no boot após login. Restaura escola do LS se uid ainda for membro.
   // Retorna o userSnap obtido em loadAvailableSchools para que o caller
   // (_resolveRole) possa reutilizá-lo sem nova leitura ao Firestore.
-  init: async (uid) => {
+  // isSaasAdmin: quando true, descarta o savedId do LS sem validar schools/{id}
+  // — saas admin sem membership não deve restaurar escola do boot (evita re-resolves
+  // em cascata causados por setState no SchoolStore dentro de _resolveRole).
+  init: async (uid, isSaasAdmin = false) => {
     const userSnap = await get().loadAvailableSchools(uid)
 
     let savedId = null
     try { savedId = localStorage.getItem(LS_KEY) } catch {}
 
     const { availableSchools } = get()
+
+    // SaaS admin sem membership: descarta schoolId stale do localStorage imediatamente.
+    // Não chama setCurrentSchool — currentSchoolId permanece null — e _resolveRole
+    // pode setar role:admin sem disparar re-resolves via subscribe do SchoolStore.
+    if (isSaasAdmin && availableSchools.length === 0) {
+      if (savedId) {
+        try { localStorage.removeItem(LS_KEY) } catch {}
+      }
+      return userSnap
+    }
 
     // Caso pendente: tem savedId mas availableSchools vazio (users/{uid} inexistente
     // ou ainda sem escolas vinculadas). Valida schools/{savedId} e mantém o contexto
