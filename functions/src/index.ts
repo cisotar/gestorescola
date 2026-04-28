@@ -291,6 +291,20 @@ export const approveTeacher = region.https.onCall(async (data, context) => {
     };
   }
 
+  // ── Validação de consistência profile × subjectIds ──────────────────────
+  if (profile === "coordinator") {
+    // Coordenadores puros não lecionam — descartar qualquer subjectIds recebido
+    teacherData.subjectIds = [];
+  } else if (profile === "teacher" || profile === "teacher-coordinator") {
+    const resolvedSubjectIds = (teacherData.subjectIds ?? []) as unknown[];
+    if (resolvedSubjectIds.length === 0) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Professor deve ter ao menos uma matéria selecionada"
+      );
+    }
+  }
+
   const role =
     profile === "admin"
       ? "admin"
