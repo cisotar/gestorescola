@@ -210,12 +210,13 @@ export async function requestTeacherAccess(schoolId, user) {
   })
 }
 
-export async function updatePendingData(schoolId, uid, { celular, apelido, subjectIds, horariosSemana }) {
+export async function updatePendingData(schoolId, uid, { celular, apelido, subjectIds, horariosSemana, profile }) {
   const payload = {
     celular: celular ?? '',
     apelido: apelido ?? '',
     subjectIds: subjectIds ?? [],
     horariosSemana: horariosSemana ?? {},
+    ...(profile && { profile }),
   }
   console.log('[db.updatePendingData] write', { schoolId, uid, keys: Object.keys(payload) })
   try {
