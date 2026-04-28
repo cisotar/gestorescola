@@ -323,6 +323,9 @@ export const approveTeacher = region.https.onCall(async (data, context) => {
     batch.update(d.ref, { teacherId });
   });
   batch.delete(pendingRef);
+  // Limpar marcador removed_users — admin está aprovando explicitamente, então
+  // a remoção anterior é superada. Se o doc não existir, delete é no-op.
+  batch.delete(db.doc(`schools/${schoolId}/removed_users/${pendingUid}`));
   await batch.commit();
 
   return { ok: true, teacherId };
@@ -365,6 +368,53 @@ export const rejectTeacher = region.https.onCall(async (data, context) => {
 
   return { ok: true };
 });
+
+// ── reinstateRemovedUser ─────────────────────────────────────────────────────
+// Remove o marcador removed_users/{uid} de uma escola, permitindo que o
+// professor volte a se cadastrar via /join/<slug>. NÃO recria membership —
+// o professor precisa passar pelo fluxo normal de aprovação novamente.
+// Autorização: SaaS admin OU admin local da escola.
+
+export const reinstateRemovedUser = region.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Login required"
+      );
+    }
+
+    const schoolId = String(data?.schoolId ?? "");
+    const targetUid = String(data?.targetUid ?? "");
+    const targetEmail = String(data?.email ?? "").toLowerCase().trim();
+
+    if (!schoolId || (!targetUid && !targetEmail)) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "schoolId e (targetUid ou email) são obrigatórios"
+      );
+    }
+
+    await verifyAdmin(context, schoolId);
+
+    const db = admin.firestore();
+
+    if (targetUid) {
+      await db.doc(`schools/${schoolId}/removed_users/${targetUid}`).delete();
+    }
+
+    // Fallback por email (para docs criados sem uid)
+    if (targetEmail) {
+      const emailKey = `email_${targetEmail.replace(/[^a-z0-9._-]/g, "_")}`;
+      await db
+        .doc(`schools/${schoolId}/removed_users/${emailKey}`)
+        .delete()
+        .catch(() => { /* não existe — ok */ });
+    }
+
+    return { ok: true };
+  }
+);
 
 // ── setTeacherRoleInSchool ───────────────────────────────────────────────────
 // Atualiza o role de um teacher em users/{uid}.schools[schoolId].role e,

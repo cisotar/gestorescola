@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.applyPendingAction = exports.removeTeacherFromSchool = exports.joinSchoolAsAdmin = exports.designateSchoolAdmin = exports.setTeacherRoleInSchool = exports.rejectTeacher = exports.approveTeacher = exports.deleteAbsence = exports.updateAbsence = exports.createAbsence = void 0;
+exports.applyPendingAction = exports.removeTeacherFromSchool = exports.joinSchoolAsAdmin = exports.designateSchoolAdmin = exports.setTeacherRoleInSchool = exports.reinstateRemovedUser = exports.rejectTeacher = exports.approveTeacher = exports.deleteAbsence = exports.updateAbsence = exports.createAbsence = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const auth_1 = require("./auth");
@@ -250,6 +250,9 @@ exports.approveTeacher = region.https.onCall(async (data, context) => {
         batch.update(d.ref, { teacherId });
     });
     batch.delete(pendingRef);
+    // Limpar marcador removed_users — admin está aprovando explicitamente, então
+    // a remoção anterior é superada. Se o doc não existir, delete é no-op.
+    batch.delete(db.doc(`schools/${schoolId}/removed_users/${pendingUid}`));
     await batch.commit();
     return { ok: true, teacherId };
 });
@@ -277,6 +280,37 @@ exports.rejectTeacher = region.https.onCall(async (data, context) => {
     batch.set(db.collection("users").doc(pendingUid), { schools: { [schoolId]: { role: "rejected", status: "rejected" } } }, { merge: true });
     batch.delete(pendingRef);
     await batch.commit();
+    return { ok: true };
+});
+// ── reinstateRemovedUser ─────────────────────────────────────────────────────
+// Remove o marcador removed_users/{uid} de uma escola, permitindo que o
+// professor volte a se cadastrar via /join/<slug>. NÃO recria membership —
+// o professor precisa passar pelo fluxo normal de aprovação novamente.
+// Autorização: SaaS admin OU admin local da escola.
+exports.reinstateRemovedUser = region.https.onCall(async (data, context) => {
+    var _a, _b, _c;
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Login required");
+    }
+    const schoolId = String((_a = data === null || data === void 0 ? void 0 : data.schoolId) !== null && _a !== void 0 ? _a : "");
+    const targetUid = String((_b = data === null || data === void 0 ? void 0 : data.targetUid) !== null && _b !== void 0 ? _b : "");
+    const targetEmail = String((_c = data === null || data === void 0 ? void 0 : data.email) !== null && _c !== void 0 ? _c : "").toLowerCase().trim();
+    if (!schoolId || (!targetUid && !targetEmail)) {
+        throw new functions.https.HttpsError("invalid-argument", "schoolId e (targetUid ou email) são obrigatórios");
+    }
+    await (0, auth_1.verifyAdmin)(context, schoolId);
+    const db = admin.firestore();
+    if (targetUid) {
+        await db.doc(`schools/${schoolId}/removed_users/${targetUid}`).delete();
+    }
+    // Fallback por email (para docs criados sem uid)
+    if (targetEmail) {
+        const emailKey = `email_${targetEmail.replace(/[^a-z0-9._-]/g, "_")}`;
+        await db
+            .doc(`schools/${schoolId}/removed_users/${emailKey}`)
+            .delete()
+            .catch(() => { });
+    }
     return { ok: true };
 });
 // ── setTeacherRoleInSchool ───────────────────────────────────────────────────
