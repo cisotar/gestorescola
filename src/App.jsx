@@ -144,12 +144,14 @@ export default function App() {
     </>
   )
 
-  // SaaS admin sem membership em nenhuma escola → /admin.
-  // Usa availableSchools.length === 0 em vez de !currentSchoolId porque o
-  // SchoolStore pode restaurar um currentSchoolId do localStorage mesmo quando
-  // o admin não tem membership real (savedId válido mas availableSchools vazio).
+  // SaaS admin sem escola selecionada → /admin.
+  // No boot, _resolveRole limpa currentSchoolId stale do localStorage quando
+  // o saas admin não tem membership real (availableSchools=[]), garantindo
+  // que !currentSchoolId seja verdadeiro ao chegar aqui.
+  // Quando o saas admin clica num card de escola, switchSchool() seta
+  // currentSchoolId — isso encerra o redirect e permite acesso ao app normal.
   // Exceções: já está em /admin/* ou em /join/:slug.
-  if (isSaasAdmin && availableSchools.length === 0 && !pathname.startsWith('/admin') && !pathname.startsWith('/join/')) return (
+  if (isSaasAdmin && !currentSchoolId && !pathname.startsWith('/admin') && !pathname.startsWith('/join/')) return (
     <>
       <Navigate to="/admin" replace />
       <Toast />

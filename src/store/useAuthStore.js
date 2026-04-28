@@ -209,12 +209,22 @@ const useAuthStore = create((set, get) => ({
     set({ isSaasAdmin: isSaasAdminFlag })
     if (isSaasAdminFlag) {
       get()._unsubPending?.()
+      // Saas admin sem membership real: limpa currentSchoolId stale do localStorage.
+      // O SchoolStore pode ter restaurado um schoolId do LS durante o boot mesmo
+      // quando availableSchools=[]. Limpar garante que App.jsx detecte !currentSchoolId
+      // e redirecione para /admin corretamente, sem depender de availableSchools.
+      const { availableSchools } = useSchoolStore.getState()
+      if (availableSchools.length === 0 && schoolId) {
+        useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+        try { localStorage.removeItem('gestao_active_school') } catch {}
+      }
       // Apenas inicia o listener de pending quando há escola selecionada.
       // Sem schoolId, o painel SaaS Admin (/admin) não exibe contador agregado.
-      if (schoolId) {
+      const effectiveSchoolId = availableSchools.length === 0 ? null : schoolId
+      if (effectiveSchoolId) {
         const unsub = onSnapshot(
           query(
-            collection(db, 'schools', schoolId, 'pending_teachers'),
+            collection(db, 'schools', effectiveSchoolId, 'pending_teachers'),
             where('status', '==', 'pending')
           ),
           snap => set({ pendingCt: snap.size }),
