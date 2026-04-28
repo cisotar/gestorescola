@@ -1,20 +1,17 @@
 // src/__tests__/App.saasAdminRedirect.test.js
 //
-// Testa o bugfix do redirect do SaaS admin em App.jsx.
+// Testa o redirect do SaaS admin em App.jsx.
 //
-// Contexto do bug:
-//   A condição antiga usava !currentSchoolId para decidir o redirect para /admin.
-//   O useSchoolStore.init() restaura currentSchoolId do localStorage mesmo quando
-//   o SaaS admin não tem membership (availableSchools = []). Com a condição antiga,
-//   um SaaS admin com currentSchoolId salvo no LS nunca recebia o redirect — caía
-//   em /home com dados de uma escola à qual não pertence.
-//
-// Correção: a condição passou a usar availableSchools.length === 0, que reflete
-//   a ausência real de membership independente do que está no localStorage.
+// Contexto:
+//   A condição usa !currentSchoolId para redirecionar o SaaS admin para /admin.
+//   useSchoolStore.init() garante limpar o currentSchoolId do localStorage quando
+//   o SaaS admin não tem membership, portanto !currentSchoolId é confiável aqui.
+//   Quando o admin clica em uma escola (switchSchool), currentSchoolId é setado
+//   e o redirect encerra — o admin acessa o app normal da escola.
 //
 // Estratégia de teste:
-//   1. Verificação estática do source (inspeção AST/regex) — confirma que o código
-//      usa a condição correta e que a condição antiga foi removida.
+//   1. Verificação estática do source (inspeção regex) — confirma que o código
+//      usa a condição correta.
 //   2. Testes unitários da função de decisão de redirect extraída como lógica pura —
 //      sem DOM, sem mocks de React, sem MemoryRouter. Compatível com environment: 'node'.
 
@@ -30,16 +27,16 @@ const SOURCE = fs.readFileSync(path.resolve(here, '../App.jsx'), 'utf8')
 
 // ─── Lógica de redirect extraída como função pura ─────────────────────────────
 //
-// Espelha exatamente a condição presente em App.jsx linha 152:
-//   if (isSaasAdmin && availableSchools.length === 0
+// Espelha a condição presente em App.jsx:
+//   if (isSaasAdmin && !currentSchoolId
 //       && !pathname.startsWith('/admin') && !pathname.startsWith('/join/'))
 //
 // Retorna true quando App.jsx emitiria <Navigate to="/admin" replace />.
 
-function shouldRedirectToAdmin({ isSaasAdmin, availableSchools, pathname }) {
+function shouldRedirectToAdmin({ isSaasAdmin, currentSchoolId, pathname }) {
   return (
     isSaasAdmin &&
-    availableSchools.length === 0 &&
+    !currentSchoolId &&
     !pathname.startsWith('/admin') &&
     !pathname.startsWith('/join/')
   )
@@ -48,17 +45,8 @@ function shouldRedirectToAdmin({ isSaasAdmin, availableSchools, pathname }) {
 // ─── Suite 1: verificação estática do source ──────────────────────────────────
 
 describe('App.jsx — verificação estática da condição de redirect (bugfix)', () => {
-  it('usa availableSchools.length === 0 na condição de redirect do SaaS admin', () => {
-    // A linha 152 do App.jsx deve conter exatamente essa sub-expressão.
-    expect(SOURCE).toMatch(/availableSchools\.length === 0/)
-  })
-
-  it('NÃO usa !currentSchoolId como guarda do redirect do SaaS admin', () => {
-    // Garante que a condição antiga foi completamente substituída.
-    // O pattern /admin.*!currentSchoolId/ capturaria qualquer remanescente da guarda antiga
-    // na mesma expressão condicional.
-    const oldConditionPattern = /isSaasAdmin\s*&&\s*!currentSchoolId/
-    expect(SOURCE).not.toMatch(oldConditionPattern)
+  it('usa !currentSchoolId na condição de redirect do SaaS admin', () => {
+    expect(SOURCE).toMatch(/isSaasAdmin\s*&&\s*!currentSchoolId/)
   })
 
   it('o redirect aponta para /admin com replace', () => {
@@ -66,7 +54,6 @@ describe('App.jsx — verificação estática da condição de redirect (bugfix)
   })
 
   it('a condição exclui pathnames que já começam com /admin', () => {
-    // Garante que a guarda anti-loop está presente na mesma condição.
     expect(SOURCE).toMatch(/pathname\.startsWith\('\/admin'\)/)
   })
 
@@ -75,23 +62,18 @@ describe('App.jsx — verificação estática da condição de redirect (bugfix)
   })
 
   it('lê availableSchools do useSchoolStore (não do useAuthStore)', () => {
-    // availableSchools deve ser seletado do useSchoolStore, não recebido de useAuthStore.
     expect(SOURCE).toMatch(/useSchoolStore\(s\s*=>\s*s\.availableSchools\)/)
   })
 })
 
 // ─── Suite 2: lógica pura — cenários comportamentais ─────────────────────────
 
-describe('shouldRedirectToAdmin — cenário 1: SaaS admin sem membership com currentSchoolId do localStorage', () => {
-  it('redireciona para /admin mesmo quando currentSchoolId está populado do LS', () => {
-    // BUG ANTIGO: a condição usava !currentSchoolId e, com currentSchoolId presente
-    // (restaurado do LS), a guarda passava false → admin caía em /home.
-    // CORREÇÃO: usa availableSchools.length === 0, que é vazio quando não há membership real.
+describe('shouldRedirectToAdmin — cenário 1: SaaS admin sem escola selecionada', () => {
+  it('redireciona para /admin quando currentSchoolId é null', () => {
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [],          // sem membership real
-      pathname:         '/home',     // rota que não é /admin nem /join/
-      // currentSchoolId: 'sch-123' — não participa da condição corrigida
+      isSaasAdmin:     true,
+      currentSchoolId: null,
+      pathname:        '/home',
     })
     expect(result).toBe(true)
   })
@@ -99,71 +81,68 @@ describe('shouldRedirectToAdmin — cenário 1: SaaS admin sem membership com cu
   it('redireciona independente do pathname concreto (não /admin, não /join/)', () => {
     for (const pathname of ['/home', '/dashboard', '/calendar', '/settings', '/']) {
       expect(
-        shouldRedirectToAdmin({ isSaasAdmin: true, availableSchools: [], pathname })
+        shouldRedirectToAdmin({ isSaasAdmin: true, currentSchoolId: null, pathname })
       ).toBe(true)
     }
   })
 })
 
-describe('shouldRedirectToAdmin — cenário 2: SaaS admin sem membership e sem currentSchoolId', () => {
-  it('redireciona para /admin quando availableSchools vazio e pathname é /home', () => {
+describe('shouldRedirectToAdmin — cenário 2: SaaS admin COM escola selecionada', () => {
+  it('NÃO redireciona quando currentSchoolId está setado', () => {
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [],
-      pathname:         '/home',
+      isSaasAdmin:     true,
+      currentSchoolId: 'sch-default',
+      pathname:        '/home',
     })
-    expect(result).toBe(true)
+    expect(result).toBe(false)
   })
 
-  it('redireciona para /admin quando availableSchools vazio e pathname é /dashboard', () => {
-    const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [],
-      pathname:         '/dashboard',
-    })
-    expect(result).toBe(true)
+  it('NÃO redireciona com qualquer schoolId não-nulo', () => {
+    for (const schoolId of ['sch-1', 'sch-abc', 'escola-nova']) {
+      expect(
+        shouldRedirectToAdmin({ isSaasAdmin: true, currentSchoolId: schoolId, pathname: '/home' })
+      ).toBe(false)
+    }
   })
 })
 
-describe('shouldRedirectToAdmin — cenário 3: SaaS admin COM membership em escola', () => {
-  it('NÃO redireciona quando availableSchools tem ao menos uma escola', () => {
+describe('shouldRedirectToAdmin — cenário 3: SaaS admin visitando escola', () => {
+  it('NÃO redireciona quando currentSchoolId foi setado via switchSchool', () => {
+    // Quando o admin clica num card de escola, switchSchool() seta currentSchoolId.
+    // O redirect deve encerrar para permitir acesso ao app da escola.
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [{ schoolId: 'sch-1', name: 'Escola Alfa' }],
-      pathname:         '/home',
+      isSaasAdmin:     true,
+      currentSchoolId: 'sch-default',
+      pathname:        '/home',
     })
     expect(result).toBe(false)
   })
 
-  it('NÃO redireciona com múltiplas escolas disponíveis', () => {
-    const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [
-        { schoolId: 'sch-1' },
-        { schoolId: 'sch-2' },
-      ],
-      pathname: '/dashboard',
-    })
-    expect(result).toBe(false)
+  it('NÃO redireciona independente do pathname quando escola está selecionada', () => {
+    for (const pathname of ['/home', '/dashboard', '/settings', '/cargahoraria']) {
+      expect(
+        shouldRedirectToAdmin({ isSaasAdmin: true, currentSchoolId: 'sch-1', pathname })
+      ).toBe(false)
+    }
   })
 
-  it('guarda de length > 0 é suficiente — não verifica schoolId específico', () => {
-    // Qualquer escola na lista bloqueia o redirect.
+  it('sem escola selecionada mas schoolId vazio string também redireciona', () => {
+    // String vazia é falsy — equivale a não ter escola selecionada.
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [{}],   // objeto mínimo, sem schoolId
-      pathname:         '/home',
+      isSaasAdmin:     true,
+      currentSchoolId: '',
+      pathname:        '/home',
     })
-    expect(result).toBe(false)
+    expect(result).toBe(true)
   })
 })
 
 describe('shouldRedirectToAdmin — cenário 4: SaaS admin JÁ está em /admin', () => {
   it('NÃO redireciona quando pathname é exatamente /admin', () => {
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [],
-      pathname:         '/admin',
+      isSaasAdmin:     true,
+      currentSchoolId: null,
+      pathname:        '/admin',
     })
     expect(result).toBe(false)
   })
@@ -171,7 +150,7 @@ describe('shouldRedirectToAdmin — cenário 4: SaaS admin JÁ está em /admin',
   it('NÃO redireciona quando pathname é sub-rota de /admin', () => {
     for (const pathname of ['/admin/schools', '/admin/pending', '/admin/config']) {
       expect(
-        shouldRedirectToAdmin({ isSaasAdmin: true, availableSchools: [], pathname })
+        shouldRedirectToAdmin({ isSaasAdmin: true, currentSchoolId: null, pathname })
       ).toBe(false)
     }
   })
@@ -180,9 +159,9 @@ describe('shouldRedirectToAdmin — cenário 4: SaaS admin JÁ está em /admin',
 describe('shouldRedirectToAdmin — cenário 5: SaaS admin em fluxo de join', () => {
   it('NÃO redireciona quando pathname começa com /join/', () => {
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [],
-      pathname:         '/join/escola-nova',
+      isSaasAdmin:     true,
+      currentSchoolId: null,
+      pathname:        '/join/escola-nova',
     })
     expect(result).toBe(false)
   })
@@ -190,60 +169,47 @@ describe('shouldRedirectToAdmin — cenário 5: SaaS admin em fluxo de join', ()
   it('NÃO redireciona para variantes de /join/ com slugs compostos', () => {
     for (const pathname of ['/join/slug-1', '/join/escola-alpha', '/join/abc123']) {
       expect(
-        shouldRedirectToAdmin({ isSaasAdmin: true, availableSchools: [], pathname })
+        shouldRedirectToAdmin({ isSaasAdmin: true, currentSchoolId: null, pathname })
       ).toBe(false)
     }
   })
 })
 
 describe('shouldRedirectToAdmin — casos de borda e regressão', () => {
-  it('usuário comum (isSaasAdmin=false) com availableSchools vazio NÃO cai no redirect /admin', () => {
+  it('usuário comum (isSaasAdmin=false) sem escola NÃO cai no redirect /admin', () => {
     // Esse usuário cairia no redirect /no-school, que é outra condição.
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      false,
-      availableSchools: [],
-      pathname:         '/home',
+      isSaasAdmin:     false,
+      currentSchoolId: null,
+      pathname:        '/home',
     })
     expect(result).toBe(false)
   })
 
-  it('usuário comum com schools e isSaasAdmin=false → falso', () => {
+  it('usuário comum com escola e isSaasAdmin=false → não redireciona', () => {
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      false,
-      availableSchools: [{ schoolId: 'sch-1' }],
-      pathname:         '/home',
+      isSaasAdmin:     false,
+      currentSchoolId: 'sch-1',
+      pathname:        '/home',
     })
     expect(result).toBe(false)
   })
 
-  it('availableSchools=[{}] (objeto vazio sem schoolId) ainda bloqueia redirect', () => {
-    // Qualquer entrada na lista representa membership, independente do conteúdo.
-    const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [{}],
-      pathname:         '/home',
-    })
-    expect(result).toBe(false)
-  })
-
-  it('pathname=/admin (exato) bloqueia redirect mesmo com availableSchools vazio', () => {
-    // Confirma que startsWith('/admin') cobre o pathname exato /admin.
+  it('pathname=/admin (exato) bloqueia redirect mesmo sem escola', () => {
     expect('/admin'.startsWith('/admin')).toBe(true)
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [],
-      pathname:         '/admin',
+      isSaasAdmin:     true,
+      currentSchoolId: null,
+      pathname:        '/admin',
     })
     expect(result).toBe(false)
   })
 
-  it('pathname=/adminfoo NÃO é protegido pela guarda /admin (startsWith comporta-se correto)', () => {
-    // /adminfoo começa com /admin → startsWith retorna true → sem redirect.
-    // Isso é um side-effect inofensivo do startsWith — documentado como comportamento esperado.
+  it('pathname=/adminfoo também é protegido pela guarda /admin (startsWith)', () => {
     const result = shouldRedirectToAdmin({
-      isSaasAdmin:      true,
-      availableSchools: [],
-      pathname:         '/adminfoo',
+      isSaasAdmin:     true,
+      currentSchoolId: null,
+      pathname:        '/adminfoo',
     })
     expect(result).toBe(false)
   })
