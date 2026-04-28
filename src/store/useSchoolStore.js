@@ -42,15 +42,35 @@ const useSchoolStore = create((set, get) => ({
   // Não aguarda carga de dados — App.jsx detecta a mudança de currentSchoolId e dispara
   // loadData() via useEffect, que chama hydrate(data) ao terminar (loaded → true).
   // Enquanto isso, o spinner de App.jsx fica visível porque loaded === false.
+  //
+  // Caso especial: se a escola clicada já é a ativa (ex: SaaS admin clica no card
+  // de uma escola que estava restaurada do localStorage), pula o reset/reload —
+  // os dados já foram carregados pelo boot. Apenas garante que loaded === true.
+  //
   // Chamar este método — nunca setCurrentSchool diretamente — ao trocar escola em runtime.
   switchSchool: async (schoolId) => {
-    console.log('[switchSchool] start →', schoolId)
+    const currentId = get().currentSchoolId
+    const { default: useAppStore } = await import('./useAppStore')
+    const appStore = useAppStore.getState()
+
+    // Mesma escola já ativa: não reseta nem recarrega — apenas garante loaded:true
+    // para o caso de o store ter sido limpo por algum efeito intermediário.
+    if (currentId === schoolId) {
+      if (!appStore.loaded) {
+        // Se por algum motivo loaded ficou false, recarrega os dados.
+        const { loadFromFirestore, setupRealtimeListeners, teardownListeners: _td } = await import('../lib/db')
+        _td()
+        const data = await loadFromFirestore(schoolId)
+        appStore.hydrate(data ?? {})
+        setupRealtimeListeners(schoolId, useAppStore.getState())
+      }
+      return
+    }
+
     // 1. Cancelar listeners Firestore da escola anterior
     teardownListeners()
 
     // 2. Limpar listeners lazy (absences, history) do appStore
-    const { default: useAppStore } = await import('./useAppStore')
-    const appStore = useAppStore.getState()
     appStore.cleanupLazyListeners()
 
     // 3. Resetar dados do appStore para evitar leituras cruzadas entre escolas
@@ -64,7 +84,6 @@ const useSchoolStore = create((set, get) => ({
 
     // 4. Ativar a nova escola (dispara effect em App.jsx que chama loadData())
     await get().setCurrentSchool(schoolId)
-    console.log('[switchSchool] done — currentSchoolId =', get().currentSchoolId)
   },
 
   // ─── loadAvailableSchools ─────────────────────────────────────────────────
