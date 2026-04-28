@@ -185,6 +185,108 @@ export class AccessRevokedError extends Error {
   }
 }
 
+/**
+ * Verifica se um usuário teve seu acesso revogado em uma ou mais escolas.
+ *
+ * Helper PURO de I/O — apenas lê do Firestore. Não toca em `auth`,
+ * `localStorage`, stores, toasts ou qualquer side-effect. Foi desenhado para
+ * ser chamado no boot, antes de `bootSequence`, para que revogações sejam
+ * detectadas antes de qualquer leitura de dados da escola.
+ *
+ * Estratégia de detecção (defesa em profundidade):
+ * 1. Lê `removedFrom` de `userSnap.data()` — índice invertido escrito pela
+ *    CF `removeTeacherFromSchool` (issue #472). Source-of-truth primário,
+ *    1 RTT (já incluído no userSnap pré-carregado pelo boot).
+ * 2. Para cada schoolId presente em `userSnap.data().schools`, dispara em
+ *    paralelo uma leitura defensiva em `schools/{id}/removed_users/{uid}`.
+ *    Cobre o caso de inconsistência onde o índice invertido em `users/{uid}`
+ *    está stale mas o marcador canônico em `removed_users` existe.
+ * 3. Erros de rede em leituras defensivas são capturados (logger warn) e
+ *    tratados como "marcador não detectado para essa escola" — `removedFrom`
+ *    permanece como autoritativo.
+ *
+ * Regras de retorno:
+ * - `revoked: true` quando há QUALQUER schoolId revogado (parcial ou total).
+ * - `fullyRevoked: true` quando: (a) `users/{uid}.schools` está vazio E
+ *   `removedFrom` tem >= 1 entrada; ou (b) toda entry de `schools` foi
+ *   cruzada com um marcador em `removed_users`. Ou seja, não há nenhuma
+ *   escola "limpa" para o usuário entrar.
+ * - `revokedSchoolIds`: união (deduplicada) de `removedFrom` e schoolIds
+ *   onde o marcador `removed_users/{uid}` foi encontrado.
+ *
+ * Edge cases:
+ * - `userSnap` null/undefined OU `!userSnap.exists()` OU `data()` vazio:
+ *   retorna não-revogado (usuário novo / sem doc não pode estar revogado).
+ *
+ * @param {string} uid - UID do usuário autenticado.
+ * @param {import('firebase/firestore').DocumentSnapshot | null | undefined} userSnap
+ *   Snapshot de `users/{uid}` já carregado pelo boot.
+ * @returns {Promise<{ revoked: boolean, fullyRevoked: boolean, revokedSchoolIds: string[] }>}
+ */
+export async function checkAccessRevoked(uid, userSnap) {
+  const empty = { revoked: false, fullyRevoked: false, revokedSchoolIds: [] }
+
+  if (!uid) return empty
+  if (!userSnap) return empty
+
+  // userSnap pode não ter exists() em testes — checagem defensiva
+  if (typeof userSnap.exists === 'function' && !userSnap.exists()) return empty
+
+  let data
+  try {
+    data = typeof userSnap.data === 'function' ? userSnap.data() : null
+  } catch (e) {
+    console.warn('[checkAccessRevoked] erro ao ler userSnap.data():', e)
+    return empty
+  }
+  if (!data) return empty
+
+  const removedFrom = Array.isArray(data.removedFrom) ? data.removedFrom.filter(Boolean) : []
+  const schoolsMap = data.schools && typeof data.schools === 'object' ? data.schools : {}
+  const schoolIds = Object.keys(schoolsMap)
+
+  // Leituras defensivas em removed_users em paralelo, uma por schoolId ativo.
+  // Falhas individuais não devem bloquear: trata como "não detectado".
+  const markerChecks = await Promise.all(
+    schoolIds.map(async (schoolId) => {
+      try {
+        const ref = getSchoolDocRef(schoolId, 'removed_users', uid)
+        const snap = await getDoc(ref)
+        return { schoolId, exists: snap.exists() }
+      } catch (e) {
+        console.warn(`[checkAccessRevoked] leitura defensiva removed_users falhou (${schoolId}):`, e)
+        return { schoolId, exists: false }
+      }
+    })
+  )
+
+  const markerSchoolIds = markerChecks.filter(c => c.exists).map(c => c.schoolId)
+
+  // União deduplicada
+  const revokedSet = new Set([...removedFrom, ...markerSchoolIds])
+  const revokedSchoolIds = Array.from(revokedSet)
+
+  const revoked = revokedSchoolIds.length > 0
+
+  // fullyRevoked:
+  //  (a) sem schools mas com removedFrom (ou marcador) → sem escola limpa.
+  //  (b) tem schools mas todas têm marcador detectado (defesa em profundidade).
+  let fullyRevoked = false
+  if (revoked) {
+    if (schoolIds.length === 0) {
+      fullyRevoked = true
+    } else {
+      // Cobre inconsistência: o boot deve filtrar availableSchools usando
+      // este conjunto. Aqui marcamos fullyRevoked apenas quando não sobra
+      // nenhuma escola viável (todas com marcador).
+      const cleanCount = schoolIds.filter(sid => !revokedSet.has(sid)).length
+      fullyRevoked = cleanCount === 0
+    }
+  }
+
+  return { revoked, fullyRevoked, revokedSchoolIds }
+}
+
 export async function requestTeacherAccess(schoolId, user) {
   // Verificação backend-driven: se existe marcação em removed_users/{uid},
   // o admin removeu este usuário e não queremos recriar pending automaticamente.

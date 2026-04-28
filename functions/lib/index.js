@@ -177,10 +177,11 @@ exports.deleteAbsence = region.https.onCall(async (data, context) => {
 // Migra schedules órfãos do UID pendente para o teacher.id final.
 const VALID_PROFILES = ["teacher", "coordinator", "teacher-coordinator", "admin"];
 exports.approveTeacher = region.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
     const schoolId = String((_a = data === null || data === void 0 ? void 0 : data.schoolId) !== null && _a !== void 0 ? _a : "");
     const pendingUid = String((_b = data === null || data === void 0 ? void 0 : data.pendingUid) !== null && _b !== void 0 ? _b : "");
     let profile = String((_c = data === null || data === void 0 ? void 0 : data.profile) !== null && _c !== void 0 ? _c : "teacher");
+    const overrideRemoval = Boolean(data === null || data === void 0 ? void 0 : data.overrideRemoval);
     if (!schoolId || !pendingUid) {
         throw new functions.https.HttpsError("invalid-argument", "schoolId e pendingUid são obrigatórios");
     }
@@ -188,6 +189,16 @@ exports.approveTeacher = region.https.onCall(async (data, context) => {
         profile = "teacher";
     await (0, auth_1.verifyAdminOrCoordinatorViaUsers)(context, schoolId);
     const db = admin.firestore();
+    // Defesa em profundidade (MÉDIA #4 complemento): se existe marcador em
+    // removed_users/{pendingUid}, exigir flag explícita overrideRemoval para
+    // re-aprovar. Sem o override, aprovação é bloqueada — admin precisa
+    // chamar reinstateRemovedUser primeiro OU passar overrideRemoval: true
+    // ciente de que está re-aprovando alguém previamente removido.
+    const removedRef = db.doc(`schools/${schoolId}/removed_users/${pendingUid}`);
+    const removedSnap = await removedRef.get();
+    if (removedSnap.exists && !overrideRemoval) {
+        throw new functions.https.HttpsError("failed-precondition", "Usuário foi removido desta escola. Use overrideRemoval: true para re-aprovar ou chame reinstateRemovedUser.");
+    }
     const pendingRef = db
         .collection(`schools/${schoolId}/pending_teachers`)
         .doc(pendingUid);
@@ -228,6 +239,17 @@ exports.approveTeacher = region.https.onCall(async (data, context) => {
             horariosSemana: (_l = pendingData.horariosSemana) !== null && _l !== void 0 ? _l : null,
         };
     }
+    // ── Validação de consistência profile × subjectIds ──────────────────────
+    if (profile === "coordinator") {
+        // Coordenadores puros não lecionam — descartar qualquer subjectIds recebido
+        teacherData.subjectIds = [];
+    }
+    else if (profile === "teacher" || profile === "teacher-coordinator") {
+        const resolvedSubjectIds = ((_m = teacherData.subjectIds) !== null && _m !== void 0 ? _m : []);
+        if (resolvedSubjectIds.length === 0) {
+            throw new functions.https.HttpsError("failed-precondition", "Professor deve ter ao menos uma matéria selecionada");
+        }
+    }
     const role = profile === "admin"
         ? "admin"
         : profile === "coordinator"
@@ -242,9 +264,15 @@ exports.approveTeacher = region.https.onCall(async (data, context) => {
         .get();
     const batch = db.batch();
     batch.set(db.collection(`schools/${schoolId}/teachers`).doc(teacherId), teacherData);
+    // users/{uid}: gravar membership e, em paralelo, remover schoolId do índice
+    // invertido removedFrom (caso o usuário tenha sido removido antes — ver #472).
+    // arrayRemove é idempotente: se o array não contém schoolId (ou o campo não
+    // existe), o servidor trata como no-op. Combina com set+merge sem exigir
+    // pré-leitura do doc users/{uid}.
     batch.set(db.collection("users").doc(pendingUid), {
         email,
         schools: { [schoolId]: { role, status: "approved", teacherDocId: teacherId } },
+        removedFrom: admin.firestore.FieldValue.arrayRemove(schoolId),
     }, { merge: true });
     orphanSnap.docs.forEach((d) => {
         batch.update(d.ref, { teacherId });
@@ -300,17 +328,30 @@ exports.reinstateRemovedUser = region.https.onCall(async (data, context) => {
     }
     await (0, auth_1.verifyAdmin)(context, schoolId);
     const db = admin.firestore();
+    // Batch atômico: garante que removed_users/{uid} e o índice invertido
+    // users/{uid}.removedFrom são atualizados juntos. Sem isso, uma falha
+    // entre as duas operações deixaria o boot bloqueando o login (RN-R6)
+    // mesmo após a reativação.
+    const batch = db.batch();
     if (targetUid) {
-        await db.doc(`schools/${schoolId}/removed_users/${targetUid}`).delete();
+        batch.delete(db.doc(`schools/${schoolId}/removed_users/${targetUid}`));
+        // Pré-checar users/{uid}: arrayRemove só pode ser aplicado a docs que
+        // existem via update; se o doc não existe, simplesmente pulamos —
+        // não há índice a limpar.
+        const userRef = db.doc(`users/${targetUid}`);
+        const userSnap = await userRef.get();
+        if (userSnap.exists) {
+            batch.update(userRef, {
+                removedFrom: admin.firestore.FieldValue.arrayRemove(schoolId),
+            });
+        }
     }
     // Fallback por email (para docs criados sem uid)
     if (targetEmail) {
         const emailKey = `email_${targetEmail.replace(/[^a-z0-9._-]/g, "_")}`;
-        await db
-            .doc(`schools/${schoolId}/removed_users/${emailKey}`)
-            .delete()
-            .catch(() => { });
+        batch.delete(db.doc(`schools/${schoolId}/removed_users/${emailKey}`));
     }
+    await batch.commit();
     return { ok: true };
 });
 // ── setTeacherRoleInSchool ───────────────────────────────────────────────────
@@ -384,7 +425,12 @@ exports.setTeacherRoleInSchool = region.https.onCall(async (data, context) => {
             const schools = (_h = existing.schools) !== null && _h !== void 0 ? _h : undefined;
             const hasEntry = !!(schools === null || schools === void 0 ? void 0 : schools[schoolId]);
             if (hasEntry) {
-                batch.update(userRef, { [`schools.${schoolId}.role`]: newRole });
+                // Atualizar role e, em paralelo, garantir que removedFrom não
+                // contenha schoolId (ALTA #2 — fechar stale do índice invertido).
+                batch.update(userRef, {
+                    [`schools.${schoolId}.role`]: newRole,
+                    removedFrom: admin.firestore.FieldValue.arrayRemove(schoolId),
+                });
             }
             else {
                 batch.set(userRef, {
@@ -395,6 +441,7 @@ exports.setTeacherRoleInSchool = region.https.onCall(async (data, context) => {
                             teacherDocId: teacherId,
                         },
                     },
+                    removedFrom: admin.firestore.FieldValue.arrayRemove(schoolId),
                 }, { merge: true });
             }
         }
@@ -451,8 +498,12 @@ exports.designateSchoolAdmin = region.https.onCall(async (data, context) => {
         const userData = (_c = usersSnap.docs[0].data()) !== null && _c !== void 0 ? _c : {};
         const hasEntry = (_e = ((_d = userData.schools) !== null && _d !== void 0 ? _d : {})) === null || _e === void 0 ? void 0 : _e[schoolId];
         if (hasEntry) {
+            // Promover a admin e, em paralelo, limpar removedFrom (ALTA #2 —
+            // fechar stale do índice invertido caso o usuário tenha sido
+            // removido antes). arrayRemove é idempotente.
             batch.update(db.doc(`users/${targetUid}`), {
                 [`schools.${schoolId}.role`]: "admin",
+                removedFrom: admin.firestore.FieldValue.arrayRemove(schoolId),
             });
             promoted = true;
         }
@@ -506,11 +557,16 @@ exports.joinSchoolAsAdmin = region.https.onCall(async (data, context) => {
     const removedRef = db.doc(`schools/${schoolId}/removed_users/${callerUid}`);
     const userRef = db.doc(`users/${callerUid}`);
     const batch = db.batch();
+    // Inclui removedFrom: arrayRemove(schoolId) para limpar índice invertido
+    // caso o admin tenha sido removido antes (ALTA #1 — fechar stale do
+    // removedFrom). arrayRemove é idempotente: se schoolId não estiver no
+    // array (ou o campo não existir), o servidor trata como no-op.
     batch.set(userRef, {
         email: callerEmail,
         schools: {
             [schoolId]: { role: "admin", status: "approved" },
         },
+        removedFrom: admin.firestore.FieldValue.arrayRemove(schoolId),
     }, { merge: true });
     batch.delete(removedRef);
     await batch.commit();
@@ -602,10 +658,24 @@ exports.removeTeacherFromSchool = region.https.onCall(async (data, context) => {
     const callerEmail = String((_l = (_k = (_j = context.auth) === null || _j === void 0 ? void 0 : _j.token) === null || _k === void 0 ? void 0 : _k.email) !== null && _l !== void 0 ? _l : "").toLowerCase();
     if (teacherUid) {
         batch.delete(db.doc(`schools/${schoolId}/pending_teachers/${teacherUid}`));
+        // Índice invertido: users/{uid}.removedFrom = arrayUnion(schoolId).
+        // Permite ao boot detectar revogação em 1 RTT quando users/{uid}.schools
+        // está vazio (RN-R1). Usa set+merge para cobrir caso em que o doc
+        // users/{uid} foi totalmente apagado — arrayUnion é idempotente, então
+        // chamadas repetidas para a mesma escola não duplicam a entrada.
+        // TODO v2: revokeRefreshTokens — invalidar tokens via
+        // admin.auth().revokeRefreshTokens(teacherUid) para forçar reautenticação
+        // imediata. Fora do escopo v1 (ver Parte 4 da spec).
         if (userExists) {
             batch.update(db.doc(`users/${teacherUid}`), {
                 [`schools.${schoolId}`]: admin.firestore.FieldValue.delete(),
+                removedFrom: admin.firestore.FieldValue.arrayUnion(schoolId),
             });
+        }
+        else {
+            batch.set(db.doc(`users/${teacherUid}`), {
+                removedFrom: admin.firestore.FieldValue.arrayUnion(schoolId),
+            }, { merge: true });
         }
         // Marcação de remoção — bloqueia recriação de pending_teachers
         // pelo próprio usuário ao tentar entrar de novo via /join/

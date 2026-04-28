@@ -14,27 +14,32 @@ service cloud.firestore {
 
     // ── Perfil global do usuário (mapa de escola → role/status) ─────────────
     // CRÍTICO — defesa em profundidade:
-    // Toda mutação no campo `schools` é privilégio exclusivo das Cloud Functions
-    // (Admin SDK bypassa rules). Cliente NÃO pode escrever schools sob hipótese
-    // alguma — caso contrário, qualquer usuário autenticado promove a si mesmo
-    // a admin de qualquer escola.
+    // Toda mutação nos campos `schools` e `removedFrom` é privilégio exclusivo
+    // das Cloud Functions (Admin SDK bypassa rules). Cliente NÃO pode escrever
+    // esses campos sob hipótese alguma — caso contrário, qualquer usuário
+    // autenticado poderia promover a si mesmo a admin de qualquer escola
+    // (`schools`) ou limpar o índice invertido de remoção (`removedFrom`),
+    // burlando o bloqueio de boot pós-remoção (RN-R1/R6).
     //
-    // Create: permitido pelo próprio uid SEM o campo schools (perfil inicial).
-    // Update: permitido pelo próprio uid APENAS se não tocar em schools (campos
-    //   de perfil pessoal — ex.: name, photoURL futuros). SaaS admin tem bypass
-    //   total via /admins/, mas no fluxo atual SaaS admin também opera via
-    //   Cloud Function — manter isSaasAdmin como escape de manutenção.
+    // Create: permitido pelo próprio uid SEM os campos schools/removedFrom
+    //   (perfil inicial).
+    // Update: permitido pelo próprio uid APENAS se não tocar em schools nem
+    //   em removedFrom (campos de perfil pessoal — ex.: name, photoURL
+    //   futuros). SaaS admin tem bypass total via /admins/, mas no fluxo
+    //   atual SaaS admin também opera via Cloud Function — manter
+    //   isSaasAdmin como escape de manutenção.
     // Delete: apenas SaaS admin.
     match /users/{uid} {
       allow read:   if request.auth != null && request.auth.uid == uid || isSaasAdmin();
       allow create: if isSaasAdmin()
         || (request.auth != null
             && request.auth.uid == uid
-            && !('schools' in request.resource.data));
+            && !('schools' in request.resource.data)
+            && !('removedFrom' in request.resource.data));
       allow update: if isSaasAdmin()
         || (request.auth != null
             && request.auth.uid == uid
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['schools']));
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['schools', 'removedFrom']));
       allow delete: if isSaasAdmin();
     }
 
@@ -169,7 +174,13 @@ service cloud.firestore {
       allow read:  if isSchoolAdmin(schoolId)
         || isCoordinator(schoolId)
         || (request.auth != null && request.auth.uid == docId);
-      allow create: if request.auth != null && request.auth.uid == docId;
+      // Bloquear create se o usuário foi removido desta escola — sem essa
+      // verificação, um usuário removido poderia ressuscitar o próprio fluxo
+      // de pending via /join/ e re-solicitar acesso, contornando RN-R1/R6
+      // (defesa em profundidade — a CF approveTeacher também valida).
+      allow create: if request.auth != null
+        && request.auth.uid == docId
+        && !exists(/databases/$(database)/documents/schools/$(schoolId)/removed_users/$(request.auth.uid));
       allow update: if (request.auth != null && request.auth.uid == docId)
         || isCoordinator(schoolId);
       allow delete: if isSchoolAdmin(schoolId);

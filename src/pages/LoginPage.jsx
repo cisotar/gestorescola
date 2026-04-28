@@ -3,17 +3,38 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 
 export default function LoginPage() {
-  const { login, user } = useAuthStore()
+  const { login, user, loginError } = useAuthStore()
   const location = useLocation()
   const navigate  = useNavigate()
+  const stateError = location.state?.error
   const redirect  = location.state?.redirect
 
-  // Após login bem-sucedido, redireciona para a rota de origem (ex: /join/:slug)
+  // Banner de "access-revoked": fonte da verdade é o store (loginError).
+  // location.state?.error é fallback quando o boot navegou para /login com state.
+  const isAccessRevoked =
+    loginError === 'access-revoked' || stateError === 'access-revoked'
+
+  // Quando o usuário caiu em /login por revogação de acesso, devemos descartar
+  // qualquer `redirect` carregado em location.state — caso contrário, após o
+  // próximo login bem-sucedido o efeito abaixo enviaria o usuário de volta a
+  // /join/:slug, recriando exatamente o cenário que acabou de ser revogado.
   useEffect(() => {
-    if (user && redirect) {
+    if (stateError === 'access-revoked' && location.state?.redirect) {
+      navigate(location.pathname, {
+        replace: true,
+        state: { error: 'access-revoked' },
+      })
+    }
+  }, [stateError, location.state, location.pathname, navigate])
+
+  // Após login bem-sucedido, redireciona para a rota de origem (ex: /join/:slug).
+  // Se o estado for de revogação, NÃO seguimos redirect — o useEffect acima já
+  // limpou, mas guardamos defensivamente aqui para evitar race entre updates.
+  useEffect(() => {
+    if (user && redirect && !isAccessRevoked) {
       navigate(redirect, { replace: true })
     }
-  }, [user, redirect, navigate])
+  }, [user, redirect, isAccessRevoked, navigate])
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-bg p-4">
@@ -23,6 +44,32 @@ export default function LoginPage() {
           <span className="text-navy">Escolar</span>
         </div>
         <p className="text-sm text-t2 mb-8">Sistema de Faltas e Substituições</p>
+
+        {isAccessRevoked && (
+          <div
+            role="alert"
+            className="mb-6 flex items-start gap-2 rounded-lg border border-red-200 bg-err-l text-err px-3 py-2 text-left text-xs"
+          >
+            {/* Ícone de alerta — triangle exclamation */}
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+              className="mt-0.5 shrink-0"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span className="leading-snug">
+              Seu acesso foi revogado pelo administrador desta escola. Procure o coordenador para mais informações.
+            </span>
+          </div>
+        )}
 
         <button
           onClick={login}

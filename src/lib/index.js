@@ -8,7 +8,7 @@ export { getSchoolCollectionRef, getSchoolDocRef, getSchoolConfigRef, getSchoolR
 export { loadFromFirestore, saveToFirestore, saveDoc, deleteDocById, updateDocById, saveConfig, createSchoolFromAdmin, setSchoolStatus, softDeleteSchool } from './db'
 export { setupRealtimeListeners, registerAbsencesListener, registerHistoryListener, teardownListeners } from './db'
 export { isAdmin, addAdmin, listAdmins, removeAdmin } from './db'
-export { getTeacherByEmail, requestTeacherAccess, AccessRevokedError, updatePendingData, listPendingTeachers, patchTeacherSelf, approveTeacher, rejectTeacher } from './db'
+export { getTeacherByEmail, requestTeacherAccess, AccessRevokedError, updatePendingData, listPendingTeachers, patchTeacherSelf, approveTeacher, rejectTeacher, checkAccessRevoked } from './db'
 export { migrateFormationSchedules, migrateSharedSeriesActivities } from './db'
 export { submitPendingAction, getPendingActions, getMyPendingActions, approvePendingAction, rejectPendingAction, subscribePendingActionsCount } from './db'
 

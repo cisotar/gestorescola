@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { auth, provider, db } from '../lib/firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { onSnapshot, collection, query, where, doc, getDoc } from 'firebase/firestore'
-import { isAdmin, requestTeacherAccess, getTeacherDoc, teardownListeners, AccessRevokedError } from '../lib/db'
+import { isAdmin, requestTeacherAccess, getTeacherDoc, teardownListeners, AccessRevokedError, checkAccessRevoked } from '../lib/db'
 import useAppStore from './useAppStore'
 import useSchoolStore from './useSchoolStore'
 import { toast } from '../hooks/useToast'
@@ -20,6 +20,7 @@ const useAuthStore = create((set, get) => ({
   loading:       true,
   pendingCt:     0,
   isSaasAdmin:   false,  // true se email em SUPER_USERS ou em /admins/{email_key}
+  loginError:    null,   // null | 'access-revoked' — sinaliza para LoginPage motivo de signOut forçado
   _unsubPending: null,
   _unsubApproval: null,  // unsub fn do listener pending_teachers/{uid}; sempre chamar antes de criar novo
   _unsubSchoolSub: null,
@@ -34,6 +35,10 @@ const useAuthStore = create((set, get) => ({
   init: () => {
     // Idempotência: cancelar subscribe anterior em caso de re-init (HMR/reload)
     get()._unsubSchoolSub?.()
+
+    // Limpa flag de erro de login residual de boots anteriores. LoginPage
+    // (issue #485) lê este campo para exibir banner de "access-revoked".
+    set({ loginError: null })
 
     // Subscribe em mudanças de currentSchoolId — re-resolve role quando muda
     // após o login (ex.: JoinPage chamando setCurrentSchool, ou troca de escola
@@ -160,31 +165,88 @@ const useAuthStore = create((set, get) => ({
 
   // ─── _handleMembershipRevoked ─────────────────────────────────────────────
   // Acionado pelo listener de membership quando a entry da escola atual é
-  // removida em runtime. Limpa listeners de dados, recarrega availableSchools
-  // e seleciona próxima escola disponível (ou null para cair em /no-school).
+  // removida em runtime. Limpa listeners de dados, cruza com checkAccessRevoked
+  // para detectar o tipo de revogação (parcial vs total) e:
+  //  - fullyRevoked: replica o mesmo fluxo de signOut/toast/loginError do
+  //    _resolveRole — assim o usuário cai na LoginPage com banner #485.
+  //  - parcial: filtra availableSchools com revokedSchoolIds (evita re-pending
+  //    na escola revogada por race entre snapshot users/{uid} e removed_users)
+  //    e seleciona a próxima escola limpa, ou cai em /no-school.
   _handleMembershipRevoked: async () => {
     const user = get().user
     if (!user) return
 
-    // 1. Cancelar listeners de dados da escola removida
+    // 1. Cancelar listeners de dados da escola removida ANTES de qualquer
+    // leitura/signOut — sem isso, listeners ativos (teachers, schedules) podem
+    // disparar permission-denied imediatamente após a revogação.
     try { teardownListeners() } catch (e) { console.warn('[membership] teardownListeners:', e) }
     try { useAppStore.getState().cleanupLazyListeners() } catch (e) { console.warn('[membership] cleanupLazyListeners:', e) }
 
-    // 2. Toast informativo
+    // 2. Cruzar com checkAccessRevoked para distinguir revogação parcial de
+    // total. Releitura de users/{uid} é necessária — o listener de membership
+    // entrega apenas o snap atual, mas precisamos do helper puro que combina
+    // removedFrom + leituras defensivas em removed_users/{uid}.
+    let userSnap = null
+    try {
+      userSnap = await getDoc(doc(db, 'users', user.uid))
+    } catch (e) {
+      console.warn('[membership] leitura users/{uid}:', e)
+    }
+
+    let revokeInfo = { revoked: false, fullyRevoked: false, revokedSchoolIds: [] }
+    try {
+      revokeInfo = await checkAccessRevoked(user.uid, userSnap)
+    } catch (e) {
+      // Fail-open: se o helper falhar, cai no fluxo de loadAvailableSchools
+      // padrão para preservar a UX (não deslogar à toa).
+      console.warn('[membership] checkAccessRevoked falhou:', e)
+    }
+
+    // 3. fullyRevoked → signOut + redireciona para LoginPage com banner #485.
+    // Replica EXATAMENTE o fluxo de _resolveRole.fullyRevoked.
+    if (revokeInfo.fullyRevoked === true) {
+      get()._unsubPending?.()
+      get()._unsubApproval?.()
+      get()._unsubMembership?.()
+      set({ _unsubPending: null, _unsubApproval: null, _unsubMembership: null })
+
+      try { await signOut(auth) } catch (e) { console.warn('[membership] signOut falhou:', e) }
+      try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
+      try {
+        useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+      } catch (e) { console.warn('[membership] limpar schoolStore:', e) }
+      toast('Seu acesso foi revogado pelo administrador desta escola', 'error')
+
+      set({
+        role: null,
+        teacher: null,
+        isSaasAdmin: false,
+        loginError: 'access-revoked',
+      })
+      return
+    }
+
+    // 4. Revogação parcial (ou apenas a escola atual revogada): toast + recarrega.
     toast('Seu acesso a esta escola foi revogado pelo administrador', 'error')
 
-    // 3. Recarrega lista de escolas do usuário
     try {
       await useSchoolStore.getState().loadAvailableSchools(user.uid)
     } catch (e) {
       console.warn('[membership] loadAvailableSchools:', e)
     }
 
-    const remaining = useSchoolStore.getState().availableSchools ?? []
+    // 5. Filtrar availableSchools com revokedSchoolIds — defesa contra race
+    // entre o snapshot do listener users/{uid} e o índice removedFrom/marker
+    // de removed_users. Sem este filtro, setCurrentSchool poderia selecionar
+    // uma escola revogada e _resolveRole entraria em fluxo pending nela,
+    // criando re-pending na escola revogada (RN-2 da spec Parte 2).
+    const revokedSet = new Set(revokeInfo.revokedSchoolIds ?? [])
+    const allRemaining = useSchoolStore.getState().availableSchools ?? []
+    const remaining = allRemaining.filter(s => !revokedSet.has(s.schoolId))
 
-    // 4. Selecionar próxima escola ou cair em /no-school
+    // 6. Selecionar próxima escola limpa ou cair em /no-school
     if (remaining.length > 0) {
-      // Multi-escola: selecionar primeira disponível.
+      // Multi-escola: selecionar primeira disponível NÃO revogada.
       // setCurrentSchool dispara o subscribe de useSchoolStore que chama
       // _resolveRole automaticamente, atualizando role/teacher na nova escola.
       try {
@@ -193,7 +255,7 @@ const useAuthStore = create((set, get) => ({
         console.warn('[membership] setCurrentSchool:', e)
       }
     } else {
-      // Sem escolas: limpa currentSchoolId. App.jsx detecta
+      // Sem escolas limpas: limpa currentSchoolId. App.jsx detecta
       // !isSaasAdmin && availableSchools.length === 0 e redireciona para /no-school.
       useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
       try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
@@ -204,8 +266,9 @@ const useAuthStore = create((set, get) => ({
   // Quando presente, evita uma segunda leitura ao Firestore no step 3.
   // Quando ausente (re-resolve por troca de escola), o step 3 lê normalmente.
   _resolveRole: async (user, userSnapHint) => {
-    const { currentSchoolId: schoolId, availableSchools: rawAvailableSchools } = useSchoolStore.getState()
-    const availableSchools = rawAvailableSchools ?? []
+    const { currentSchoolId: schoolIdRaw, availableSchools: rawAvailableSchools } = useSchoolStore.getState()
+    let schoolId = schoolIdRaw
+    let availableSchools = rawAvailableSchools ?? []
     console.log('[auth._resolveRole] start', { uid: user.uid, email: user.email, schoolId })
 
     // ── 1. Determinar flag SaaS admin ────────────────────────────────────────
@@ -226,6 +289,68 @@ const useAuthStore = create((set, get) => ({
       }
     }
     console.log('[auth._resolveRole] users/{uid} exists?', userSnap?.exists?.(), userSnapHint ? '(hint reutilizado)' : '(lido do Firestore)')
+
+    // ── 2b. Verificar revogação de acesso (apenas usuários comuns) ───────────
+    // SaaS admin pula a checagem porque seu acesso não depende de
+    // users/{uid}.schools nem de removedFrom. Para os demais, consulta o helper
+    // puro checkAccessRevoked, que combina removedFrom (índice em users/{uid})
+    // com leituras defensivas em schools/{id}/removed_users/{uid}.
+    if (!isSaasAdminFlag) {
+      let revokeInfo = { revoked: false, fullyRevoked: false, revokedSchoolIds: [] }
+      try {
+        revokeInfo = await checkAccessRevoked(user.uid, userSnap)
+      } catch (e) {
+        // Fail-open: erro inesperado no helper não deve bloquear login válido.
+        // Loga e prossegue como se não houvesse revogação detectada.
+        console.warn('[auth._resolveRole] checkAccessRevoked falhou, prosseguindo:', e)
+      }
+      console.log('[auth._resolveRole] checkAccessRevoked →', revokeInfo)
+
+      if (revokeInfo.fullyRevoked === true) {
+        // ── Revogação total: força signOut e redireciona para LoginPage ──────
+        // Cancela listeners ativos antes do signOut para evitar leituras
+        // pós-revogação que retornariam permission-denied.
+        get()._unsubPending?.()
+        get()._unsubApproval?.()
+        get()._unsubMembership?.()
+        set({ _unsubPending: null, _unsubApproval: null, _unsubMembership: null })
+
+        try { await signOut(auth) } catch (e) { console.warn('[auth] signOut falhou:', e) }
+        try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
+        try {
+          useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+        } catch (e) { console.warn('[auth] limpar schoolStore:', e) }
+        toast('Seu acesso foi revogado pelo administrador desta escola', 'error')
+
+        set({
+          role: null,
+          teacher: null,
+          isSaasAdmin: false,
+          loginError: 'access-revoked',
+        })
+        return
+      }
+
+      if (revokeInfo.revoked === true && revokeInfo.fullyRevoked === false) {
+        // ── Revogação parcial: filtra availableSchools localmente ────────────
+        // Não muta useSchoolStore para evitar disparar subscribe que re-chamaria
+        // _resolveRole em cascata. A filtragem local é suficiente para que
+        // bootSequence resolva o schoolId correto.
+        const revokedSet = new Set(revokeInfo.revokedSchoolIds)
+        availableSchools = availableSchools.filter(s => !revokedSet.has(s.schoolId))
+
+        // Se a escola ativa salva está revogada, limpa LS e reseta
+        // currentSchoolId no store antes de bootSequence — sem isso, a
+        // bootSequence usaria savedSchoolId stale como candidato.
+        if (schoolId && revokedSet.has(schoolId)) {
+          try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
+          try {
+            useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+          } catch (e) { console.warn('[auth] limpar schoolStore (parcial):', e) }
+          schoolId = null
+        }
+      }
+    }
 
     // ── 3. bootSequence decide role e listeners ───────────────────────────────
     // Passamos currentSchoolId como savedSchoolId para que bootSequence resolva
@@ -355,6 +480,9 @@ const useAuthStore = create((set, get) => ({
   },
 
   login: async () => {
+    // Limpa flag de "access-revoked" antes de nova tentativa para que o
+    // banner da LoginPage suma ao iniciar o popup (UX limpa em retry).
+    set({ loginError: null })
     try { await signInWithPopup(auth, provider) }
     catch (e) { alert('Erro ao fazer login: ' + e.message) }
   },

@@ -176,6 +176,8 @@ jest.mock('firebase-admin', () => {
       FieldValue: {
         serverTimestamp: () => '__server_timestamp__',
         delete: () => '__field_delete__',
+        arrayUnion: (value: unknown) => ({ __op__: 'arrayUnion', values: [value] }),
+        arrayRemove: (value: unknown) => ({ __op__: 'arrayRemove', values: [value] }),
       },
     }),
   }
