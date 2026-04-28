@@ -1,18 +1,30 @@
 import { useNavigate } from 'react-router-dom'
 import { monthlyLoad } from '../../lib/absences'
+import { isFormationSlot, isRestSlot } from '../../lib/helpers/turmas'
 
-function getTeacherStats(teacherId, today, schedules, absences, sharedSeries = []) {
+export function getTeacherStats(teacherId, today, schedules, absences, sharedSeries = [], period = 'month') {
+  const [y, m]     = today.split('-')
+  const fromDate   = period === 'month' ? `${y}-${m}-01` : `${y}-01-01`
   const aulasDadas = monthlyLoad(teacherId, today, schedules, absences, sharedSeries)
   const faltas     = (absences || [])
     .filter(ab => ab.teacherId === teacherId)
-    .reduce((acc, ab) => acc + ab.slots.length, 0)
+    .flatMap(ab => ab.slots ?? [])
+    .filter(sl =>
+      sl.date >= fromDate &&
+      sl.date <= today &&
+      !isFormationSlot(sl.turma, null, sharedSeries)
+    ).length
   const subs       = (absences || [])
-    .flatMap(ab => ab.slots)
-    .filter(sl => sl.substituteId === teacherId).length
+    .flatMap(ab => ab.slots ?? [])
+    .filter(sl =>
+      sl.substituteId === teacherId &&
+      sl.date >= fromDate &&
+      sl.date <= today
+    ).length
   return { aulasDadas, absences: faltas, subsGiven: subs }
 }
 
-export function AulasAtribuidasCard({ teachers, schedules }) {
+export function AulasAtribuidasCard({ teachers, schedules, sharedSeries = [] }) {
   const lecturers = (teachers ?? []).filter(t => t.profile !== 'coordinator')
 
   if (!lecturers.length) return (
@@ -22,7 +34,11 @@ export function AulasAtribuidasCard({ teachers, schedules }) {
   const rows = lecturers
     .map(t => ({
       t,
-      count: (schedules ?? []).filter(s => s.teacherId === t.id).length,
+      count: (schedules ?? []).filter(s =>
+        s.teacherId === t.id &&
+        !isFormationSlot(s.turma, null, sharedSeries) &&
+        !isRestSlot(s.turma, sharedSeries)
+      ).length,
     }))
     .sort((a, b) => b.count - a.count)
 

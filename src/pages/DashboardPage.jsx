@@ -144,7 +144,7 @@ export default function DashboardPage() {
 
       {/* Tabelas lado a lado */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AulasAtribuidasCard teachers={teachers} schedules={schedules} />
+        <AulasAtribuidasCard teachers={teachers} schedules={schedules} sharedSeries={sharedSeries} />
         <WorkloadTable teachers={teachers} schedules={schedules} absences={absences} sharedSeries={sharedSeries} />
       </div>
     </div>
