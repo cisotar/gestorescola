@@ -175,7 +175,7 @@ exports.deleteAbsence = region.https.onCall(async (data, context) => {
 // Atomicamente: cria/atualiza schools/{schoolId}/teachers/, deleta
 // schools/{schoolId}/pending_teachers/{pendingUid}, escreve users/{pendingUid}.
 // Migra schedules órfãos do UID pendente para o teacher.id final.
-const VALID_PROFILES = ["teacher", "coordinator", "teacher-coordinator"];
+const VALID_PROFILES = ["teacher", "coordinator", "teacher-coordinator", "admin"];
 exports.approveTeacher = region.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const schoolId = String((_a = data === null || data === void 0 ? void 0 : data.schoolId) !== null && _a !== void 0 ? _a : "");
@@ -240,6 +240,7 @@ exports.approveTeacher = region.https.onCall(async (data, context) => {
     const batch = db.batch();
     batch.set(db.collection(`schools/${schoolId}/teachers`).doc(teacherId), teacherData);
     batch.set(db.collection("users").doc(pendingUid), {
+        email,
         schools: { [schoolId]: { role, status: "approved", teacherDocId: teacherId } },
     }, { merge: true });
     orphanSnap.docs.forEach((d) => {
