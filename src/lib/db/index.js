@@ -117,7 +117,10 @@ export async function isAdmin(email) {
   try {
     const snap = await getDoc(doc(db, 'admins', emailKey(email)))
     return snap.exists()
-  } catch { return false }
+  } catch (e) {
+    console.error('[isAdmin] falhou para', email, e)
+    return false
+  }
 }
 
 export async function addAdmin(email, name = '') {
