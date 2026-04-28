@@ -21,6 +21,11 @@ const useAuthStore = create((set, get) => ({
   _unsubPending: null,
   _unsubApproval: null,  // unsub fn do listener pending_teachers/{uid}; sempre chamar antes de criar novo
   _unsubSchoolSub: null,
+  // Flag privada — indica que o init() do auth store está em curso e a transição
+  // currentSchoolId (null → schoolId) que acontece dentro de useSchoolStore.init
+  // deve ser ignorada pelo subscribe (o próprio init() já chama _resolveRole
+  // com userSnapHint). Setada exclusivamente no onAuthStateChanged via try/finally.
+  _initInProgress: false,
 
   // ─── Init ──────────────────────────────────────────────────────────────────
   init: () => {
@@ -33,13 +38,22 @@ const useAuthStore = create((set, get) => ({
     // onAuthStateChanged inicial e o listener de aprovação ficaria na escola
     // errada (RN-3, RN-4).
     const unsubSchool = useSchoolStore.subscribe(async (state, prevState) => {
+      // Guard: durante o init() do auth, useSchoolStore.init dispara
+      // setCurrentSchool(null → schoolId). O próprio init() já vai chamar
+      // _resolveRole logo em seguida com userSnapHint — então ignoramos
+      // essa transição aqui para evitar dupla execução.
+      if (get()._initInProgress) return
       if (state.currentSchoolId === prevState.currentSchoolId) return
       const user = get().user
       if (!user) return
       try {
-        // Cancelar listener de aprovação anterior antes de re-resolve na nova escola
+        // Idempotência completa: cancelar tanto _unsubApproval quanto
+        // _unsubPending da escola anterior antes de re-resolve na nova.
+        // Sem isso, há janela em que o listener de pending_teachers da
+        // escola antiga continua ativo até _resolveRole registrar o novo.
         get()._unsubApproval?.()
-        set({ _unsubApproval: null })
+        get()._unsubPending?.()
+        set({ _unsubApproval: null, _unsubPending: null })
         await get()._resolveRole(user)
       } catch (e) {
         console.warn('[auth] re-resolve role on schoolId change:', e)
@@ -51,10 +65,19 @@ const useAuthStore = create((set, get) => ({
       onAuthStateChanged(auth, async user => {
         set({ user, role: null, teacher: null, isSaasAdmin: false })
         if (user) {
-          // init retorna o userSnap lido em loadAvailableSchools para evitar
-          // uma segunda leitura de users/{uid} dentro de _resolveRole.
-          const userSnap = await useSchoolStore.getState().init(user.uid)
-          await get()._resolveRole(user, userSnap)
+          // _initInProgress: true durante toda a janela de init para que o
+          // subscribe de useSchoolStore ignore a transição null → schoolId
+          // disparada por setCurrentSchool dentro do useSchoolStore.init.
+          // try/finally garante reset mesmo se init() ou _resolveRole lançar.
+          set({ _initInProgress: true })
+          try {
+            // init retorna o userSnap lido em loadAvailableSchools para evitar
+            // uma segunda leitura de users/{uid} dentro de _resolveRole.
+            const userSnap = await useSchoolStore.getState().init(user.uid)
+            await get()._resolveRole(user, userSnap)
+          } finally {
+            set({ _initInProgress: false })
+          }
         }
         set({ loading: false })
         resolve()
