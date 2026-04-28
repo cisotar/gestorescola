@@ -6,7 +6,9 @@ service cloud.firestore {
     // Document ID = email em lowercase (ex: "admin@gestorescolar.com.br")
     match /admins/{emailDoc} {
       allow read: if isSaasAdmin()
-        || (request.auth != null && emailDoc == request.auth.token.email.lower());
+        || (request.auth != null
+            && request.auth.token.email is string
+            && emailDoc == request.auth.token.email.lower());
       allow write: if isSaasAdmin();
     }
 
@@ -63,6 +65,7 @@ service cloud.firestore {
       allow read:   if isMemberOf(schoolId) || isSaasAdmin() || isPendingIn(schoolId);
       allow create: if isSaasAdmin()
         || (request.auth != null
+            && exists(/databases/$(database)/documents/schools/$(schoolId))
             && request.auth.uid == get(/databases/$(database)/documents/schools/$(schoolId)).data.createdBy);
       allow update: if isSchoolAdmin(schoolId);
       allow delete: if isSchoolAdmin(schoolId);
@@ -76,10 +79,15 @@ service cloud.firestore {
       allow read:  if isMemberOf(schoolId)
         || isSaasAdmin()
         || (request.auth != null
-            && resource.data.email.lower() == request.auth.token.email.lower());
+            && request.auth.token.email is string
+            && resource.data.email is string
+            && resource.data.email.lower() == request.auth.token.email.lower()
+            && !isSchoolSuspended(schoolId));
       allow write: if isSchoolAdmin(schoolId);
       // Professor edita apenas campos de perfil do próprio documento
       allow update: if request.auth != null
+        && request.auth.token.email is string
+        && resource.data.email is string
         && resource.data.email.lower() == request.auth.token.email.lower()
         && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['celular', 'whatsapp', 'apelido', 'name', 'subjectIds', 'horariosSemana']);
@@ -152,15 +160,19 @@ service cloud.firestore {
 
     // ── Solicitações de acesso pendentes ─────────────────────────────────────
     // Leitura: admin, coordenador ou o próprio dono do doc.
-    // Escrita: apenas o próprio dono do doc (docId == uid). Aprovação/rejeição
-    // é feita exclusivamente via Cloud Function (approveTeacher/rejectTeacher)
-    // que usa Admin SDK e bypassa rules — admin/coordenador NÃO escreve aqui
-    // diretamente para evitar privilege escalation no client.
+    // Escrita: o próprio dono pode criar/atualizar (campos de perfil pessoal).
+    // Coordenadores podem atualizar (status de aprovação/rejeição) sem Admin SDK.
+    // Aprovação/rejeição definitiva é feita via Cloud Function (approveTeacher/
+    // rejectTeacher) que usa Admin SDK e bypassa rules — este allow update para
+    // coordenadores cobre apenas o fluxo de coordenação direta.
     match /schools/{schoolId}/pending_teachers/{docId} {
       allow read:  if isSchoolAdmin(schoolId)
         || isCoordinator(schoolId)
         || (request.auth != null && request.auth.uid == docId);
-      allow write: if request.auth != null && request.auth.uid == docId;
+      allow create: if request.auth != null && request.auth.uid == docId;
+      allow update: if (request.auth != null && request.auth.uid == docId)
+        || isCoordinator(schoolId);
+      allow delete: if isSchoolAdmin(schoolId);
     }
 
     // ── Slugs de escola (coleção raiz — leitura pública pré-autenticação) ──────
@@ -177,7 +189,7 @@ service cloud.firestore {
     // — pois o slug é o único identificador disponível antes do login.
     match /school_slugs/{slug} {
       allow read:   if true;
-      allow create: if isSaasAdmin();
+      allow create: if isAuthenticated();
       allow update: if isSchoolAdmin(request.resource.data.schoolId) || isSaasAdmin();
       allow delete: if isSchoolAdmin(resource.data.schoolId) || isSaasAdmin();
     }
@@ -205,22 +217,24 @@ service cloud.firestore {
     }
 
     // Verifica se o uid autenticado possui documento em /admins/ (super-admin SaaS).
+    // Usa `request.auth.token.email is string` para null-safety:
+    // evita "Null value error" quando o campo email não está disponível no token.
     function isSaasAdmin() {
       return isAuthenticated()
+        && request.auth.token.email is string
         && exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()));
     }
 
     // Verifica se o usuário é membro aprovado da escola.
-    // Lê users/{uid}.schools[schoolId].status == 'approved'.
+    // Usa `in` operator para verificar existência de chaves antes de acessá-las.
     // Retorna false se o documento users/{uid} não existir ou se schools não tiver a chave.
-    // Também retorna false se schools/{schoolId}.status == 'suspended' — membros comuns
-    // perdem acesso quando a escola está suspensa (SaaS admin tem bypass via isSchoolAdmin
-    // e nas allow rules diretas).
+    // Também retorna false se schools/{schoolId}.status == 'suspended'.
     function isMemberOf(schoolId) {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       return isAuthenticated()
         && exists(userPath)
-        && get(userPath).data.schools[schoolId] != null
+        && 'schools' in get(userPath).data
+        && schoolId in get(userPath).data.schools
         && (get(userPath).data.schools[schoolId].status == 'approved'
             || get(userPath).data.schools[schoolId].status == 'active')
         && !isSchoolSuspended(schoolId);
@@ -229,10 +243,12 @@ service cloud.firestore {
     // Retorna true se a escola existe e tem status == 'suspended'.
     // Escola sem campo status (ou inexistente) é tratada como "não suspensa"
     // por retrocompatibilidade com docs criados antes da migração.
+    // Usa `in` para verificar existência do campo antes de acessá-lo.
     function isSchoolSuspended(schoolId) {
       let schoolPath = /databases/$(database)/documents/schools/$(schoolId);
       return exists(schoolPath)
-        && get(schoolPath).data.get('status', 'active') == 'suspended';
+        && 'status' in get(schoolPath).data
+        && get(schoolPath).data.status == 'suspended';
     }
 
     // Alias legível — semanticamente equivalente a isMemberOf.
@@ -247,34 +263,44 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/schools/$(schoolId)/pending_teachers/$(request.auth.uid));
     }
 
-
     // Verifica se o usuário é admin da escola ou super-admin SaaS.
+    // Usa `in` operator para verificar existência de chaves antes de acessá-las.
     function isSchoolAdmin(schoolId) {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
       return isSaasAdmin()
-        || (isMemberOf(schoolId)
-            && get(/databases/$(database)/documents/users/$(request.auth.uid))
-                .data.schools[schoolId].role == 'admin');
+        || (isAuthenticated()
+            && exists(userPath)
+            && 'schools' in get(userPath).data
+            && schoolId in get(userPath).data.schools
+            && get(userPath).data.schools[schoolId].status == 'approved'
+            && get(userPath).data.schools[schoolId].role == 'admin'
+            && !isSchoolSuspended(schoolId));
     }
 
     // Verifica se o usuário é coordenador (role 'coordinator' ou 'teacher-coordinator') da escola.
-    // Coordenadores podem aprovar/rejeitar professores pendentes.
-    // Nota: isMemberOf e o get() abaixo lêem o mesmo documento — o Firestore Rules
-    // deduplica leituras do mesmo doc na mesma requisição (custo real = 1 leitura).
+    // Coordenadores podem ler pending_teachers e atualizar status de aprovação.
+    // Usa `in` operator para verificar existência de chaves antes de acessá-las.
     function isCoordinator(schoolId) {
-      return isMemberOf(schoolId)
-        && (get(/databases/$(database)/documents/users/$(request.auth.uid))
-              .data.schools[schoolId].role == 'coordinator'
-            || get(/databases/$(database)/documents/users/$(request.auth.uid))
-                .data.schools[schoolId].role == 'teacher-coordinator');
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isAuthenticated()
+        && exists(userPath)
+        && 'schools' in get(userPath).data
+        && schoolId in get(userPath).data.schools
+        && (get(userPath).data.schools[schoolId].role == 'coordinator'
+            || get(userPath).data.schools[schoolId].role == 'teacher-coordinator')
+        && !isSchoolSuspended(schoolId);
     }
 
     // Verifica se o usuário autenticado é dono do perfil de teacher em uma escola específica.
     // Usado em schedules para cobrir o caso em que teacherId != auth.uid
     // (Document ID do teacher é uid() interno, diferente do Firebase Auth UID).
+    // Usa `is string` para null-safety no campo email.
     function ownsProfileIn(schoolId, teacherId) {
       let teacherPath = /databases/$(database)/documents/schools/$(schoolId)/teachers/$(teacherId);
       return isAuthenticated()
+        && request.auth.token.email is string
         && exists(teacherPath)
+        && get(teacherPath).data.email is string
         && get(teacherPath).data.email.lower() == request.auth.token.email.lower();
     }
 

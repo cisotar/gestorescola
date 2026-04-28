@@ -27,11 +27,17 @@ vi.mock('firebase/auth', () => ({
   GoogleAuthProvider: vi.fn(),
 }))
 
-vi.mock('../firebase', () => ({
+vi.mock('firebase/functions', () => ({
+  getFunctions:    vi.fn(() => ({ _mock: true })),
+  httpsCallable:   vi.fn(() => vi.fn().mockResolvedValue({ data: {} })),
+}))
+
+vi.mock('../lib/firebase', () => ({
   db: { _mock: true },
   app: { _mock: true },
   auth: { _mock: true },
   provider: { _mock: true },
+  functions: { _mock: true },
 }))
 
 vi.mock('../lib/helpers/ids', () => ({
@@ -93,19 +99,19 @@ describe('approveTeacher — validação de profile', () => {
     warnSpy.mockRestore()
   })
 
-  it('faz fallback para "teacher" e emite console.warn para valor inválido', async () => {
+  it('encaminha profile "admin" para a Cloud Function sem warn (validação é server-side)', async () => {
     setupMocks()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), 'admin')
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('admin'))
+    await expect(approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), 'admin')).resolves.not.toThrow()
+    expect(warnSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 
-  it('faz fallback para "teacher" para string vazia', async () => {
+  it('encaminha profile vazio para a Cloud Function sem warn (validação é server-side)', async () => {
     setupMocks()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), '')
-    expect(warnSpy).toHaveBeenCalled()
+    await expect(approveTeacher(SCHOOL_ID, 'pending-uid', mockState, vi.fn(), '')).resolves.not.toThrow()
+    expect(warnSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 
