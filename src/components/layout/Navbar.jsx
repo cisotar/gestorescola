@@ -33,18 +33,19 @@ export default function Navbar() {
 
         {/* Links de navegação */}
         <div className="flex items-center gap-3">
-          {isInAdminPanel ? null : showBackToAdmin ? (
-            <NavLink
-              to="/admin"
-              className="flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent/80 transition-colors"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-              Painel Admin
-            </NavLink>
-          ) : (
+          {isInAdminPanel ? null : (
             <>
+              {showBackToAdmin && (
+                <NavLink
+                  to="/admin"
+                  className="flex items-center gap-1.5 text-sm font-semibold text-accent hover:text-accent/80 transition-colors shrink-0"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                  Painel SaaS
+                </NavLink>
+              )}
               <NavLink
                 to="/home"
                 className={({ isActive }) =>
