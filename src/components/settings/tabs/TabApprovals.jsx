@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import useAppStore from '../../../store/useAppStore'
+import useSchoolStore from '../../../store/useSchoolStore'
 import { toast } from '../../../hooks/useToast'
 import { getPendingActions } from '../../../lib/db'
 import { httpsCallable } from 'firebase/functions'
@@ -10,6 +11,7 @@ import { PendingActionCard } from '../approvals'
 
 export default function TabApprovals({ adminEmail }) {
   const store = useAppStore()
+  const schoolId = useSchoolStore(s => s.currentSchoolId)
   const [actions, setActions] = useState([])
   const [loaded,  setLoaded]  = useState(false)
   const [error,   setError]   = useState(false)
@@ -39,11 +41,12 @@ export default function TabApprovals({ adminEmail }) {
   }
 
   const load = async () => {
+    if (!schoolId) return
     setError(false)
-    try { setActions(await getPendingActions()); setLoaded(true) }
+    try { setActions(await getPendingActions(schoolId)); setLoaded(true) }
     catch (e) { console.error('[TabApprovals] Erro ao carregar aprovações pendentes:', e); setError(true); setLoaded(true) }
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [schoolId])
 
   const handleApprove = async (action) => {
     try {

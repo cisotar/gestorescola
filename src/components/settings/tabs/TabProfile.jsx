@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import useAppStore from '../../../store/useAppStore'
 import useAuthStore from '../../../store/useAuthStore'
+import useSchoolStore from '../../../store/useSchoolStore'
 import { toast } from '../../../hooks/useToast'
 import { DAYS } from '../../../lib/constants'
 import { calcSubjectChange, myTimeAgo, STATUS_BADGE } from '../../../lib/settings'
@@ -220,6 +221,7 @@ function MyRequestsSection({ actions, loading, error, onRefresh }) {
 export default function TabProfile({ teacher }) {
   const store = useAppStore()
   const { teacher: authTeacher, isCoordinator, loading } = useAuthStore()
+  const schoolId = useSchoolStore(s => s.currentSchoolId)
   const t = teacher ?? authTeacher
   const [nome,             setNome]             = useState(t?.name ?? '')
   const [celular,          setCelular]          = useState(t?.celular ?? '')
@@ -236,7 +238,7 @@ export default function TabProfile({ teacher }) {
     setLoadingActions(true)
     setActionsError(false)
     try {
-      const actions = await getMyPendingActions(t.id)
+      const actions = await getMyPendingActions(schoolId, t.id)
       setMyActions(actions)
     } catch {
       setActionsError(true)
