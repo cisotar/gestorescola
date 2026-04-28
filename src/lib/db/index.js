@@ -95,7 +95,7 @@ export async function saveDoc(schoolId, colName, item) {
 }
 
 export async function deleteDocById(schoolId, colName, id) {
-  try { await deleteDoc(getSchoolDocRef(schoolId, colName, id)) } catch (e) { console.error(e) }
+  await deleteDoc(getSchoolDocRef(schoolId, colName, id))
 }
 
 // ─── Atualização Granular ──────────────────────────────────────────────────

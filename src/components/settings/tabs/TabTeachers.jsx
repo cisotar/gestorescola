@@ -334,6 +334,7 @@ export default function TabTeachers() {
   const [pendingProfiles,    setPendingProfiles]    = useState({})
   const [viewingHorarios,    setViewingHorarios]    = useState(null) // professor pendente cujos horários estão sendo exibidos
   const [sortConfig,         setSortConfig]         = useState({ key: 'name', dir: 'asc' })
+  const [removingIds,        setRemovingIds]        = useState(() => new Set())
 
   useEffect(() => {
     if (!currentSchoolId) return
@@ -447,10 +448,16 @@ export default function TabTeachers() {
   const openAdd  = () => { setForm({ name: '', email: '', celular: '', subjectIds: [] }); setEditId(null); setEditingTeacher(null); setModal(true) }
   const openEdit = (t) => { setForm({ name: t.name, email: t.email ?? '', celular: t.celular ?? '', apelido: t.apelido ?? '', subjectIds: t.subjectIds ?? [] }); setEditId(t.id); setEditingTeacher(t); setModal(true) }
 
-  const handleRemove = (t) => {
+  const handleRemove = async (t) => {
+    if (removingIds.has(t.id)) return
     if (!window.confirm(`Tem certeza que deseja remover ${t.name}? Esta ação não pode ser desfeita.`)) return
-    store.removeTeacher(t.id)
-    toast('Professor removido', 'ok')
+    setRemovingIds(prev => new Set(prev).add(t.id))
+    try {
+      await store.removeTeacher(t.id)
+      // toast já é disparado pela store (sucesso OU erro)
+    } finally {
+      setRemovingIds(prev => { const n = new Set(prev); n.delete(t.id); return n })
+    }
   }
 
   const save = () => {
@@ -596,6 +603,7 @@ export default function TabTeachers() {
                           <button
                             className="btn btn-ghost btn-xs text-err"
                             title="Remover professor"
+                            disabled={removingIds.has(t.id)}
                             onClick={() => handleRemove(t)}
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
@@ -654,9 +662,11 @@ export default function TabTeachers() {
                           <span className="text-xs text-t2">{ct} aulas</span>
                           <button className="btn btn-ghost btn-xs" title="Ver Grade" onClick={() => navigate(`/grades?teacher=${t.id}`)}>📅</button>
                           {isAdminUser && <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>}
-                          {isAdminUser && <button className="btn btn-ghost btn-xs text-err" onClick={() => {
-                            if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
-                          }}>✕</button>}
+                          {isAdminUser && <button
+                            className="btn btn-ghost btn-xs text-err"
+                            disabled={removingIds.has(t.id)}
+                            onClick={() => handleRemove(t)}
+                          >✕</button>}
                         </div>
                       </div>
                     )
@@ -882,9 +892,11 @@ export default function TabTeachers() {
                     disabled={!isAdminUser}
                   />
                   <button className="btn btn-ghost btn-xs" onClick={() => { openEdit(t); setShowNoSegmentPanel(false) }}>✏️</button>
-                  <button className="btn btn-ghost btn-xs text-err" onClick={() => {
-                    if (confirm(`Remover ${t.name}?`)) { store.removeTeacher(t.id); toast('Professor removido', 'ok') }
-                  }}>✕</button>
+                  <button
+                    className="btn btn-ghost btn-xs text-err"
+                    disabled={removingIds.has(t.id)}
+                    onClick={() => handleRemove(t)}
+                  >✕</button>
                 </div>
               )
             })}

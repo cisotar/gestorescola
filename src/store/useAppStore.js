@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { uid, isFormationSlot } from '../lib/helpers'
+import { uid, isFormationSlot, runResilientWrite } from '../lib/helpers'
 import { saveToFirestore, saveDoc, deleteDocById, updateDocById, _saveToLS, patchTeacherSelf, _loadCol, registerAbsencesListener, registerHistoryListener, saveConfig, submitPendingAction } from '../lib/db'
 import { defaultCfg } from '../lib/periods'
 import { COLOR_PALETTE } from '../lib/constants'
@@ -501,13 +501,35 @@ const useAppStore = create((set, get) => {
   removeTeacher: async (id) => {
     const teacher = get().teachers.find(t => t.id === id)
     if (_isCoordinator()) return _submitApproval('removeTeacher', { id }, `Remover professor ${teacher?.name ?? id}`)
+
     const schedulesToDelete = get().schedules.filter(x => x.teacherId === id)
+    const prevTeachers  = get().teachers
+    const prevSchedules = get().schedules
+
+    // Update otimista
     set(s => ({
       teachers:  s.teachers.filter(t => t.id !== id),
       schedules: s.schedules.filter(x => x.teacherId !== id),
     }))
-    deleteDocById(_schoolId(), 'teachers', id)
-    schedulesToDelete.forEach(s => deleteDocById(_schoolId(), 'schedules', s.id))
+
+    const sid = _schoolId()
+    const result = await runResilientWrite(async () => {
+      await deleteDocById(sid, 'teachers', id)
+      await Promise.all(schedulesToDelete.map(sc => deleteDocById(sid, 'schedules', sc.id)))
+    })
+
+    if (!result.ok) {
+      set({ teachers: prevTeachers, schedules: prevSchedules })
+      const msg = result.code === 'permission-denied'
+        ? 'Sem permissão para remover este professor'
+        : result.message ?? 'Não foi possível remover. Tente novamente.'
+      toast(msg, 'err')
+      console.error('[removeTeacher]', result.code, result.message)
+      return { ok: false, code: result.code }
+    }
+
+    toast('Professor removido', 'ok')
+    return { ok: true }
   },
 
   // ─── Horários ────────────────────────────────────────────────────────────────
@@ -526,7 +548,7 @@ const useAppStore = create((set, get) => {
     const isOwnSchedule = sched?.teacherId === myTeacher?.id
     if (_isCoordinator() && !isOwnSchedule) return _submitApproval('removeSchedule', { id }, `Remover aula ${sched?.turma ?? id}`)
     set(s => ({ schedules: s.schedules.filter(x => x.id !== id) }))
-    deleteDocById(_schoolId(), 'schedules', id)
+    deleteDocById(_schoolId(), 'schedules', id).catch(e => console.warn('removeSchedule:', e))
   },
   updateSchedule: async (id, changes) => {
     const sched = get().schedules.find(x => x.id === id)
@@ -712,7 +734,7 @@ const useAppStore = create((set, get) => {
 
   deleteHistory: (id) => {
     set(s => ({ history: s.history.filter(h => h.id !== id) }))
-    deleteDocById(_schoolId(), 'history', id)
+    deleteDocById(_schoolId(), 'history', id).catch(e => console.warn('deleteHistory:', e))
   },
 
 

@@ -5,3 +5,6 @@ export { colorOfAreaId, colorOfTeacher, COLOR_PALETTE, COLOR_NEUTRAL } from './c
 export { allTurmaObjects, findTurma, isSharedSeries, isFormationSlot, isRestSlot, teacherSubjectNames } from './turmas'
 export { canEditTeacher } from './permissions'
 export { detectDropdownPlacement } from './dropdown'
+export { withTimeout } from './withTimeout'
+export { mapFirestoreError } from './firestoreErrors'
+export { runResilientWrite } from './runResilientWrite'

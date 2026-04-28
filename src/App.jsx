@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import useAuthStore from './store/useAuthStore'
 import useAppStore from './store/useAppStore'
 import useSchoolStore from './store/useSchoolStore'
+import useNetworkStore from './store/useNetworkStore'
 import { loadFromFirestore, setupRealtimeListeners, teardownListeners } from './lib/db'
 import { _loadConfig } from './lib/db/config'
 import { _loadCol } from './lib/db'
@@ -46,7 +47,10 @@ export default function App() {
   }, [role])
 
   // 1. Inicializa auth (resolve role) assim que o componente monta.
+  // Também inicializa o useNetworkStore para registrar listeners online/offline
+  // em window — chamada síncrona, independente do auth (não precisa await).
   useEffect(() => {
+    useNetworkStore.getState().init()
     init()
   }, [])
 
