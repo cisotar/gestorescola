@@ -64,28 +64,31 @@ const useSchoolStore = create((set, get) => ({
 
   // ─── loadAvailableSchools ─────────────────────────────────────────────────
   // Lê users/{uid}.schools e faz getDoc para cada escola, montando availableSchools.
+  // Retorna o userSnap para que o caller possa reutilizá-lo em _resolveRole,
+  // evitando uma segunda leitura de users/{uid}.
   loadAvailableSchools: async (uid) => {
     try {
       const userSnap = await getDoc(doc(db, 'users', uid))
       if (!userSnap.exists()) {
         console.warn('[useSchoolStore] Documento users/' + uid + ' não encontrado')
-        return
+        return userSnap
       }
       const schoolsMap = userSnap.data().schools ?? {}
       // Suporta tanto boolean map ({ [schoolId]: true }) quanto object map ({ [schoolId]: { role: '...' } })
       const schoolIds = Object.keys(schoolsMap).filter(k =>
         schoolsMap[k] === true || (typeof schoolsMap[k] === 'object' && schoolsMap[k] !== null)
       )
-      if (schoolIds.length === 0) return
-
-      const snaps = await Promise.all(schoolIds.map(id => getDoc(getSchoolRef(id))))
-      const availableSchools = snaps
-        .filter(s => s.exists())
-        .map(s => ({ schoolId: s.id, ...s.data() }))
-
-      set({ availableSchools })
+      if (schoolIds.length > 0) {
+        const snaps = await Promise.all(schoolIds.map(id => getDoc(getSchoolRef(id))))
+        const availableSchools = snaps
+          .filter(s => s.exists())
+          .map(s => ({ schoolId: s.id, ...s.data() }))
+        set({ availableSchools })
+      }
+      return userSnap
     } catch (e) {
       console.warn('[useSchoolStore] loadAvailableSchools falhou:', e)
+      return null
     }
   },
 
@@ -122,8 +125,10 @@ const useSchoolStore = create((set, get) => ({
 
   // ─── init ─────────────────────────────────────────────────────────────────
   // Chamado no boot após login. Restaura escola do LS se uid ainda for membro.
+  // Retorna o userSnap obtido em loadAvailableSchools para que o caller
+  // (_resolveRole) possa reutilizá-lo sem nova leitura ao Firestore.
   init: async (uid) => {
-    await get().loadAvailableSchools(uid)
+    const userSnap = await get().loadAvailableSchools(uid)
 
     let savedId = null
     try { savedId = localStorage.getItem(LS_KEY) } catch {}
@@ -138,13 +143,13 @@ const useSchoolStore = create((set, get) => ({
         const snap = await getDoc(getSchoolRef(savedId))
         if (snap.exists()) {
           await get().setCurrentSchool(savedId)
-          return
+          return userSnap
         }
         try { localStorage.removeItem(LS_KEY) } catch {}
-        return
+        return userSnap
       } catch (e) {
         console.warn('[useSchoolStore] init: validacao schools/{id} falhou', e)
-        return
+        return userSnap
       }
     }
 
@@ -153,7 +158,7 @@ const useSchoolStore = create((set, get) => ({
       if (availableSchools.length === 1) {
         await get().setCurrentSchool(availableSchools[0].schoolId)
       }
-      return
+      return userSnap
     }
 
     const isMember = availableSchools.some(s => s.schoolId === savedId)
@@ -164,10 +169,11 @@ const useSchoolStore = create((set, get) => ({
       if (availableSchools.length === 1) {
         await get().setCurrentSchool(availableSchools[0].schoolId)
       }
-      return
+      return userSnap
     }
 
     await get().setCurrentSchool(savedId)
+    return userSnap
   },
 }))
 

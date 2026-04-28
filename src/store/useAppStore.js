@@ -108,13 +108,16 @@ const useAppStore = create((set, get) => {
     ...INITIAL_STATE,
 
     // ─── Hidratação ─────────────────────────────────────────────────────────────
+    // Se `data.loaded` for explicitamente `false`, respeita (ex: switchSchool usa
+    // isso para sinalizar que o store foi limpo e ainda não foi recarregado).
+    // Em todos os outros casos (undefined ou true) assume loaded=true.
     hydrate: (data) => set({
       ...data,
-      loaded: true,
-      teachersLoaded: !!data.teachers?.length,
-      schedulesLoaded: !!data.schedules?.length,
-      absencesLoaded: !!data.absences?.length,
-      historyLoaded: !!data.history?.length,
+      loaded: data.loaded !== false,
+      teachersLoaded: data.loaded === false ? false : !!data.teachers?.length,
+      schedulesLoaded: data.loaded === false ? false : !!data.schedules?.length,
+      absencesLoaded: data.loaded === false ? false : !!data.absences?.length,
+      historyLoaded: data.loaded === false ? false : !!data.history?.length,
     }),
 
     // ─── Persistência ──────────────────────────────────────────────────────────

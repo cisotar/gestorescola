@@ -126,7 +126,8 @@ describe('useSchoolStore.init — branch pendente (savedId sem availableSchools)
       [`schools/${SCHOOL_ID}`]: '__throw__',
     }))
 
-    await expect(useSchoolStore.getState().init(UID)).resolves.toBeUndefined()
+    // init não deve lançar (apenas verifica que não rejeita)
+    await useSchoolStore.getState().init(UID)
 
     const state = useSchoolStore.getState()
     expect(state.currentSchoolId).toBeNull()

@@ -416,8 +416,9 @@ describe('approvalListener — popula teacher após aprovação', () => {
 
     expect(useAuthStore.getState().role).toBe('teacher')
     expect(useAuthStore.getState().teacher).toEqual(teacherData)
-    // getDocs não deve ter sido chamado pois teacherDocId estava presente e o doc existe
-    expect(getDocs).not.toHaveBeenCalled()
+    // step 3.5 chama getDocs uma vez (reconciliação por email, retorna empty);
+    // o approvalListener usa getDoc (teacherDocId presente e doc existe), sem getDocs adicional.
+    expect(getDocs).toHaveBeenCalledTimes(1)
   })
 
   it('aprovação sem teacherDocId → fallback por e-mail popula teacher', async () => {
@@ -451,7 +452,9 @@ describe('approvalListener — popula teacher após aprovação', () => {
 
     expect(useAuthStore.getState().role).toBe('teacher')
     expect(useAuthStore.getState().teacher).toEqual(teacherData)
-    expect(getDocs).toHaveBeenCalledTimes(1)
+    // step 3.5 chama getDocs (reconciliação por email, sem status=approved → não reconcilia)
+    // + approvalListener fallback por email (sem teacherDocId)
+    expect(getDocs).toHaveBeenCalledTimes(2)
   })
 
   it('teacherDocId presente mas doc inexistente → fallback por e-mail', async () => {
@@ -489,7 +492,9 @@ describe('approvalListener — popula teacher após aprovação', () => {
 
     expect(useAuthStore.getState().role).toBe('teacher')
     expect(useAuthStore.getState().teacher).toEqual(teacherData)
-    expect(getDocs).toHaveBeenCalledTimes(1)
+    // step 3.5 chama getDocs (reconciliação por email, sem status=approved → não reconcilia)
+    // + approvalListener fallback por email (teacherDocId presente mas doc inexistente)
+    expect(getDocs).toHaveBeenCalledTimes(2)
   })
 
   it('newStatus === "rejected" → signOut chamado, teacher permanece null', async () => {

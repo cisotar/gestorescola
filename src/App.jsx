@@ -75,6 +75,7 @@ export default function App() {
       return
     }
     if (!currentSchoolId) {
+      // Sem escola: libera o app sem dados (SaaS admin em /admin não precisa de dados de escola)
       hydrate({})
       return
     }
@@ -82,10 +83,13 @@ export default function App() {
     let active = true
 
     async function loadData() {
+      // Sinaliza loading antes do fetch para garantir que o spinner
+      // apareça durante troca de escola (ex: SaaS admin abrindo escola do painel)
+      hydrate({ loaded: false })
       teardownListeners()
       const data = await loadFromFirestore(currentSchoolId)
-      if (!active || !data) return
-      hydrate(data)
+      if (!active) return
+      hydrate(data ?? {})
       setupRealtimeListeners(currentSchoolId, useAppStore.getState())
     }
 
@@ -96,8 +100,12 @@ export default function App() {
     }
   }, [role, currentSchoolId, loading])
 
-  // Loading inicial
-  if (loading || !loaded) {
+  // Loading inicial.
+  // SaaS admin sem escola selecionada (navegando em /admin) não precisa de dados
+  // do appStore — liberar imediatamente para evitar spinner desnecessário.
+  const needsSchoolData = !!currentSchoolId
+  const isDataLoading = loading || (needsSchoolData && !loaded)
+  if (isDataLoading) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg">
         <Spinner size={40} />

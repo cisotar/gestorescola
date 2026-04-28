@@ -51,8 +51,10 @@ const useAuthStore = create((set, get) => ({
       onAuthStateChanged(auth, async user => {
         set({ user, role: null, teacher: null, isSaasAdmin: false })
         if (user) {
-          await useSchoolStore.getState().init(user.uid)
-          await get()._resolveRole(user)
+          // init retorna o userSnap lido em loadAvailableSchools para evitar
+          // uma segunda leitura de users/{uid} dentro de _resolveRole.
+          const userSnap = await useSchoolStore.getState().init(user.uid)
+          await get()._resolveRole(user, userSnap)
         }
         set({ loading: false })
         resolve()
@@ -60,14 +62,19 @@ const useAuthStore = create((set, get) => ({
     })
   },
 
-  _resolveRole: async (user) => {
+  // userSnapHint: snapshot de users/{uid} já lido em loadAvailableSchools.
+  // Quando presente, evita uma segunda leitura ao Firestore no step 3.
+  // Quando ausente (re-resolve por troca de escola), o step 3 lê normalmente.
+  _resolveRole: async (user, userSnapHint) => {
     const schoolId = useSchoolStore.getState().currentSchoolId
     console.log('[auth._resolveRole] start', { uid: user.uid, email: user.email, schoolId })
 
     // ── 1. Super-admin SaaS: bypass total, role admin garantido ──────────────
     const isSuperUser = SUPER_USERS.includes(user.email?.toLowerCase())
-    // Computa flag isSaasAdmin uma única vez (evita duas chamadas a isAdmin)
-    const isSaasAdminFlag = isSuperUser || await isAdmin(user.email)
+    // Se já sabemos que é SaaS admin (ex: re-resolve após troca de escola),
+    // evita a chamada ao Firestore /admins/{email} — economia de 1 RTT.
+    const alreadyKnownSaasAdmin = get().isSaasAdmin
+    const isSaasAdminFlag = alreadyKnownSaasAdmin || isSuperUser || await isAdmin(user.email)
     set({ isSaasAdmin: isSaasAdminFlag })
     if (isSaasAdminFlag) {
       get()._unsubPending?.()
@@ -97,9 +104,10 @@ const useAuthStore = create((set, get) => ({
     }
 
     // ── 3. Lê role de users/{uid}.schools[schoolId] ──────────────────────────
+    // Reutiliza userSnapHint quando disponível (evita segunda leitura ao Firestore)
     try {
-      const userSnap = await getDoc(doc(db, 'users', user.uid))
-      console.log('[auth._resolveRole] step 3: users/{uid} exists?', userSnap.exists(), 'data:', userSnap.exists() ? userSnap.data() : null)
+      const userSnap = userSnapHint ?? await getDoc(doc(db, 'users', user.uid))
+      console.log('[auth._resolveRole] step 3: users/{uid} exists?', userSnap.exists(), 'data:', userSnap.exists() ? userSnap.data() : null, userSnapHint ? '(hint reutilizado)' : '(lido do Firestore)')
       if (userSnap.exists()) {
         const schoolEntry = userSnap.data().schools?.[schoolId]
         const localRole = typeof schoolEntry === 'object' && schoolEntry !== null

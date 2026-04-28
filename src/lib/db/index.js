@@ -25,15 +25,16 @@ export async function loadFromFirestore(schoolId) {
   }
 
   try {
-    const [config, teachers, schedules, absences, history] = await Promise.all([
+    // Carrega apenas config + teachers + schedules na inicialização.
+    // Absences e history são carregados de forma lazy (loadAbsencesIfNeeded /
+    // loadHistoryIfNeeded) para acelerar o primeiro render.
+    const [config, teachers, schedules] = await Promise.all([
       _loadConfig(schoolId),
       _loadCol(schoolId, 'teachers'),
       _loadCol(schoolId, 'schedules'),
-      _loadCol(schoolId, 'absences'),
-      _loadCol(schoolId, 'history'),
     ])
 
-    return { ...config, teachers, schedules, absences, history }
+    return { ...config, teachers, schedules, absences: [], history: [] }
   } catch (e) {
     console.warn('[db] Firestore falhou, usando cache:', e)
     // Sempre tem fallback: cache antigo (mesmo que expirado) é melhor que vazio
