@@ -37,8 +37,12 @@ const useSchoolStore = create((set, get) => ({
     }
   },
 
+  // ─── _waitForLoaded ────────────────────────────────────────────────────────
+  // Helper privado: aguarda loaded === true no appStore.
+  // Resolve imediatamente se already loaded, caso contrário escuta via subscribe.
   // ─── switchSchool ─────────────────────────────────────────────────────────
-  // Cancela todos os listeners da escola anterior, limpa o appStore e ativa a nova escola.
+  // Cancela todos os listeners da escola anterior, limpa o appStore, ativa a nova escola
+  // e aguarda carregamento de dados antes de retornar.
   // Chamar este método — nunca setCurrentSchool diretamente — ao trocar escola em runtime.
   switchSchool: async (schoolId) => {
     // 1. Cancelar listeners Firestore da escola anterior
@@ -58,8 +62,28 @@ const useSchoolStore = create((set, get) => ({
       absencesLoaded: false, historyLoaded: false,
     })
 
-    // 4. Ativar a nova escola
+    // 4. Registrar subscriber ANTES de ativar escola para não perder o evento
+    // loaded:true caso o Firestore responda muito rápido (race condition).
+    const loadedPromise = new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        unsub()
+        reject(new Error('switchSchool timeout: dados não carregaram em 30s'))
+      }, 30000)
+
+      const unsub = useAppStore.subscribe((state, prevState) => {
+        if (!prevState.loaded && state.loaded) {
+          clearTimeout(timeoutId)
+          unsub()
+          resolve()
+        }
+      })
+    })
+
+    // 5. Ativar a nova escola (dispara effect em App.jsx que chama loadData())
     await get().setCurrentSchool(schoolId)
+
+    // 6. Aguardar carregamento de dados antes de retornar
+    await loadedPromise
   },
 
   // ─── loadAvailableSchools ─────────────────────────────────────────────────
