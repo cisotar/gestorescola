@@ -144,10 +144,12 @@ export default function App() {
     </>
   )
 
-  // SaaS admin → /admin (prevalece mesmo que tenha escolas em availableSchools)
-  // Exceções: já está em /admin/* ou em /join/:slug, ou tem uma escola ativa
-  // (clicou em uma escola no painel e está navegando dentro dela).
-  if (isSaasAdmin && !currentSchoolId && !pathname.startsWith('/admin') && !pathname.startsWith('/join/')) return (
+  // SaaS admin sem membership em nenhuma escola → /admin.
+  // Usa availableSchools.length === 0 em vez de !currentSchoolId porque o
+  // SchoolStore pode restaurar um currentSchoolId do localStorage mesmo quando
+  // o admin não tem membership real (savedId válido mas availableSchools vazio).
+  // Exceções: já está em /admin/* ou em /join/:slug.
+  if (isSaasAdmin && availableSchools.length === 0 && !pathname.startsWith('/admin') && !pathname.startsWith('/join/')) return (
     <>
       <Navigate to="/admin" replace />
       <Toast />
