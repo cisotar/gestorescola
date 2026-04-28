@@ -33,5 +33,8 @@ export { generateDayHTML, generateTeacherHTML, generateByDayHTML, generateByWeek
 // Settings (helpers de configuração)
 export { PROFILE_OPTIONS, PROFILE_OPTIONS_NO_ADMIN, PROFILE_LABELS, teacherSegmentIds, teacherBelongsToSegment, isSharedSchedule, calcSubjectChange, calcAreaSubjectRemovalImpact, buildPreviewItems, timeAgo, myTimeAgo, STATUS_BADGE } from './settings'
 
+// Boot (lógica pura de inicialização)
+export { bootSequence } from './boot'
+
 // Constants
 export { DAYS, COLOR_PALETTE, COLOR_NEUTRAL } from './constants'

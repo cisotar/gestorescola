@@ -6,6 +6,7 @@ import { isAdmin, requestTeacherAccess, getTeacherDoc, teardownListeners, Access
 import useAppStore from './useAppStore'
 import useSchoolStore from './useSchoolStore'
 import { toast } from '../hooks/useToast'
+import { bootSequence } from '../lib/boot'
 
 // Proprietário do sistema — acesso garantido independente do estado do Firestore.
 // Nunca passa pelo fluxo de aprovação; role 'admin' é atribuído antes de qualquer
@@ -203,24 +204,54 @@ const useAuthStore = create((set, get) => ({
   // Quando presente, evita uma segunda leitura ao Firestore no step 3.
   // Quando ausente (re-resolve por troca de escola), o step 3 lê normalmente.
   _resolveRole: async (user, userSnapHint) => {
-    const schoolId = useSchoolStore.getState().currentSchoolId
+    const { currentSchoolId: schoolId, availableSchools: rawAvailableSchools } = useSchoolStore.getState()
+    const availableSchools = rawAvailableSchools ?? []
     console.log('[auth._resolveRole] start', { uid: user.uid, email: user.email, schoolId })
 
-    // ── 1. Super-admin SaaS: bypass total, role admin garantido ──────────────
+    // ── 1. Determinar flag SaaS admin ────────────────────────────────────────
     const isSuperUser = SUPER_USERS.includes(user.email?.toLowerCase())
     // Se já sabemos que é SaaS admin (ex: re-resolve após troca de escola),
     // evita a chamada ao Firestore /admins/{email} — economia de 1 RTT.
     const alreadyKnownSaasAdmin = get().isSaasAdmin
     const isSaasAdminFlag = alreadyKnownSaasAdmin || isSuperUser || await isAdmin(user.email)
     set({ isSaasAdmin: isSaasAdminFlag })
-    if (isSaasAdminFlag) {
+
+    // ── 2. Ler userSnap (reutiliza hint quando disponível) ───────────────────
+    let userSnap = userSnapHint ?? null
+    if (!userSnap) {
+      try {
+        userSnap = await getDoc(doc(db, 'users', user.uid))
+      } catch (e) {
+        console.warn('[auth] leitura users/{uid}:', e)
+      }
+    }
+    console.log('[auth._resolveRole] users/{uid} exists?', userSnap?.exists?.(), userSnapHint ? '(hint reutilizado)' : '(lido do Firestore)')
+
+    // ── 3. bootSequence decide role e listeners ───────────────────────────────
+    // Passamos currentSchoolId como savedSchoolId para que bootSequence resolva
+    // a entry correta em userSnap.schools[schoolId]. O schoolId já foi
+    // restaurado pelo useSchoolStore.init antes desta chamada.
+    const result = bootSequence(user, userSnap, availableSchools, schoolId, isSaasAdminFlag)
+    console.log('[auth._resolveRole] bootSequence →', result)
+
+    // ── 4. Aplicar role ───────────────────────────────────────────────────────
+    if (result.role === null) {
+      // role null sem isSaasAdmin indica cadastro rejeitado
+      if (!isSaasAdminFlag) {
+        console.log('[auth._resolveRole] cadastro rejeitado, deslogando')
+        set({ role: null })
+        await signOut(auth)
+      }
+      return
+    }
+
+    if (result.role === 'admin') {
       get()._unsubPending?.()
-      // Apenas inicia o listener de pending quando há escola selecionada.
-      // Sem schoolId, o painel SaaS Admin (/admin) não exibe contador agregado.
-      if (schoolId) {
+      if (result.startPendingListener && result.schoolId) {
+        const pendingSchoolId = result.schoolId
         const unsub = onSnapshot(
           query(
-            collection(db, 'schools', schoolId, 'pending_teachers'),
+            collection(db, 'schools', pendingSchoolId, 'pending_teachers'),
             where('status', '==', 'pending')
           ),
           snap => set({ pendingCt: snap.size }),
@@ -233,90 +264,58 @@ const useAuthStore = create((set, get) => ({
       return
     }
 
-    // ── 2. Guard: sem schoolId não é possível determinar role ────────────────
-    if (!schoolId) {
-      console.log('[auth._resolveRole] step 2: sem schoolId → role=pending')
-      set({ role: 'pending' })
+    if (result.role !== 'pending') {
+      // teacher / coordinator / teacher-coordinator
+      // Buscar documento do professor para popular useAuthStore.teacher
+      if (userSnap?.exists?.()) {
+        const schoolEntry = userSnap.data()?.schools?.[result.schoolId ?? schoolId]
+        const teacherDocId = schoolEntry?.teacherDocId ?? null
+        const teacherDoc = await getTeacherDoc(result.schoolId ?? schoolId, teacherDocId, user.email)
+        set({ role: result.role, teacher: teacherDoc })
+      } else {
+        set({ role: result.role, teacher: null })
+      }
       return
     }
 
-    // ── 3. Lê role de users/{uid}.schools[schoolId] ──────────────────────────
-    // Reutiliza userSnapHint quando disponível (evita segunda leitura ao Firestore)
-    try {
-      const userSnap = userSnapHint ?? await getDoc(doc(db, 'users', user.uid))
-      console.log('[auth._resolveRole] step 3: users/{uid} exists?', userSnap.exists(), 'data:', userSnap.exists() ? userSnap.data() : null, userSnapHint ? '(hint reutilizado)' : '(lido do Firestore)')
-      if (userSnap.exists()) {
-        const schoolEntry = userSnap.data().schools?.[schoolId]
-        const localRole = typeof schoolEntry === 'object' && schoolEntry !== null
-          ? schoolEntry?.role ?? null
-          : null
-        console.log('[auth._resolveRole] step 3: localRole =', localRole)
-        if (localRole === 'rejected') {
-          console.log('[auth._resolveRole] cadastro rejeitado, deslogando')
-          set({ role: null })
-          await signOut(auth)
-          return
-        }
-        if (localRole && localRole !== 'pending') {
-          const normalized = localRole === 'coordinator' ? 'coordinator'
-            : localRole === 'teacher-coordinator' ? 'teacher-coordinator'
-            : localRole === 'admin' ? 'admin'
-            : 'teacher'
-          if (normalized === 'admin') {
-            // Admin local da escola — iniciar listener de pending
-            get()._unsubPending?.()
-            const unsub = onSnapshot(
-              query(
-                collection(db, 'schools', schoolId, 'pending_teachers'),
-                where('status', '==', 'pending')
-              ),
-              snap => set({ pendingCt: snap.size }),
-              err  => console.warn('[pendingCt]', err)
-            )
-            set({ role: 'admin', pendingCt: 0, _unsubPending: unsub })
-          } else {
-            // Buscar documento do professor para popular useAuthStore.teacher
-            const teacherDocId = schoolEntry?.teacherDocId ?? null
-            const teacherDoc = await getTeacherDoc(schoolId, teacherDocId, user.email)
-            set({ role: normalized, teacher: teacherDoc })
-          }
-          return
-        }
-      }
-    } catch (e) { console.warn('[auth] leitura users/{uid}:', e) }
-
-    // ── 4. Sem role → fluxo pending ───────────────────────────────────────────
+    // ── 5. Fluxo pending ───────────────────────────────────────────────────────
     // IMPORTANTE: nunca recriar users/{uid}.schools[schoolId] no client.
     // Toda escrita de membership é exclusivamente via Cloud Function (approveTeacher,
     // joinSchoolAsAdmin, removeTeacherFromSchool). Cliente só LÊ.
-    console.log('[auth._resolveRole] step 4: registrando listener de aprovação em', `schools/${schoolId}/pending_teachers/${user.uid}`)
+    const pendingSchoolId = result.schoolId ?? schoolId
+    console.log('[auth._resolveRole] step pending: registrando listener de aprovação em', `schools/${pendingSchoolId}/pending_teachers/${user.uid}`)
     set({ role: 'pending' })
-    try {
-      await requestTeacherAccess(schoolId, user)
-    } catch (e) {
-      if (e instanceof AccessRevokedError) {
-        // Acesso revogado pelo admin — não mantém pending, deixa em estado
-        // sem role para que App.jsx redirecione para /no-school via fluxo normal.
-        console.warn('[auth._resolveRole] acesso revogado para', user.email, 'na escola', schoolId)
-        toast('Seu acesso a esta escola foi revogado pelo administrador', 'err')
-        // Limpa contexto local da escola para que o App caia em /no-school
-        try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
-        useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
-        set({ role: null, teacher: null })
-        return
+
+    if (pendingSchoolId) {
+      try {
+        await requestTeacherAccess(pendingSchoolId, user)
+      } catch (e) {
+        if (e instanceof AccessRevokedError) {
+          // Acesso revogado pelo admin — não mantém pending, deixa em estado
+          // sem role para que App.jsx redirecione para /no-school via fluxo normal.
+          console.warn('[auth._resolveRole] acesso revogado para', user.email, 'na escola', pendingSchoolId)
+          toast('Seu acesso a esta escola foi revogado pelo administrador', 'err')
+          // Limpa contexto local da escola para que o App caia em /no-school
+          try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
+          useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+          set({ role: null, teacher: null })
+          return
+        }
+        console.error('[auth._resolveRole] requestTeacherAccess FAIL', { schoolId: pendingSchoolId, uid: user.uid, code: e.code, message: e.message })
       }
-      console.error('[auth._resolveRole] requestTeacherAccess FAIL', { schoolId, uid: user.uid, code: e.code, message: e.message })
     }
+
+    if (!result.startApprovalListener || !pendingSchoolId) return
 
     // Cancelar listener anterior, se existir (idempotência)
     get()._unsubApproval?.()
     set({ _unsubApproval: null })
 
-    const pendingDocRef = doc(db, 'schools', schoolId, 'pending_teachers', user.uid)
+    const pendingDocRef = doc(db, 'schools', pendingSchoolId, 'pending_teachers', user.uid)
     const unsub = onSnapshot(
       pendingDocRef,
       async snap => {
-        console.log('[auth.approvalListener] dispara, exists?', snap.exists(), `— listening to schools/${schoolId}/pending_teachers/${user.uid}`)
+        console.log('[auth.approvalListener] dispara, exists?', snap.exists(), `— listening to schools/${pendingSchoolId}/pending_teachers/${user.uid}`)
         if (!snap.exists()) {
           unsub()
           set({ _unsubApproval: null })
@@ -325,10 +324,10 @@ const useAuthStore = create((set, get) => ({
           try {
             const userSnap = await getDoc(doc(db, 'users', user.uid))
             if (userSnap.exists()) {
-              const entry = userSnap.data().schools?.[schoolId]
+              const entry = userSnap.data().schools?.[pendingSchoolId]
               const newRole = entry?.role
               const newStatus = entry?.status
-              console.log('[auth.approvalListener] users/{uid} atualizado:', { newRole, newStatus, schoolId })
+              console.log('[auth.approvalListener] users/{uid} atualizado:', { newRole, newStatus, schoolId: pendingSchoolId })
               if (newStatus === 'approved' && newRole && newRole !== 'pending') {
                 const normalized = newRole === 'coordinator' ? 'coordinator'
                   : newRole === 'teacher-coordinator' ? 'teacher-coordinator'
@@ -337,7 +336,7 @@ const useAuthStore = create((set, get) => ({
                 let teacherDoc = null
                 if (normalized !== 'admin') {
                   const teacherDocId = entry?.teacherDocId ?? null
-                  teacherDoc = await getTeacherDoc(schoolId, teacherDocId, user.email)
+                  teacherDoc = await getTeacherDoc(pendingSchoolId, teacherDocId, user.email)
                 }
                 console.log('[auth.approvalListener] role atualizado para:', normalized)
                 set({ role: normalized, teacher: teacherDoc })

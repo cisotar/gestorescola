@@ -4,6 +4,7 @@ import { doc, getDoc, collection, query, orderBy, onSnapshot } from 'firebase/fi
 import { db } from '../lib/firebase'
 import { getSchoolRef } from '../lib/firebase/multi-tenant'
 import { teardownListeners } from '../lib/db'
+import { bootSequence } from '../lib/boot'
 
 const LS_KEY = 'gestao_active_school'
 
@@ -162,54 +163,36 @@ const useSchoolStore = create((set, get) => ({
 
     const { availableSchools } = get()
 
-    // SaaS admin sem membership: descarta schoolId stale do localStorage imediatamente.
-    // Não chama setCurrentSchool — currentSchoolId permanece null — e _resolveRole
-    // pode setar role:admin sem disparar re-resolves via subscribe do SchoolStore.
-    if (isSaasAdmin && availableSchools.length === 0) {
-      if (savedId) {
-        try { localStorage.removeItem(LS_KEY) } catch {}
-      }
-      return userSnap
-    }
+    // bootSequence decide qual schoolId restaurar e se o LS deve ser limpo.
+    // Passamos um objeto mínimo com uid (user.email não é usado aqui pois
+    // isSaasAdmin já encapsula a verificação feita externamente via SUPER_USERS).
+    const result = bootSequence({ uid }, userSnap, availableSchools, savedId, isSaasAdmin)
 
-    // Caso pendente: tem savedId mas availableSchools vazio (users/{uid} inexistente
-    // ou ainda sem escolas vinculadas). Valida schools/{savedId} e mantém o contexto
-    // sem exigir membership — preserva RN-2 em reload de PendingPage.
-    if (savedId && availableSchools.length === 0) {
-      try {
-        const snap = await getDoc(getSchoolRef(savedId))
-        if (snap.exists()) {
-          await get().setCurrentSchool(savedId)
-          return userSnap
-        }
-        try { localStorage.removeItem(LS_KEY) } catch {}
-        return userSnap
-      } catch (e) {
-        console.warn('[useSchoolStore] init: validacao schools/{id} falhou', e)
-        return userSnap
-      }
-    }
-
-    // Se não tem escola salva mas só tem uma disponível, seleciona automaticamente
-    if (!savedId) {
-      if (availableSchools.length === 1) {
-        await get().setCurrentSchool(availableSchools[0].schoolId)
-      }
-      return userSnap
-    }
-
-    const isMember = availableSchools.some(s => s.schoolId === savedId)
-
-    if (!isMember) {
+    // Aplicar clearLocalStorage antes de qualquer setCurrentSchool
+    if (result.clearLocalStorage) {
       try { localStorage.removeItem(LS_KEY) } catch {}
-      // Tenta selecionar a primeira disponível
-      if (availableSchools.length === 1) {
-        await get().setCurrentSchool(availableSchools[0].schoolId)
-      }
-      return userSnap
     }
 
-    await get().setCurrentSchool(savedId)
+    if (result.schoolId !== null) {
+      // Caso pendente: savedId retornado mas availableSchools está vazio — usuário
+      // sem membership ainda. Valida o doc da escola antes de ativar (I/O de setup,
+      // não lógica de decisão — permanece aqui pois bootSequence é pura/sem I/O).
+      if (availableSchools.length === 0 && result.schoolId === savedId) {
+        try {
+          const snap = await getDoc(getSchoolRef(result.schoolId))
+          if (snap.exists()) {
+            await get().setCurrentSchool(result.schoolId)
+          } else {
+            try { localStorage.removeItem(LS_KEY) } catch {}
+          }
+        } catch (e) {
+          console.warn('[useSchoolStore] init: validacao schools/{id} falhou', e)
+        }
+      } else {
+        await get().setCurrentSchool(result.schoolId)
+      }
+    }
+
     return userSnap
   },
 }))
