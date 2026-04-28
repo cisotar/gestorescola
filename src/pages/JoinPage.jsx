@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getDoc, doc, setDoc } from 'firebase/firestore'
-import { db } from '../lib/firebase'
-import { getSchoolSlug, requestTeacherAccess } from '../lib/db'
+import { getDoc, doc } from 'firebase/firestore'
+import { httpsCallable } from 'firebase/functions'
+import { db, functions } from '../lib/firebase'
+import { getSchoolSlug, requestTeacherAccess, AccessRevokedError } from '../lib/db'
 import { getSchoolDocRef, getSchoolRef } from '../lib/firebase/multi-tenant'
 import useAuthStore from '../store/useAuthStore'
 import useSchoolStore from '../store/useSchoolStore'
 import Spinner from '../components/ui/Spinner'
+import { toast } from '../hooks/useToast'
 
 // ─── Sub-componentes (uso único, sem export) ──────────────────────────────────
 
@@ -126,21 +128,18 @@ export default function JoinPage() {
     }
 
     // 3c. Detecção de admin local — se email do usuário bate com adminEmail da escola,
-    // auto-aprovar como admin sem passar por pending_teachers.
+    // auto-aprovar como admin via Cloud Function (validação backend de identidade).
     const userEmail = currentUser.email?.toLowerCase().trim()
     const adminEmail = schoolData?.adminEmail?.toLowerCase().trim()
     if (userEmail && adminEmail && userEmail === adminEmail) {
       try {
-        await setDoc(
-          doc(db, 'users', currentUser.uid),
-          { schools: { [schoolId]: { role: 'admin', status: 'approved' } } },
-          { merge: true }
-        )
+        const fn = httpsCallable(functions, 'joinSchoolAsAdmin')
+        await fn({ schoolId })
         await useSchoolStore.getState().setCurrentSchool(schoolId)
         navigate('/dashboard', { replace: true })
         return
       } catch (e) {
-        console.error('[JoinPage] falha ao registrar admin local:', e)
+        console.error('[JoinPage] joinSchoolAsAdmin falhou:', e)
         setErrorMsg('Não foi possível registrar acesso de administrador. Tente novamente.')
         setStatus('error')
         return
@@ -191,6 +190,13 @@ export default function JoinPage() {
       await useSchoolStore.getState().setCurrentSchool(schoolId)
       navigate('/', { replace: true })
     } catch (e) {
+      if (e instanceof AccessRevokedError) {
+        console.warn('[JoinPage] acesso revogado para', currentUser.email)
+        toast('Seu acesso a esta escola foi revogado pelo administrador', 'err')
+        setErrorMsg('Seu acesso a esta escola foi revogado. Contate o administrador.')
+        setStatus('error')
+        return
+      }
       console.error('[JoinPage] requestTeacherAccess falhou:', e)
       setErrorMsg('Erro ao solicitar acesso. Tente novamente.')
       setStatus('error')

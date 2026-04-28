@@ -11,9 +11,29 @@ service cloud.firestore {
     }
 
     // ── Perfil global do usuário (mapa de escola → role/status) ─────────────
+    // CRÍTICO — defesa em profundidade:
+    // Toda mutação no campo `schools` é privilégio exclusivo das Cloud Functions
+    // (Admin SDK bypassa rules). Cliente NÃO pode escrever schools sob hipótese
+    // alguma — caso contrário, qualquer usuário autenticado promove a si mesmo
+    // a admin de qualquer escola.
+    //
+    // Create: permitido pelo próprio uid SEM o campo schools (perfil inicial).
+    // Update: permitido pelo próprio uid APENAS se não tocar em schools (campos
+    //   de perfil pessoal — ex.: name, photoURL futuros). SaaS admin tem bypass
+    //   total via /admins/, mas no fluxo atual SaaS admin também opera via
+    //   Cloud Function — manter isSaasAdmin como escape de manutenção.
+    // Delete: apenas SaaS admin.
     match /users/{uid} {
-      allow read:  if request.auth != null && request.auth.uid == uid || isSaasAdmin();
-      allow write: if request.auth != null && request.auth.uid == uid || isSaasAdmin();
+      allow read:   if request.auth != null && request.auth.uid == uid || isSaasAdmin();
+      allow create: if isSaasAdmin()
+        || (request.auth != null
+            && request.auth.uid == uid
+            && !('schools' in request.resource.data));
+      allow update: if isSaasAdmin()
+        || (request.auth != null
+            && request.auth.uid == uid
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['schools']));
+      allow delete: if isSaasAdmin();
     }
 
     // ── Documento raiz da escola ─────────────────────────────────────────────
@@ -117,6 +137,17 @@ service cloud.firestore {
     match /schools/{schoolId}/history/{docId} {
       allow read:  if isMemberOf(schoolId) || isSaasAdmin();
       allow write: if isSchoolAdmin(schoolId);
+    }
+
+    // ── Usuários removidos (marcação anti-recriação de pending) ─────────────
+    // Gravado APENAS por Cloud Function (removeTeacherFromSchool). Cliente lê
+    // o próprio doc para detectar revogação e bloquear nova solicitação de
+    // acesso. Admins da escola e SaaS admin também podem ler para auditoria.
+    match /schools/{schoolId}/removed_users/{docId} {
+      allow read:   if (request.auth != null && request.auth.uid == docId)
+                    || isSchoolAdmin(schoolId)
+                    || isSaasAdmin();
+      allow write:  if false; // apenas Admin SDK via Cloud Function
     }
 
     // ── Solicitações de acesso pendentes ─────────────────────────────────────

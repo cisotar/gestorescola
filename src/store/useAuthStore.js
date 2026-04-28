@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { auth, provider, db } from '../lib/firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
-import { onSnapshot, collection, query, where, doc, getDoc, getDocs, setDoc, deleteDoc, limit } from 'firebase/firestore'
-import { isAdmin, requestTeacherAccess, getTeacherDoc, teardownListeners } from '../lib/db'
+import { onSnapshot, collection, query, where, doc, getDoc } from 'firebase/firestore'
+import { isAdmin, requestTeacherAccess, getTeacherDoc, teardownListeners, AccessRevokedError } from '../lib/db'
 import useAppStore from './useAppStore'
 import useSchoolStore from './useSchoolStore'
 import { toast } from '../hooks/useToast'
@@ -279,75 +279,28 @@ const useAuthStore = create((set, get) => ({
       }
     } catch (e) { console.warn('[auth] leitura users/{uid}:', e) }
 
-    // ── 3.5. Auto-reconciliação ──────────────────────────────────────────────
-    // Se users/{uid} não existe (ou não tem schools[schoolId]), mas já existe
-    // teacher aprovado nessa escola com email correspondente, reconciliar:
-    // criar users/{uid}.schools[schoolId] derivado do teacher doc e limpar
-    // pending_teachers órfão. Cobre casos onde approveTeacher() rodou em
-    // versão anterior do sistema sem escrever users/{uid}, ou foi feito
-    // manualmente.
-    try {
-      const email = (user.email ?? '').toLowerCase()
-      if (email) {
-        const teacherSnap = await getDocs(
-          query(
-            collection(db, 'schools', schoolId, 'teachers'),
-            where('email', '==', email),
-            limit(1)
-          )
-        )
-        if (!teacherSnap.empty) {
-          const teacherDoc = teacherSnap.docs[0]
-          const teacherData = teacherDoc.data()
-          if (teacherData.status === 'approved') {
-            const teacherProfile = teacherData.profile ?? 'teacher'
-            const reconciledRole = teacherProfile === 'coordinator' ? 'coordinator'
-              : teacherProfile === 'teacher-coordinator' ? 'teacher-coordinator'
-              : teacherProfile === 'admin' ? 'admin'
-              : 'teacher'
-            console.log('[auth._resolveRole] step 3.5: reconciliando users/{uid} a partir de teachers/' + teacherDoc.id, { reconciledRole })
-            await setDoc(doc(db, 'users', user.uid), {
-              email,
-              schools: {
-                [schoolId]: {
-                  role: reconciledRole,
-                  status: 'approved',
-                  teacherDocId: teacherDoc.id,
-                },
-              },
-              reconciledAt: new Date().toISOString(),
-              reconciledFrom: 'auto_resolveRole',
-            }, { merge: true })
-            // Limpar pending_teachers órfão se existir
-            try {
-              await deleteDoc(doc(db, 'schools', schoolId, 'pending_teachers', user.uid))
-            } catch { /* ok se não existir */ }
-            // Popular store
-            const fullTeacherDoc = await getTeacherDoc(schoolId, teacherDoc.id, user.email)
-            if (reconciledRole === 'admin') {
-              get()._unsubPending?.()
-              const unsub = onSnapshot(
-                query(
-                  collection(db, 'schools', schoolId, 'pending_teachers'),
-                  where('status', '==', 'pending')
-                ),
-                snap => set({ pendingCt: snap.size }),
-                err  => console.warn('[pendingCt]', err)
-              )
-              set({ role: 'admin', teacher: null, pendingCt: 0, _unsubPending: unsub })
-            } else {
-              set({ role: reconciledRole, teacher: fullTeacherDoc })
-            }
-            return
-          }
-        }
-      }
-    } catch (e) { console.warn('[auth._resolveRole] step 3.5 reconciliação falhou:', e) }
-
     // ── 4. Sem role → fluxo pending ───────────────────────────────────────────
+    // IMPORTANTE: nunca recriar users/{uid}.schools[schoolId] no client.
+    // Toda escrita de membership é exclusivamente via Cloud Function (approveTeacher,
+    // joinSchoolAsAdmin, removeTeacherFromSchool). Cliente só LÊ.
     console.log('[auth._resolveRole] step 4: registrando listener de aprovação em', `schools/${schoolId}/pending_teachers/${user.uid}`)
     set({ role: 'pending' })
-    try { await requestTeacherAccess(schoolId, user) } catch (e) { console.error('[auth._resolveRole] requestTeacherAccess FAIL', { schoolId, uid: user.uid, code: e.code, message: e.message }) }
+    try {
+      await requestTeacherAccess(schoolId, user)
+    } catch (e) {
+      if (e instanceof AccessRevokedError) {
+        // Acesso revogado pelo admin — não mantém pending, deixa em estado
+        // sem role para que App.jsx redirecione para /no-school via fluxo normal.
+        console.warn('[auth._resolveRole] acesso revogado para', user.email, 'na escola', schoolId)
+        toast('Seu acesso a esta escola foi revogado pelo administrador', 'err')
+        // Limpa contexto local da escola para que o App caia em /no-school
+        try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
+        useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+        set({ role: null, teacher: null })
+        return
+      }
+      console.error('[auth._resolveRole] requestTeacherAccess FAIL', { schoolId, uid: user.uid, code: e.code, message: e.message })
+    }
 
     // Cancelar listener anterior, se existir (idempotência)
     get()._unsubApproval?.()

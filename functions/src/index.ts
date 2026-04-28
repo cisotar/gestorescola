@@ -266,6 +266,7 @@ export const approveTeacher = region.https.onCall(async (data, context) => {
     teacherId = existingSnap.docs[0].id;
     teacherData = {
       ...existingSnap.docs[0].data(),
+      uid: pendingUid,
       status: "approved",
       profile,
       horariosSemana:
@@ -277,6 +278,7 @@ export const approveTeacher = region.https.onCall(async (data, context) => {
     teacherId = uid();
     teacherData = {
       id: teacherId,
+      uid: pendingUid,
       name: pendingData.name ?? "",
       email,
       whatsapp: "",
@@ -290,7 +292,9 @@ export const approveTeacher = region.https.onCall(async (data, context) => {
   }
 
   const role =
-    profile === "coordinator"
+    profile === "admin"
+      ? "admin"
+      : profile === "coordinator"
       ? "coordinator"
       : profile === "teacher-coordinator"
       ? "teacher-coordinator"
@@ -362,6 +366,290 @@ export const rejectTeacher = region.https.onCall(async (data, context) => {
   return { ok: true };
 });
 
+// ── setTeacherRoleInSchool ───────────────────────────────────────────────────
+// Atualiza o role de um teacher em users/{uid}.schools[schoolId].role e,
+// adicionalmente, sincroniza schools/{schoolId}/teachers/{teacherId}.profile.
+// Para role='admin', também atualiza schools/{schoolId}.adminEmail.
+//
+// Resolve o UID do alvo via (em ordem):
+//  1. teacher.uid (gravado por approveTeacher)
+//  2. users where email == teacherEmail
+//  3. users where schools.{schoolId}.teacherDocId == teacherId
+//
+// Autorização: SaaS admin OU admin local da escola.
+
+const VALID_ROLES_TO_SET = [
+  "teacher",
+  "coordinator",
+  "teacher-coordinator",
+  "admin",
+];
+
+export const setTeacherRoleInSchool = region.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Login required"
+      );
+    }
+
+    const schoolId = String(data?.schoolId ?? "");
+    const teacherId = String(data?.teacherId ?? "");
+    const newRole = String(data?.role ?? "");
+
+    if (!schoolId || !teacherId || !newRole) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "schoolId, teacherId e role são obrigatórios"
+      );
+    }
+    if (!VALID_ROLES_TO_SET.includes(newRole)) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        `Role inválido: ${newRole}`
+      );
+    }
+
+    await verifyAdmin(context, schoolId);
+
+    const db = admin.firestore();
+
+    const teacherRef = db.doc(`schools/${schoolId}/teachers/${teacherId}`);
+    const teacherSnap = await teacherRef.get();
+    if (!teacherSnap.exists) {
+      throw new functions.https.HttpsError(
+        "not-found",
+        "Teacher não encontrado"
+      );
+    }
+    const teacherData = (teacherSnap.data() ?? {}) as Record<string, unknown>;
+    const teacherEmail = String(teacherData.email ?? "").toLowerCase();
+
+    // Resolver UID
+    let teacherUid = String(teacherData.uid ?? "");
+    if (!teacherUid && teacherEmail) {
+      const usersSnap = await db
+        .collection("users")
+        .where("email", "==", teacherEmail)
+        .limit(1)
+        .get();
+      if (!usersSnap.empty) teacherUid = usersSnap.docs[0].id;
+    }
+    if (!teacherUid) {
+      const fallbackSnap = await db
+        .collection("users")
+        .where(`schools.${schoolId}.teacherDocId`, "==", teacherId)
+        .limit(1)
+        .get();
+      if (!fallbackSnap.empty) teacherUid = fallbackSnap.docs[0].id;
+    }
+
+    const profile = newRole; // role e profile são equivalentes neste contrato
+
+    const batch = db.batch();
+    batch.update(teacherRef, { profile });
+
+    if (teacherUid) {
+      const userRef = db.doc(`users/${teacherUid}`);
+      const userSnap = await userRef.get();
+      if (userSnap.exists) {
+        const existing = (userSnap.data() ?? {}) as Record<string, unknown>;
+        const schools =
+          (existing.schools as Record<string, unknown>) ?? undefined;
+        const hasEntry = !!schools?.[schoolId];
+        if (hasEntry) {
+          batch.update(userRef, { [`schools.${schoolId}.role`]: newRole });
+        } else {
+          batch.set(
+            userRef,
+            {
+              schools: {
+                [schoolId]: {
+                  role: newRole,
+                  status: "approved",
+                  teacherDocId: teacherId,
+                },
+              },
+            },
+            { merge: true }
+          );
+        }
+      }
+    }
+
+    if (newRole === "admin" && teacherEmail) {
+      batch.update(db.doc(`schools/${schoolId}`), {
+        adminEmail: teacherEmail,
+        adminEmailUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+
+    return {
+      ok: true,
+      teacherUidResolved: !!teacherUid,
+      role: newRole,
+    };
+  }
+);
+
+// ── designateSchoolAdmin ─────────────────────────────────────────────────────
+// Atualiza schools/{schoolId}.adminEmail e, se possível, eleva o role do
+// usuário-alvo (encontrado por email) para 'admin' em users/{uid}.schools[schoolId].
+// Autorização: SaaS admin OU admin local da escola. O usuário-alvo pode ainda
+// não existir em /users/ — nesse caso, o adminEmail fica gravado e a promoção
+// efetiva acontece no próximo login (via joinSchoolAsAdmin).
+
+export const designateSchoolAdmin = region.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Login required"
+      );
+    }
+    const schoolId = String(data?.schoolId ?? "");
+    const newEmail = String(data?.email ?? "")
+      .trim()
+      .toLowerCase();
+    if (!schoolId || !newEmail) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "schoolId e email são obrigatórios"
+      );
+    }
+    await verifyAdmin(context, schoolId);
+
+    const db = admin.firestore();
+
+    // 1. Atualizar adminEmail na escola (sempre executa)
+    const batch = db.batch();
+    batch.update(db.doc(`schools/${schoolId}`), {
+      adminEmail: newEmail,
+      adminEmailUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 2. Tentar promover via /users/ por email
+    let promoted = false;
+    let targetUid: string | null = null;
+
+    const usersSnap = await db
+      .collection("users")
+      .where("email", "==", newEmail)
+      .limit(1)
+      .get();
+    if (!usersSnap.empty) {
+      targetUid = usersSnap.docs[0].id;
+      const userData = usersSnap.docs[0].data() ?? {};
+      const hasEntry =
+        ((userData.schools as Record<string, unknown>) ?? {})?.[schoolId];
+      if (hasEntry) {
+        batch.update(db.doc(`users/${targetUid}`), {
+          [`schools.${schoolId}.role`]: "admin",
+        });
+        promoted = true;
+      }
+    }
+
+    await batch.commit();
+    return { ok: true, promoted, targetUid };
+  }
+);
+
+// ── joinSchoolAsAdmin ────────────────────────────────────────────────────────
+// Auto-promoção de admin local ao entrar na escola via /join/<slug>.
+// Validação backend: caller.email (lowercase) === schools/{schoolId}.adminEmail.
+// Substitui o setDoc client-side em JoinPage para fechar o vetor de privilege
+// escalation que existia quando users/{uid} era write-livre pelo próprio uid.
+
+export const joinSchoolAsAdmin = region.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Login required"
+      );
+    }
+
+    const schoolId = String(data?.schoolId ?? "");
+    if (!schoolId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "schoolId é obrigatório"
+      );
+    }
+
+    const db = admin.firestore();
+    const callerUid = context.auth.uid;
+    const callerEmail = String(context.auth.token?.email ?? "")
+      .toLowerCase()
+      .trim();
+
+    if (!callerEmail) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Conta sem email associado"
+      );
+    }
+
+    const schoolSnap = await db.doc(`schools/${schoolId}`).get();
+    if (!schoolSnap.exists) {
+      throw new functions.https.HttpsError("not-found", "Escola não existe");
+    }
+    const schoolData = (schoolSnap.data() ?? {}) as Record<string, unknown>;
+    const adminEmail = String(schoolData.adminEmail ?? "")
+      .toLowerCase()
+      .trim();
+    const status = String(schoolData.status ?? "active");
+
+    if (status === "suspended") {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Escola está suspensa"
+      );
+    }
+    if (schoolData.deletedAt != null) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Escola foi removida"
+      );
+    }
+
+    if (!adminEmail || adminEmail !== callerEmail) {
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "Email não corresponde ao admin desta escola"
+      );
+    }
+
+    // Remove eventual marcação removed_users (admin re-entrando — se SaaS admin
+    // rotacionar adminEmail e o anterior foi removido, este é o novo, então
+    // limpamos a marcação dele se houver). Apenas para o próprio uid.
+    const removedRef = db.doc(
+      `schools/${schoolId}/removed_users/${callerUid}`
+    );
+
+    const userRef = db.doc(`users/${callerUid}`);
+    const batch = db.batch();
+    batch.set(
+      userRef,
+      {
+        email: callerEmail,
+        schools: {
+          [schoolId]: { role: "admin", status: "approved" },
+        },
+      },
+      { merge: true }
+    );
+    batch.delete(removedRef);
+    await batch.commit();
+
+    return { ok: true };
+  }
+);
+
 // ── removeTeacherFromSchool ───────────────────────────────────────────────────
 // Revogação atômica de acesso de um professor à escola.
 // Apaga teacher doc, schedules, pending_teachers e users/{uid}.schools[schoolId].
@@ -402,13 +690,15 @@ export const removeTeacherFromSchool = region.https.onCall(
 
     const teacherData = (teacherSnap.data() ?? {}) as Record<string, unknown>;
     const teacherEmail = String(teacherData.email ?? "").toLowerCase();
+    const teacherUidFromDoc = String(teacherData.uid ?? "");
 
-    // 5. Resolver Firebase Auth UID do professor.
-    // O doc teachers/ não tem campo uid (approveTeacher não grava). O vínculo
-    // autoritativo está em users/{authUid}.schools[schoolId].teacherDocId === teacherId.
-    // Buscar via email (campo gravado em users/{uid} no nível raiz).
-    let teacherUid = "";
-    if (teacherEmail) {
+    // 5. Resolver Firebase Auth UID do professor por múltiplos caminhos:
+    //    a) Campo `uid` no teacher doc (gravado por approveTeacher recente)
+    //    b) Query `users where email == teacherEmail` (lowercase)
+    //    c) Fallback: `users where schools.{schoolId}.teacherDocId == teacherId`
+    let teacherUid = teacherUidFromDoc;
+
+    if (!teacherUid && teacherEmail) {
       const usersSnap = await db
         .collection("users")
         .where("email", "==", teacherEmail)
@@ -417,6 +707,24 @@ export const removeTeacherFromSchool = region.https.onCall(
       if (!usersSnap.empty) {
         teacherUid = usersSnap.docs[0].id;
       }
+    }
+
+    if (!teacherUid) {
+      // Fallback: encontra users cujo schools[schoolId].teacherDocId aponta para este teacher
+      const fallbackSnap = await db
+        .collection("users")
+        .where(`schools.${schoolId}.teacherDocId`, "==", teacherId)
+        .limit(1)
+        .get();
+      if (!fallbackSnap.empty) {
+        teacherUid = fallbackSnap.docs[0].id;
+      }
+    }
+
+    if (!teacherUid) {
+      console.warn(
+        `[removeTeacherFromSchool] UID não resolvido para schoolId=${schoolId} teacherId=${teacherId} email=${teacherEmail}. Procedendo com remoção parcial.`
+      );
     }
 
     // 6. Bloquear self-removal — comparar UID resolvido E teacherDocId do caller
@@ -457,6 +765,11 @@ export const removeTeacherFromSchool = region.https.onCall(
     batch.delete(teacherRef);
     schedulesSnap.docs.forEach((d) => batch.delete(d.ref));
 
+    const removedAt = admin.firestore.FieldValue.serverTimestamp();
+    const callerEmail = String(
+      context.auth?.token?.email ?? ""
+    ).toLowerCase();
+
     if (teacherUid) {
       batch.delete(
         db.doc(`schools/${schoolId}/pending_teachers/${teacherUid}`)
@@ -466,6 +779,37 @@ export const removeTeacherFromSchool = region.https.onCall(
           [`schools.${schoolId}`]: admin.firestore.FieldValue.delete(),
         });
       }
+      // Marcação de remoção — bloqueia recriação de pending_teachers
+      // pelo próprio usuário ao tentar entrar de novo via /join/
+      batch.set(
+        db.doc(`schools/${schoolId}/removed_users/${teacherUid}`),
+        {
+          uid: teacherUid,
+          email: teacherEmail,
+          teacherId,
+          removedAt,
+          removedBy: callerUid,
+          removedByEmail: callerEmail,
+        }
+      );
+    } else if (teacherEmail) {
+      // Sem UID resolvido — registra por email (key=email lowercase) para
+      // bloqueio futuro caso o usuário tente entrar com este email.
+      batch.set(
+        db.doc(
+          `schools/${schoolId}/removed_users/email_${teacherEmail.replace(
+            /[^a-z0-9._-]/g,
+            "_"
+          )}`
+        ),
+        {
+          email: teacherEmail,
+          teacherId,
+          removedAt,
+          removedBy: callerUid,
+          removedByEmail: callerEmail,
+        }
+      );
     }
 
     await batch.commit();
@@ -473,6 +817,7 @@ export const removeTeacherFromSchool = region.https.onCall(
     return {
       ok: true,
       deletedSchedules: schedulesSnap.size,
+      teacherUidResolved: !!teacherUid,
     };
   }
 );

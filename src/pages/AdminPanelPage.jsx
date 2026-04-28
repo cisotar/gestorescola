@@ -4,7 +4,9 @@ import SchoolActionsMenu from '../components/admin/SchoolActionsMenu'
 import CreateSchoolModal from '../components/admin/CreateSchoolModal'
 import DesignateAdminModal from '../components/admin/DesignateAdminModal'
 import Modal from '../components/ui/Modal'
-import { createSchoolFromAdmin, designateLocalAdmin, setSchoolStatus, softDeleteSchool } from '../lib/db'
+import { createSchoolFromAdmin, setSchoolStatus, softDeleteSchool } from '../lib/db'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../lib/firebase'
 import useAuthStore from '../store/useAuthStore'
 import useSchoolStore from '../store/useSchoolStore'
 import { toast } from '../hooks/useToast'
@@ -102,10 +104,11 @@ export default function AdminPanelPage() {
       err.code = 'permission-denied'
       throw err
     }
-    const result = await designateLocalAdmin(designateState.school.schoolId, adminEmail)
+    const fn = httpsCallable(functions, 'designateSchoolAdmin')
+    const res = await fn({ schoolId: designateState.school.schoolId, email: adminEmail })
     setDesignateState(null)
     toast(
-      result?.promoted
+      res?.data?.promoted
         ? 'Admin local atualizado. O novo admin já tem acesso elevado.'
         : 'Admin local atualizado. O novo admin terá acesso ao fazer login.',
       'ok'

@@ -17,11 +17,11 @@ import {
   listPendingTeachers,
   approveTeacher,
   rejectTeacher,
-  designateLocalAdmin,
-  syncTeacherRoleInUserDoc,
   getSchoolSlug,
   saveSchoolSlug,
 } from '../../../lib/db'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../../../lib/firebase'
 import useSchoolStore from '../../../store/useSchoolStore'
 import Modal from '../../ui/Modal'
 import { ScheduleGridModal } from '../../ui/ScheduleGrid'
@@ -396,26 +396,18 @@ export default function TabTeachers() {
 
     const LABELS = { teacher: 'Professor', coordinator: 'Coord. Geral', 'teacher-coordinator': 'Prof. Coord.', admin: 'Admin' }
     try {
-      // Admin LOCAL: atualiza profile do teacher na escola E role em users/{uid}.schools[schoolId].
-      // designateLocalAdmin sincroniza schools/{schoolId}.adminEmail e users/{uid}.schools[schoolId].role='admin'.
-      if (newProfile === 'admin') {
-        await store.updateTeacher(t.id, { profile: 'admin' })
-        const result = await designateLocalAdmin(currentSchoolId, t.email)
-        if (result?.promoted) {
-          toast(`${t.name} agora é ${LABELS.admin}`, 'ok')
-        } else {
-          toast(`${t.name} marcado como ${LABELS.admin}. Acesso elevado entrará em vigor no próximo login.`, 'ok')
-        }
+      // Atualização atômica via Cloud Function — sincroniza:
+      //  - schools/{schoolId}/teachers/{id}.profile
+      //  - users/{uid}.schools[schoolId].role
+      //  - schools/{schoolId}.adminEmail (se newProfile === 'admin')
+      // Backend resolve uid por email/teacherId e bypassa rules via Admin SDK.
+      const fn = httpsCallable(functions, 'setTeacherRoleInSchool')
+      const res = await fn({ schoolId: currentSchoolId, teacherId: t.id, role: newProfile })
+      const resolved = res.data?.teacherUidResolved
+      if (resolved) {
+        toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')
       } else {
-        await store.updateTeacher(t.id, { profile: newProfile })
-        const result = await syncTeacherRoleInUserDoc(currentSchoolId, t.email, newProfile)
-        if (result?.synced) {
-          toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')
-        } else if (result?.deferred) {
-          toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}. (Sincronização entrará em vigor no próximo login dele.)`, 'ok')
-        } else {
-          toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}`, 'ok')
-        }
+        toast(`${t.name} agora é ${LABELS[newProfile] ?? newProfile}. Sincronização concluirá no próximo login dele.`, 'ok')
       }
     } catch (e) {
       console.error('[handleProfileChange]', e)

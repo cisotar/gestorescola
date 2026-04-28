@@ -174,7 +174,31 @@ export async function getTeacherByEmail(schoolId, email, teachers) {
 
 // ─── Professores pendentes ────────────────────────────────────────────────────
 
+export class AccessRevokedError extends Error {
+  constructor(message = 'Acesso revogado pelo administrador') {
+    super(message)
+    this.name = 'AccessRevokedError'
+    this.code = 'access-revoked'
+  }
+}
+
 export async function requestTeacherAccess(schoolId, user) {
+  // Verificação backend-driven: se existe marcação em removed_users/{uid},
+  // o admin removeu este usuário e não queremos recriar pending automaticamente.
+  // A rule de removed_users permite leitura ao próprio uid; se a leitura falhar
+  // por permissão (usuário sem registro), prosseguimos normalmente.
+  try {
+    const removedRef = getSchoolDocRef(schoolId, 'removed_users', user.uid)
+    const removedSnap = await getDoc(removedRef)
+    if (removedSnap.exists()) {
+      throw new AccessRevokedError()
+    }
+  } catch (e) {
+    if (e instanceof AccessRevokedError) throw e
+    // Erros de permissão/leitura não devem bloquear o fluxo (ex.: usuário novo
+    // sem doc removed_users — rule pode negar leitura, e isso é OK)
+  }
+
   const ref  = getSchoolDocRef(schoolId, 'pending_teachers', user.uid)
   const snap = await getDoc(ref)
   if (snap.exists()) return
@@ -384,132 +408,10 @@ export async function createSchoolFromAdmin({ slug, adminEmail, currentUserUid }
   return { schoolId }
 }
 
-// ─── Designar admin local ─────────────────────────────────────────────────────
-
-/**
- * Atualiza o `adminEmail` (lowercase) de uma escola e, se possível, eleva o role
- * do usuário-alvo para `'admin'` em `users/{uid}.schools[schoolId]`.
- *
- * Estratégia para localizar `users/{uid}` pelo email:
- * 1. Procura `schools/{schoolId}/teachers` com `email == lower`.
- * 2. Para o primeiro hit com campo `uid`, lê `users/{uid}` e, se houver entry
- *    para essa escola, atualiza o role via dot-path.
- *
- * Caso o usuário-alvo ainda não seja membro, o `JoinPage` faz a promoção lazy
- * no próximo login (via comparação `userEmail === schools/{id}.adminEmail`).
- *
- * Falhas no segundo passo (promoção) NÃO revertem o primeiro (`adminEmail`).
- * Retornam `{ promoted: false, targetUid }` para o caller decidir o toast.
- *
- * @param {string} schoolId
- * @param {string} newEmail
- * @returns {Promise<{ promoted: boolean, targetUid: string | null }>}
- */
-export async function designateLocalAdmin(schoolId, newEmail) {
-  if (!schoolId) throw new Error('designateLocalAdmin: schoolId obrigatório')
-  if (!newEmail || typeof newEmail !== 'string') {
-    throw new Error('designateLocalAdmin: newEmail obrigatório')
-  }
-  const lower = newEmail.trim().toLowerCase()
-  if (!lower) throw new Error('designateLocalAdmin: newEmail vazio')
-
-  // Passo 1 — sempre executa. Se falhar, propaga.
-  await updateDoc(doc(db, 'schools', schoolId), {
-    adminEmail: lower,
-    adminEmailUpdatedAt: serverTimestamp(),
-  })
-
-  // Passo 2 — best-effort. Falha aqui retorna { promoted: false }.
-  // Localiza o uid: tenta primeiro o campo `uid` no teacher doc (legado),
-  // depois busca em /users/ por email (rota nova: doc users/{uid} criado por
-  // approveTeacher tem campo email).
-  let targetUid = null
-  try {
-    const tQuery = query(
-      collection(db, 'schools', schoolId, 'teachers'),
-      where('email', '==', lower),
-      limit(2)
-    )
-    const tSnap = await getDocs(tQuery)
-    const hit = tSnap.docs.find(d => d.data()?.uid)
-    targetUid = hit?.data()?.uid ?? null
-
-    if (!targetUid) {
-      // Fallback: procurar em users/ pelo email
-      const uQuery = query(
-        collection(db, 'users'),
-        where('email', '==', lower),
-        limit(1)
-      )
-      const uSnap = await getDocs(uQuery)
-      if (!uSnap.empty) {
-        targetUid = uSnap.docs[0].id
-      }
-    }
-
-    if (!targetUid) return { promoted: false, targetUid: null }
-
-    const userRef = doc(db, 'users', targetUid)
-    const userSnap = await getDoc(userRef)
-    if (!userSnap.exists()) return { promoted: false, targetUid }
-    const data = userSnap.data()
-    if (!data?.schools?.[schoolId]) {
-      return { promoted: false, targetUid }
-    }
-    await updateDoc(userRef, { [`schools.${schoolId}.role`]: 'admin' })
-    return { promoted: true, targetUid }
-  } catch (e) {
-    console.warn('[designateLocalAdmin] falha ao promover role (adminEmail já gravado):', e)
-    return { promoted: false, targetUid }
-  }
-}
-
-/**
- * Sincroniza users/{uid}.schools[schoolId].role com base no profile do teacher.
- * Usado quando admin local altera o profile de um teacher (não-admin) na escola.
- * Para profile='admin', use designateLocalAdmin (que também grava adminEmail).
- *
- * Procura o uid: primeiro pelo campo `uid` no teacher doc (legado),
- * depois em /users/ por email.
- *
- * @param {string} schoolId
- * @param {string} email
- * @param {'teacher'|'coordinator'|'teacher-coordinator'} role
- */
-export async function syncTeacherRoleInUserDoc(schoolId, email, role) {
-  if (!schoolId || !email) return { synced: false, reason: 'missing_args' }
-  const lower = email.trim().toLowerCase()
-  if (!lower) return { synced: false, reason: 'empty_email' }
-  let targetUid = null
-  const tQuery = query(
-    collection(db, 'schools', schoolId, 'teachers'),
-    where('email', '==', lower),
-    limit(2)
-  )
-  const tSnap = await getDocs(tQuery)
-  const hit = tSnap.docs.find(d => d.data()?.uid)
-  targetUid = hit?.data()?.uid ?? null
-  if (!targetUid) {
-    const uQuery = query(collection(db, 'users'), where('email', '==', lower), limit(1))
-    const uSnap = await getDocs(uQuery)
-    if (!uSnap.empty) targetUid = uSnap.docs[0].id
-  }
-  if (!targetUid) {
-    // Sem user doc — ok. O role será derivado do teacher.profile na próxima
-    // sessão via auto-reconciliação em _resolveRole step 3.5.
-    return { synced: false, reason: 'no_user_doc', deferred: true }
-  }
-  const userRef = doc(db, 'users', targetUid)
-  const userSnap = await getDoc(userRef)
-  if (!userSnap.exists()) return { synced: false, reason: 'user_doc_missing' }
-  if (!userSnap.data()?.schools?.[schoolId]) {
-    // Cria a entrada da escola — usuário foi promovido sem ainda ter sessão nessa escola
-    await updateDoc(userRef, { [`schools.${schoolId}`]: { role, status: 'approved' } })
-    return { synced: true, created: true, targetUid }
-  }
-  await updateDoc(userRef, { [`schools.${schoolId}.role`]: role })
-  return { synced: true, targetUid }
-}
+// designateLocalAdmin e syncTeacherRoleInUserDoc foram migrados para Cloud
+// Functions (designateSchoolAdmin, setTeacherRoleInSchool) — issue 458/461.
+// Cliente NUNCA escreve em users/{uid}.schools[schoolId]; toda mutação de
+// membership é exclusivamente backend (Admin SDK bypassa rules).
 
 // ─── Status da Escola (suspender/reativar) ───────────────────────────────────
 
