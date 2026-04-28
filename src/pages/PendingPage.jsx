@@ -9,6 +9,7 @@
   import { ScheduleGrid } from '../components/ui/ScheduleGrid'
   import Modal from '../components/ui/Modal'
   import { DAYS } from '../lib/constants'
+  import { PROFILE_LABELS } from '../lib/settings/helpers'
 
   const PHONE_REGEX = /^[1-9][0-9]9[0-9]{7,8}$/
 
@@ -107,8 +108,11 @@
     const [step,          setStep]       = useState('form') // 'form' | 'schedule' | 'waiting'
     const [celular,       setCelular]    = useState('')
     const [apelido,       setApelido]    = useState('')
+    const [profile,       setProfile]   = useState('teacher')
     const [selectedSubjs, setSelSubjs]  = useState([])
     const [horariosSemana, setHorariosSemana] = useState({})
+
+    const isTeachingProfile = profile === 'teacher' || profile === 'teacher-coordinator'
     const [saving,        setSaving]    = useState(false)
     const [saveError,     setSaveError]  = useState('')
     const [modalErroAberto, setModalErroAberto] = useState(false)
@@ -167,7 +171,13 @@
           console.log('[PendingPage] re-entry: dados salvos encontrados, retomando no step schedule')
           setCelular(snap.data().celular)
           setApelido(snap.data().apelido ?? '')
-          setSelSubjs(snap.data().subjectIds ?? [])
+          const restoredProfile = snap.data().profile ?? 'teacher'
+          setProfile(restoredProfile)
+          if (restoredProfile === 'coordinator') {
+            setSelSubjs([])
+          } else {
+            setSelSubjs(snap.data().subjectIds ?? [])
+          }
           setStep('schedule')
         }
       })
@@ -206,8 +216,8 @@
     const handleSubmit = async () => {
       const erros = []
 
-      // Validar matérias
-      if (selectedSubjs.length === 0) {
+      // Validar matérias — somente para perfis que lecionam
+      if (isTeachingProfile && selectedSubjs.length === 0) {
         erros.push('Selecione ao menos uma matéria')
       }
 
@@ -241,7 +251,8 @@
         await updatePendingData(currentSchoolId, user.uid, {
           celular: (celular ?? '').replace(/\D/g, ''),
           apelido: (apelido ?? '').trim() || '',
-          subjectIds: selectedSubjs ?? [],
+          profile,
+          subjectIds: isTeachingProfile ? (selectedSubjs ?? []) : [],
           horariosSemana: horariosSemana ?? {},
         })
         console.log('[PendingPage] updatePendingData OK')
@@ -345,7 +356,27 @@
                       <p className="text-xs text-t3 mt-1">Apelido exibido nas grades horárias quando o toggle "Apelido" estiver ativo.</p>
                     </div>
 
-                    {/* Matérias */}
+                    {/* Perfil */}
+                    <div>
+                      <label className="lbl">Qual é o seu perfil? <span className="text-err">*</span></label>
+                      <select
+                        className="inp"
+                        value={profile}
+                        onChange={e => {
+                          const val = e.target.value
+                          setProfile(val)
+                          if (val === 'coordinator') setSelSubjs([])
+                        }}
+                        required
+                      >
+                        <option value="teacher">Professor</option>
+                        <option value="teacher-coordinator">Professor Coordenador</option>
+                        <option value="coordinator">Coordenador Geral</option>
+                      </select>
+                    </div>
+
+                    {/* Matérias — exibidas somente para perfis que lecionam */}
+                    {isTeachingProfile && (
                     <div>
                       <label className="lbl">Matérias que leciona <span className="text-err">*</span></label>
                       {store.subjects.length === 0 ? (
@@ -379,6 +410,7 @@
                         </div>
                       )}
                     </div>
+                    )}
 
                     {/* Horários de entrada/saída */}
                     <div>
@@ -433,6 +465,7 @@
                       <div><span className="text-t3 mr-1">Nome:</span>{user?.displayName}</div>
                       <div><span className="text-t3 mr-1">E-mail:</span>{user?.email}</div>
                       <div><span className="text-t3 mr-1">WhatsApp:</span>{celular}</div>
+                      <div><span className="text-t3 mr-1">Perfil:</span>{PROFILE_LABELS[profile] ?? profile}</div>
                       <div>
                         <span className="text-t3 mr-1">Matérias:</span>
                         <span className="text-xs">
@@ -489,6 +522,7 @@
                   <div><span className="text-t3 mr-1">Nome:</span>{user?.displayName}</div>
                   <div><span className="text-t3 mr-1">E-mail:</span>{user?.email}</div>
                   <div><span className="text-t3 mr-1">WhatsApp:</span>{celular}</div>
+                  <div><span className="text-t3 mr-1">Perfil:</span>{PROFILE_LABELS[profile] ?? profile}</div>
                   <div>
                     <span className="text-t3 mr-1">Matérias:</span>
                     {selectedSubjs.length > 0
