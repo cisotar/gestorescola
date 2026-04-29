@@ -1,0 +1,108 @@
+{
+  "schoolId": "test-school-001",
+  "school": {
+    "id": "test-school-001",
+    "name": "Escola Teste",
+    "slug": "escola-teste",
+    "adminEmail": "admin@test-escola.com",
+    "status": "active",
+    "plan": "trial",
+    "createdAt": "2026-04-01T00:00:00.000Z"
+  },
+  "config": {
+    "segments": [
+      {
+        "id": "seg-fund",
+        "name": "Ensino Fundamental",
+        "turno": "manha",
+        "grades": [
+          {
+            "name": "6º Ano",
+            "classes": [
+              { "letter": "A", "turno": "manha" },
+              { "letter": "B", "turno": "manha" }
+            ]
+          }
+        ]
+      }
+    ],
+    "periodConfigs": {
+      "seg-fund": {
+        "manha": {
+          "inicio": "07:00",
+          "duracao": 50,
+          "qtd": 7,
+          "intervalos": [
+            { "apos": 2, "duracao": 10 },
+            { "apos": 5, "duracao": 60 }
+          ]
+        }
+      }
+    },
+    "areas": [
+      {
+        "id": "area-linguagens",
+        "name": "Linguagens",
+        "colorIdx": 0,
+        "segmentIds": ["seg-fund"]
+      },
+      {
+        "id": "area-ciencias",
+        "name": "Ciências da Natureza",
+        "colorIdx": 3,
+        "segmentIds": ["seg-fund"]
+      }
+    ],
+    "subjects": [
+      {
+        "id": "subj-port",
+        "name": "Português",
+        "areaId": "area-linguagens"
+      },
+      {
+        "id": "subj-bio",
+        "name": "Biologia",
+        "areaId": "area-ciencias"
+      }
+    ],
+    "sharedSeries": [
+      {
+        "id": "shared-formacao",
+        "name": "FORMAÇÃO",
+        "type": "formation"
+      }
+    ],
+    "workloadWarn": 20,
+    "workloadDanger": 26
+  },
+  "teachers": [
+    {
+      "id": "teacher-001",
+      "name": "Prof Teste A",
+      "email": "prof-a@test-escola.com",
+      "profile": "teacher",
+      "subjectIds": ["subj-port"],
+      "status": "approved",
+      "apelido": "Prof A"
+    },
+    {
+      "id": "teacher-002",
+      "name": "Prof Teste B",
+      "email": "prof-b@test-escola.com",
+      "profile": "teacher",
+      "subjectIds": ["subj-bio"],
+      "status": "approved",
+      "apelido": "Prof B"
+    },
+    {
+      "id": "teacher-coord-001",
+      "name": "Coord Teste",
+      "email": "coord@test-escola.com",
+      "profile": "coordinator",
+      "subjectIds": [],
+      "status": "approved",
+      "apelido": "Coord"
+    }
+  ],
+  "_notes": "Escola padrão para testes E2E. Contém 1 segmento (seg-fund), 2 professores de teste e 1 coordenador."
+}

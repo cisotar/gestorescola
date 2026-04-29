@@ -5,6 +5,15 @@ import * as Sentry from '@sentry/react'
 import App from './App'
 import './index.css'
 
+if (import.meta.env.VITE_USE_FIREBASE_EMULATOR === 'true') {
+  Promise.all([
+    import('./lib/firebase/index.js'),
+    import('firebase/auth'),
+  ]).then(([{ auth }, { signInWithCustomToken, signOut }]) => {
+    window.__e2eFirebase = { auth, signInWithCustomToken, signOut }
+  })
+}
+
 Sentry.init({
   dsn: import.meta.env.VITE_SENTRY_DSN,
   environment: import.meta.env.MODE,       // 'production' | 'development' | 'staging'

@@ -1,0 +1,54 @@
+{
+  "schoolId": "sch-test-001",
+  "usuarios": [
+    {
+      "uid": "uid-admin",
+      "email": "admin@test-escola.com",
+      "displayName": "Admin Teste",
+      "role": "admin",
+      "profile": null,
+      "description": "Administrador da escola (também consta em /admins)"
+    },
+    {
+      "uid": "uid-coord",
+      "email": "coord@test-escola.com",
+      "displayName": "Coord Teste",
+      "role": "coordinator",
+      "profile": "coordinator",
+      "description": "Coordenador pedagógico (status approved em teachers/)"
+    },
+    {
+      "uid": "uid-teacher",
+      "email": "prof@test-escola.com",
+      "displayName": "Prof Teste",
+      "role": "teacher",
+      "profile": "teacher",
+      "description": "Professor regular aprovado"
+    },
+    {
+      "uid": "uid-teacher-coord",
+      "email": "prof-coord@test-escola.com",
+      "displayName": "Prof-Coord Teste",
+      "role": "teacher-coordinator",
+      "profile": "teacher-coordinator",
+      "description": "Professor que também coordena (reserva)"
+    },
+    {
+      "uid": "uid-pending",
+      "email": "pending@test-escola.com",
+      "displayName": "Pending Teste",
+      "role": "pending",
+      "profile": null,
+      "description": "Cadastrado em pending_teachers, ainda nao aprovado (reserva)"
+    },
+    {
+      "uid": "uid-removed",
+      "email": "remov@test-escola.com",
+      "displayName": "Removido Teste",
+      "role": "removed",
+      "profile": null,
+      "description": "Existe no Auth mas sem doc em teachers/ — simula usuario removido (reserva)"
+    }
+  ],
+  "_notes": "Auth via custom token (Admin SDK). UIDs deterministicos: o seed cria exatamente esses uids no Auth Emulator e o helper loginAs(page, email) acha o uid pelo email."
+}
