@@ -52,17 +52,20 @@ export function bootSequence(user, userSnap, availableSchools, savedSchoolId, is
     }
   }
 
-  // ── Guard: revogação total (heurística) ─────────────────────────────────────
-  // Fecha o caso do usuário removido antes do deploy do índice invertido:
-  // users/{uid} existe mas schools={} e nenhuma escola disponível listou ele.
+  // ── Guard: revogação total / login órfão (heurística) ───────────────────────
+  // Fecha dois casos:
+  //  1. Usuário removido antes do deploy do índice invertido: users/{uid} existe
+  //     mas schools={} e nenhuma escola disponível listou ele.
+  //  2. Login órfão: usuário autenticado em Firebase Auth mas sem nenhum
+  //     vínculo no Firestore (sem doc users/{uid}, sem availableSchools, sem
+  //     savedSchoolId). Não deveria existir sem invitação via /join/:slug;
+  //     se chegou aqui é estado inconsistente ou conta antiga.
   // Sem este guard, cairíamos em Etapa 2 e retornaríamos role 'pending', dando
   // acesso indevido à PendingPage.
   const userExists = userSnap?.exists?.() === true
   const schoolsMapEmpty =
-    userExists &&
-    Object.keys(userSnap.data()?.schools ?? {}).length === 0
+    !userExists || Object.keys(userSnap.data()?.schools ?? {}).length === 0
   if (
-    userExists &&
     schoolsMapEmpty &&
     availableSchools.length === 0 &&
     savedSchoolId == null

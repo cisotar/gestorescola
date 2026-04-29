@@ -144,21 +144,26 @@ describe('Cenário 5 — Professor pendente (sem entry em schools[schoolId])', (
 
 // ─── Cenário 6 ────────────────────────────────────────────────────────────────
 
-describe('Cenário 6 — Usuário sem escola disponível (teacher sem vínculo)', () => {
-  it('userSnap inexistente + sem savedSchoolId → role pending, schoolId null e startApprovalListener true', () => {
-    const userSnap = makeSnap(false)  // doc não existe no Firestore
+describe('Cenário 6 — Login órfão bloqueado (sem doc users e sem nenhum sinal de membership)', () => {
+  it('userSnap inexistente + availableSchools vazio + sem savedSchoolId → fullyRevoked (login órfão)', () => {
+    // Antes do fix de revogação completa, este caso caía em role: 'pending'
+    // sem schoolId e o usuário via PendingPage indevidamente. Agora a heurística
+    // detecta como login órfão (estado patológico ou conta antiga sem vínculo)
+    // e força signOut via fullyRevoked.
+    const userSnap = makeSnap(false)
 
     const result = bootSequence(
       FAKE_USER,
       userSnap,
-      [],    // nenhuma escola disponível
-      null,  // nenhum savedSchoolId
+      [],
+      null,
       false,
     )
 
-    expect(result.role).toBe('pending')
+    expect(result.role).toBeNull()
     expect(result.schoolId).toBeNull()
-    expect(result.startApprovalListener).toBe(true)
+    expect(result.fullyRevoked).toBe(true)
+    expect(result.clearLocalStorage).toBe(true)
   })
 })
 
@@ -354,16 +359,19 @@ describe('Issue 482 — Cenário 3 — heurística fullyRevoked no bootSequence'
     expect(result.fullyRevoked).toBe(false)
   })
 
-  it('regressão: heurística NÃO dispara quando userSnap não existe', () => {
-    // Sem doc users/{uid}, é usuário totalmente novo — não revogado, deve
-    // cair no fluxo normal de pending.
+  it('heurística DISPARA quando userSnap não existe e não há sinais de membership (login órfão)', () => {
+    // Antes: usuário sem doc users/{uid} caía em pending genérico (bug).
+    // Agora: se chegou autenticado sem nenhum vínculo no Firestore (sem doc
+    // users, sem availableSchools, sem savedSchoolId), é login órfão — usuário
+    // antigo cuja conta foi limpa do Firestore mas Firebase Auth ainda tem
+    // sessão. Deve ser bloqueado via fullyRevoked.
     const userSnap = makeSnap(false)
 
     const result = bootSequence(FAKE_USER, userSnap, [], null, false)
 
-    expect(result.fullyRevoked).toBe(false)
-    expect(result.role).toBe('pending')
-    expect(result.startApprovalListener).toBe(true)
+    expect(result.fullyRevoked).toBe(true)
+    expect(result.role).toBeNull()
+    expect(result.clearLocalStorage).toBe(true)
   })
 
   it('regressão: heurística NÃO dispara quando há availableSchools', () => {
