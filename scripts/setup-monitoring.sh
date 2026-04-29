@@ -17,6 +17,8 @@
 
 set -euo pipefail
 
+GCLOUD="${GCLOUD:-/home/ozzie/google-cloud-sdk/bin/gcloud}"
+
 PROJECT="saasgestaoescolar"
 REGION="southamerica-east1"
 EMAIL="contato.tarciso@gmail.com"
@@ -34,17 +36,17 @@ log() { echo "[setup-monitoring] $*"; }
 
 # Retorna o name do canal de email se já existir, string vazia caso contrário.
 find_email_channel() {
-  gcloud beta monitoring channels list \
+  $GCLOUD beta monitoring channels list \
     --project="${PROJECT}" \
     --filter="type=email AND labels.email_address=${EMAIL}" \
     --format="value(name)" \
-    --limit=1 2>/dev/null || true
+    --limit=1 --quiet 2>/dev/null || true
 }
 
 # Verifica se uma log-based metric já existe.
 metric_exists() {
   local metric_name="$1"
-  gcloud logging metrics describe "${metric_name}" \
+  $GCLOUD logging metrics describe "${metric_name}" \
     --project="${PROJECT}" &>/dev/null
 }
 
@@ -52,7 +54,7 @@ metric_exists() {
 # Retorna o name (projects/.../alertPolicies/ID) ou string vazia.
 find_policy() {
   local display_name="$1"
-  gcloud alpha monitoring policies list \
+  $GCLOUD alpha monitoring policies list \
     --project="${PROJECT}" \
     --filter="displayName=\"${display_name}\"" \
     --format="value(name)" \
@@ -69,12 +71,13 @@ if [[ -n "${CHANNEL}" ]]; then
   log "Canal já existe: ${CHANNEL}"
 else
   log "Criando notification channel..."
-  CHANNEL=$(gcloud beta monitoring channels create \
+  CHANNEL=$($GCLOUD beta monitoring channels create \
     --display-name="Email cisotar" \
     --type=email \
     --channel-labels="email_address=${EMAIL}" \
     --project="${PROJECT}" \
-    --format="value(name)")
+    --format="value(name)" \
+    --quiet)
   log "Canal criado: ${CHANNEL}"
 fi
 
@@ -90,10 +93,11 @@ for FUNC in "${CRITICAL_FUNCS[@]}"; do
     log "Métrica ${METRIC_NAME} já existe, pulando."
   else
     log "Criando métrica ${METRIC_NAME}..."
-    gcloud logging metrics create "${METRIC_NAME}" \
+    $GCLOUD logging metrics create "${METRIC_NAME}" \
       --description="Erros severity=ERROR na função ${FUNC}" \
       --log-filter="${LOG_FILTER}" \
-      --project="${PROJECT}"
+      --project="${PROJECT}" \
+      --quiet
     log "Métrica ${METRIC_NAME} criada."
   fi
 done
@@ -147,20 +151,16 @@ for FUNC in "${CRITICAL_FUNCS[@]}"; do
       }
     }
   ],
-  "alertStrategy": {
-    "notificationRateLimit": {
-      "period": "3600s"
-    }
-  },
   "combiner": "OR",
   "enabled": true,
   "notificationChannels": ["${CHANNEL}"]
 }
 JSON
 
-  gcloud alpha monitoring policies create \
+  $GCLOUD alpha monitoring policies create \
     --policy-from-file="${POLICY_JSON}" \
-    --project="${PROJECT}"
+    --project="${PROJECT}" \
+    --quiet
 
   rm -f "${POLICY_JSON}"
   trap - EXIT
@@ -210,20 +210,16 @@ else
       }
     }
   ],
-  "alertStrategy": {
-    "notificationRateLimit": {
-      "period": "3600s"
-    }
-  },
   "combiner": "OR",
   "enabled": true,
   "notificationChannels": ["${CHANNEL}"]
 }
 JSON
 
-  gcloud alpha monitoring policies create \
+  $GCLOUD alpha monitoring policies create \
     --policy-from-file="${GLOBAL_JSON}" \
-    --project="${PROJECT}"
+    --project="${PROJECT}" \
+    --quiet
 
   rm -f "${GLOBAL_JSON}"
   trap - EXIT
