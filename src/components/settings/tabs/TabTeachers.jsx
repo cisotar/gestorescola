@@ -23,6 +23,7 @@ import {
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../../../lib/firebase'
 import useSchoolStore from '../../../store/useSchoolStore'
+import { captureException } from '../../../lib/sentry'
 import Modal from '../../ui/Modal'
 import { ScheduleGridModal } from '../../ui/ScheduleGrid'
 import GradeTurnoCard from '../../ui/GradeTurnoCard'
@@ -367,9 +368,14 @@ export default function TabTeachers() {
   }
 
   const handleApprove = async (p) => {
-    await approveTeacher(currentSchoolId, p.id, store, useAppStore.setState)
-    setPending(prev => prev.filter(x => x.id !== p.id))
-    toast(`${p.name} aprovado`, 'ok')
+    try {
+      await approveTeacher(currentSchoolId, p.id, store, useAppStore.setState)
+      setPending(prev => prev.filter(x => x.id !== p.id))
+      toast(`${p.name} aprovado`, 'ok')
+    } catch (e) {
+      captureException(e, { function: 'approveTeacher', schoolId: currentSchoolId, pendingUid: p.id })
+      toast('Erro ao aprovar professor', 'err')
+    }
   }
 
   const handleReject = async (p) => {
@@ -379,6 +385,7 @@ export default function TabTeachers() {
       setPending(prev => prev.filter(x => x.id !== p.id))
       toast(`${p.name} recusado`, 'warn')
     } catch (e) {
+      captureException(e, { function: 'rejectTeacher', schoolId: currentSchoolId, pendingUid: p.id })
       console.error(e)
       toast('Erro ao rejeitar professor', 'err')
     }
@@ -806,6 +813,7 @@ export default function TabTeachers() {
                           const label = PROFILE_OPTIONS_NO_ADMIN.find(o => o.value === profile)?.label ?? profile
                           toast(`${p.name} aprovado como ${label}`, 'ok')
                         } catch (e) {
+                          captureException(e, { function: 'approveTeacher', schoolId: currentSchoolId, pendingUid: p.id, profile })
                           console.error(e)
                           toast('Erro ao aprovar professor', 'err')
                         }

@@ -14,6 +14,7 @@ import {
   deleteAbsence as _deleteAbsence,
 } from '../lib/absences'
 import { toast } from '../hooks/useToast'
+import { captureException } from '../lib/sentry'
 import useAuthStore from './useAuthStore'
 import useSchoolStore from './useSchoolStore'
 import { getSchoolDocRef } from '../lib/firebase/multi-tenant'
@@ -528,6 +529,12 @@ const useAppStore = create((set, get) => {
       }
       toast(msg, 'err')
       console.error('[removeTeacher]', result.code, result.message)
+      captureException(new Error(result.message ?? result.code), {
+        function: 'removeTeacherFromSchool',
+        schoolId: sid,
+        teacherId: id,
+        code: result.code,
+      })
       return { ok: false, code: result.code }
     }
 
@@ -624,6 +631,7 @@ const useAppStore = create((set, get) => {
       })
       .catch(err => {
         set(s => ({ absences: _deleteAbsence(newAbsence.id, s.absences) }))
+        captureException(err, { function: 'createAbsence', schoolId: _schoolId(), teacherId })
         toast(err.message || 'Erro ao criar falta', 'err')
       })
   },
@@ -633,7 +641,7 @@ const useAppStore = create((set, get) => {
     const updated = get().absences.find(a => a.id === absenceId)
     if (updated) {
       httpsCallable(functions, 'updateAbsence')({ schoolId: _schoolId(), absenceId, slots: updated.slots, substituteId })
-        .catch(e => { console.error('[assignSubstitute]', e); toast('Erro ao salvar substituição', 'err') })
+        .catch(e => { console.error('[assignSubstitute]', e); captureException(e, { function: 'updateAbsence', schoolId: _schoolId(), absenceId }); toast('Erro ao salvar substituição', 'err') })
     }
   },
   deleteAbsenceSlot: (absenceId, slotId) => {
@@ -641,13 +649,13 @@ const useAppStore = create((set, get) => {
     const updated = get().absences.find(a => a.id === absenceId)
     if (updated) {
       httpsCallable(functions, 'updateAbsence')({ schoolId: _schoolId(), absenceId, slots: updated.slots, substituteId: null })
-        .catch(e => { console.error('[deleteAbsenceSlot]', e); toast('Erro ao salvar', 'err') })
+        .catch(e => { console.error('[deleteAbsenceSlot]', e); captureException(e, { function: 'updateAbsence', schoolId: _schoolId(), absenceId }); toast('Erro ao salvar', 'err') })
     }
   },
   deleteAbsence: (id) => {
     set(s => ({ absences: _deleteAbsence(id, s.absences) }))
     httpsCallable(functions, 'deleteAbsence')({ schoolId: _schoolId(), absenceId: id })
-      .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
+      .catch(err => { captureException(err, { function: 'deleteAbsence', schoolId: _schoolId() }); toast(err.message || 'Erro ao deletar falta', 'err') })
   },
 
   deleteManySlots: (slotIds) => {
@@ -664,7 +672,7 @@ const useAppStore = create((set, get) => {
     const sid = _schoolId()
     emptyAbsenceIds.forEach(id =>
       httpsCallable(functions, 'deleteAbsence')({ schoolId: sid, absenceId: id })
-        .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
+        .catch(err => { captureException(err, { function: 'deleteAbsence', schoolId: sid }); toast(err.message || 'Erro ao deletar falta', 'err') })
     )
   },
   restoreAbsences: (absencesSnapshot) => {
@@ -689,7 +697,7 @@ const useAppStore = create((set, get) => {
         const slots = ab.slots.filter(sl => sl.date === date)
         if (slots.length > 0) {
           const updated = get().absences.find(a => a.id === ab.id)
-          if (updated) httpsCallable(functions, 'updateAbsence')({ schoolId: _schoolId(), absenceId: ab.id, slots: updated.slots, substituteId: null }).catch(e => { console.error('[clearDaySubstitutes]', e); toast('Erro ao salvar', 'err') })
+          if (updated) httpsCallable(functions, 'updateAbsence')({ schoolId: _schoolId(), absenceId: ab.id, slots: updated.slots, substituteId: null }).catch(e => { console.error('[clearDaySubstitutes]', e); captureException(e, { function: 'updateAbsence', schoolId: _schoolId(), absenceId: ab.id }); toast('Erro ao salvar', 'err') })
         }
       }
     })
@@ -718,13 +726,13 @@ const useAppStore = create((set, get) => {
     const sid = _schoolId()
     deletedIds.forEach(id =>
       httpsCallable(functions, 'deleteAbsence')({ schoolId: sid, absenceId: id })
-        .catch(err => toast(err.message || 'Erro ao deletar falta', 'err'))
+        .catch(err => { captureException(err, { function: 'deleteAbsence', schoolId: sid }); toast(err.message || 'Erro ao deletar falta', 'err') })
     )
     afterAbsences
       .filter(ab => ab.teacherId === teacherId && ab.slots.some(sl => sl.date === date))
       .forEach(ab =>
         httpsCallable(functions, 'updateAbsence')({ schoolId: sid, absenceId: ab.id, slots: ab.slots, substituteId: null })
-          .catch(e => { console.error('[clearDayAbsences]', e); toast('Erro ao salvar', 'err') })
+          .catch(e => { console.error('[clearDayAbsences]', e); captureException(e, { function: 'updateAbsence', schoolId: sid }); toast('Erro ao salvar', 'err') })
       )
   },
 
