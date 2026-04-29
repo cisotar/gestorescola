@@ -1,8 +1,23 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import * as Sentry from '@sentry/react'
 import App from './App'
 import './index.css'
+
+Sentry.init({
+  dsn: import.meta.env.VITE_SENTRY_DSN,
+  environment: import.meta.env.MODE,       // 'production' | 'development' | 'staging'
+  tracesSampleRate: 0.1,                   // 10% de traces — mantém dentro da cota gratuita (RN-M2)
+  enabled: import.meta.env.PROD,           // false em dev/test — sem eventos para Sentry (RN-M1)
+  beforeSend(event) {
+    // Allowlist: manter apenas uid — descartar email, username, ip_address (LGPD RN-M3)
+    if (event.user) {
+      event.user = { id: event.user.id }
+    }
+    return event
+  },
+})
 
 // PWA Handler: Register Service Worker
 function PWAHandler() {

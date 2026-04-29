@@ -2,6 +2,7 @@ import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
 import { verifyCoordinatorOrAdmin, verifyAdmin, verifyAdminOrCoordinatorViaUsers } from "./auth";
 import { ACTION_MAP } from "./actions";
+import { logger, logCtx } from "./logger";
 
 admin.initializeApp();
 
@@ -89,6 +90,11 @@ export const createAbsence = region.https.onCall(async (data, context) => {
     );
   }
 
+  logger.info(
+    "createAbsence.called",
+    logCtx({ functionName: "createAbsence", schoolId, uid: context.auth?.uid })
+  );
+
   const slots = (data?.slots ?? []) as unknown[];
   validateNoFormationSlots(slots);
 
@@ -135,11 +141,27 @@ export const createAbsence = region.https.onCall(async (data, context) => {
     }),
   };
 
-  await admin
-    .firestore()
-    .collection(absencesPath(schoolId))
-    .doc(absenceId)
-    .set(absence);
+  const db = admin.firestore();
+  await db.collection(absencesPath(schoolId)).doc(absenceId).set(absence);
+
+  const auditId = uid();
+  await db
+    .collection(adminActionsPath(schoolId))
+    .doc(auditId)
+    .set({
+      id: auditId,
+      action: "createAbsence",
+      resourceId: absenceId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: context.auth?.uid ?? "",
+      createdByEmail: (context.auth?.token.email ?? "").toLowerCase(),
+      changes: { teacherId, slots },
+    });
+
+  logger.info(
+    "createAbsence.success",
+    logCtx({ functionName: "createAbsence", schoolId, absenceId })
+  );
 
   return { id: absenceId };
 });
@@ -174,14 +196,25 @@ export const updateAbsence = region.https.onCall(async (data, context) => {
   const substituteId = data?.substituteId !== undefined ? data.substituteId : null;
   const status = calcStatus(slots);
 
-  await admin
-    .firestore()
-    .collection(absencesPath(schoolId))
-    .doc(absenceId)
-    .update({
-      slots,
-      substituteId,
-      status,
+  const db = admin.firestore();
+  await db.collection(absencesPath(schoolId)).doc(absenceId).update({
+    slots,
+    substituteId,
+    status,
+  });
+
+  const auditId = uid();
+  await db
+    .collection(adminActionsPath(schoolId))
+    .doc(auditId)
+    .set({
+      id: auditId,
+      action: "updateAbsence",
+      resourceId: absenceId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: context.auth?.uid ?? "",
+      createdByEmail: (context.auth?.token.email ?? "").toLowerCase(),
+      changes: { slots, substituteId, status },
     });
 
   return { ok: true };
@@ -201,11 +234,22 @@ export const deleteAbsence = region.https.onCall(async (data, context) => {
     );
   }
 
-  await admin
-    .firestore()
-    .collection(absencesPath(schoolId))
-    .doc(absenceId)
-    .delete();
+  const db = admin.firestore();
+  await db.collection(absencesPath(schoolId)).doc(absenceId).delete();
+
+  const auditId = uid();
+  await db
+    .collection(adminActionsPath(schoolId))
+    .doc(auditId)
+    .set({
+      id: auditId,
+      action: "deleteAbsence",
+      resourceId: absenceId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: context.auth?.uid ?? "",
+      createdByEmail: (context.auth?.token.email ?? "").toLowerCase(),
+      changes: {},
+    });
 
   return { ok: true };
 });
@@ -232,6 +276,11 @@ export const approveTeacher = region.https.onCall(async (data, context) => {
   if (!VALID_PROFILES.includes(profile)) profile = "teacher";
 
   await verifyAdminOrCoordinatorViaUsers(context, schoolId);
+
+  logger.info(
+    "approveTeacher.called",
+    logCtx({ functionName: "approveTeacher", schoolId, uid: context.auth?.uid, pendingUid })
+  );
 
   const db = admin.firestore();
 
@@ -366,6 +415,25 @@ export const approveTeacher = region.https.onCall(async (data, context) => {
   batch.delete(db.doc(`schools/${schoolId}/removed_users/${pendingUid}`));
   await batch.commit();
 
+  const auditId = uid();
+  await db
+    .collection(adminActionsPath(schoolId))
+    .doc(auditId)
+    .set({
+      id: auditId,
+      action: "approveTeacher",
+      resourceId: teacherId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: context.auth?.uid ?? "",
+      createdByEmail: (context.auth?.token.email ?? "").toLowerCase(),
+      changes: { pendingUid, email, profile, role },
+    });
+
+  logger.info(
+    "approveTeacher.success",
+    logCtx({ functionName: "approveTeacher", schoolId, teacherId, profile })
+  );
+
   return { ok: true, teacherId };
 });
 
@@ -403,6 +471,20 @@ export const rejectTeacher = region.https.onCall(async (data, context) => {
   );
   batch.delete(pendingRef);
   await batch.commit();
+
+  const auditId = uid();
+  await db
+    .collection(adminActionsPath(schoolId))
+    .doc(auditId)
+    .set({
+      id: auditId,
+      action: "rejectTeacher",
+      resourceId: pendingUid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: context.auth?.uid ?? "",
+      createdByEmail: (context.auth?.token.email ?? "").toLowerCase(),
+      changes: { pendingUid },
+    });
 
   return { ok: true };
 });
@@ -596,6 +678,20 @@ export const setTeacherRoleInSchool = region.https.onCall(
     }
 
     await batch.commit();
+
+    const auditId = uid();
+    await db
+      .collection(adminActionsPath(schoolId))
+      .doc(auditId)
+      .set({
+        id: auditId,
+        action: "setTeacherRole",
+        resourceId: teacherId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdBy: context.auth?.uid ?? "",
+        createdByEmail: (context.auth?.token.email ?? "").toLowerCase(),
+        changes: { teacherEmail, newRole, teacherUid: teacherUid || null },
+      });
 
     return {
       ok: true,
@@ -797,6 +893,11 @@ export const removeTeacherFromSchool = region.https.onCall(
     // 3. Autorização: SaaS admin OU admin local
     await verifyAdmin(context, schoolId);
 
+    logger.info(
+      "removeTeacher.called",
+      logCtx({ functionName: "removeTeacherFromSchool", schoolId, teacherId, uid: context.auth.uid })
+    );
+
     const db = admin.firestore();
     const callerUid = context.auth.uid;
 
@@ -841,8 +942,9 @@ export const removeTeacherFromSchool = region.https.onCall(
     }
 
     if (!teacherUid) {
-      console.warn(
-        `[removeTeacherFromSchool] UID não resolvido para schoolId=${schoolId} teacherId=${teacherId} email=${teacherEmail}. Procedendo com remoção parcial.`
+      logger.warn(
+        "removeTeacher.uidUnresolved",
+        logCtx({ functionName: "removeTeacherFromSchool", schoolId, teacherId, emailHint: teacherEmail.replace(/(?<=.{3}).+(?=@)/, "***") })
       );
     }
 
@@ -949,6 +1051,29 @@ export const removeTeacherFromSchool = region.https.onCall(
     }
 
     await batch.commit();
+
+    const auditId = uid();
+    await db
+      .collection(adminActionsPath(schoolId))
+      .doc(auditId)
+      .set({
+        id: auditId,
+        action: "removeTeacher",
+        resourceId: teacherId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdBy: callerUid,
+        createdByEmail: callerEmail,
+        changes: {
+          teacherEmail,
+          teacherUid: teacherUid || null,
+          deletedSchedules: schedulesSnap.size,
+        },
+      });
+
+    logger.info(
+      "removeTeacher.success",
+      logCtx({ functionName: "removeTeacherFromSchool", schoolId, teacherId, deletedSchedules: schedulesSnap.size })
+    );
 
     return {
       ok: true,
@@ -1105,6 +1230,11 @@ export const backfillRemovedFrom = region.https.onCall(async (_data, context) =>
     );
   }
 
+  logger.info(
+    "backfillRemovedFrom.called",
+    logCtx({ functionName: "backfillRemovedFrom", uid: context.auth.uid, callerEmail })
+  );
+
   const db = admin.firestore();
 
   // 3. Iterar todos os removed_users via collectionGroup
@@ -1162,7 +1292,10 @@ export const backfillRemovedFrom = region.https.onCall(async (_data, context) =>
         await batch.commit();
       } catch (err) {
         errors += 1;
-        console.error("[backfillRemovedFrom] Erro em commit de batch:", err);
+        logger.error(
+          "backfillRemovedFrom.batchCommitError",
+          logCtx({ functionName: "backfillRemovedFrom", err: String(err), batchOps })
+        );
       }
       batch = db.batch();
       batchOps = 0;
@@ -1175,13 +1308,16 @@ export const backfillRemovedFrom = region.https.onCall(async (_data, context) =>
       await batch.commit();
     } catch (err) {
       errors += 1;
-      console.error("[backfillRemovedFrom] Erro em commit final:", err);
+      logger.error(
+        "backfillRemovedFrom.finalCommitError",
+        logCtx({ functionName: "backfillRemovedFrom", err: String(err), batchOps })
+      );
     }
   }
 
-  console.log(
-    `[backfillRemovedFrom] Concluído: total=${groupSnap.size} processed=${processed} skipped=${skipped} errors=${errors}`,
-    { samples }
+  logger.info(
+    "backfillRemovedFrom.success",
+    logCtx({ functionName: "backfillRemovedFrom", total: groupSnap.size, processed, skipped, errors, samples })
   );
 
   return { ok: true, processed, skipped, errors };

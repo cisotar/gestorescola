@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import * as Sentry from '@sentry/react'
 import { auth, provider, db } from '../lib/firebase'
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth'
 import { onSnapshot, collection, query, where, doc, getDoc } from 'firebase/firestore'
@@ -9,9 +10,8 @@ import { toast } from '../hooks/useToast'
 import { bootSequence } from '../lib/boot'
 
 // Proprietário do sistema — acesso garantido independente do estado do Firestore.
-// Nunca passa pelo fluxo de aprovação; role 'admin' é atribuído antes de qualquer
-// consulta ao banco. Adicionar outros emails apenas em casos extremos de recuperação.
-const SUPER_USERS = [import.meta.env.VITE_SUPER_ADMIN_EMAIL].filter(Boolean)
+// isSaasAdmin é determinado exclusivamente pelo Firestore (/admins/{email}).
+// Não há email hardcoded no bundle — a verificação é server-authoritative.
 
 const useAuthStore = create((set, get) => ({
   user:          null,
@@ -79,15 +79,13 @@ const useAuthStore = create((set, get) => ({
           // try/finally garante reset mesmo se init() ou _resolveRole lançar.
           set({ _initInProgress: true })
           try {
-            // Pré-check síncrono: se o email está em SUPER_USERS, é saas admin
-            // com certeza. Passa a flag para o SchoolStore.init limpar o
-            // localStorage stale antes de restaurar currentSchoolId — evita
-            // que useSchoolStore.setState dentro de _resolveRole dispare o
-            // subscribe e cause re-resolves em cascata.
-            const isSuperUserEmail = SUPER_USERS.includes(user.email?.toLowerCase())
+            // isSaasAdmin é verificado via Firestore em _resolveRole. O hint
+            // para SchoolStore.init usa o valor já conhecido (re-resolves) ou
+            // false (boot inicial) — aceita 1 RTT extra no primeiro login de admin.
+            const alreadyKnownSaasAdmin = get().isSaasAdmin
             // init retorna o userSnap lido em loadAvailableSchools para evitar
             // uma segunda leitura de users/{uid} dentro de _resolveRole.
-            const userSnap = await useSchoolStore.getState().init(user.uid, isSuperUserEmail)
+            const userSnap = await useSchoolStore.getState().init(user.uid, alreadyKnownSaasAdmin)
             await get()._resolveRole(user, userSnap)
             // Listener leve em users/{uid} para detectar perda de membership
             // em runtime (ex.: admin remove o professor enquanto a sessão dele
@@ -269,14 +267,13 @@ const useAuthStore = create((set, get) => ({
     const { currentSchoolId: schoolIdRaw, availableSchools: rawAvailableSchools } = useSchoolStore.getState()
     let schoolId = schoolIdRaw
     let availableSchools = rawAvailableSchools ?? []
-    console.log('[auth._resolveRole] start', { uid: user.uid, email: user.email, schoolId })
+    console.log('[auth._resolveRole] start', { uid: user.uid, schoolId })
 
     // ── 1. Determinar flag SaaS admin ────────────────────────────────────────
-    const isSuperUser = SUPER_USERS.includes(user.email?.toLowerCase())
     // Se já sabemos que é SaaS admin (ex: re-resolve após troca de escola),
     // evita a chamada ao Firestore /admins/{email} — economia de 1 RTT.
     const alreadyKnownSaasAdmin = get().isSaasAdmin
-    const isSaasAdminFlag = alreadyKnownSaasAdmin || isSuperUser || await isAdmin(user.email)
+    const isSaasAdminFlag = alreadyKnownSaasAdmin || await isAdmin(user.email)
     set({ isSaasAdmin: isSaasAdminFlag })
 
     // ── 2. Ler userSnap (reutiliza hint quando disponível) ───────────────────
@@ -462,6 +459,7 @@ const useAuthStore = create((set, get) => ({
       } else {
         set({ role: 'admin', pendingCt: 0, _unsubPending: null })
       }
+      Sentry.setUser({ id: user.uid })
       return
     }
 
@@ -476,6 +474,7 @@ const useAuthStore = create((set, get) => ({
       } else {
         set({ role: result.role, teacher: null })
       }
+      Sentry.setUser({ id: user.uid })
       return
     }
 
@@ -494,7 +493,7 @@ const useAuthStore = create((set, get) => ({
         if (e instanceof AccessRevokedError) {
           // Acesso revogado pelo admin — não mantém pending, deixa em estado
           // sem role para que App.jsx redirecione para /no-school via fluxo normal.
-          console.warn('[auth._resolveRole] acesso revogado para', user.email, 'na escola', pendingSchoolId)
+          console.warn('[auth._resolveRole] acesso revogado uid:', user.uid, 'escola:', pendingSchoolId)
           toast('Seu acesso a esta escola foi revogado pelo administrador', 'err')
           // Limpa contexto local da escola para que o App caia em /no-school
           try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
@@ -541,6 +540,7 @@ const useAuthStore = create((set, get) => ({
                 }
                 console.log('[auth.approvalListener] role atualizado para:', normalized)
                 set({ role: normalized, teacher: teacherDoc })
+                Sentry.setUser({ id: user.uid })
               } else if (newStatus === 'rejected') {
                 console.log('[auth.approvalListener] cadastro rejeitado, deslogando')
                 set({ role: null })
@@ -572,6 +572,7 @@ const useAuthStore = create((set, get) => ({
     useAppStore.getState().cleanupLazyListeners()
     // Cancela listener global de schools (SaaS admin) e limpa allSchools
     useSchoolStore.getState().stopAllSchoolsListener?.()
+    Sentry.setUser(null)
     return signOut(auth)
   },
 
