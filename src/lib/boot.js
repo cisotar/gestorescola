@@ -11,7 +11,7 @@
  * @param {Array}        availableSchools   [{ schoolId: string, ...schoolDoc.data() }]
  * @param {string|null}  savedSchoolId      valor já lido do localStorage pelo store
  * @param {boolean}      isSuperUser        true se email em SUPER_USERS ou na coleção admins/
- * @returns {{ role: string|null, schoolId: string|null, clearLocalStorage: boolean, startPendingListener: boolean, startApprovalListener: boolean }}
+ * @returns {{ role: string|null, schoolId: string|null, clearLocalStorage: boolean, startPendingListener: boolean, startApprovalListener: boolean, fullyRevoked: boolean }}
  */
 export function bootSequence(user, userSnap, availableSchools, savedSchoolId, isSuperUser) {
   const BASE = {
@@ -20,6 +20,7 @@ export function bootSequence(user, userSnap, availableSchools, savedSchoolId, is
     clearLocalStorage:    false,
     startPendingListener: false,
     startApprovalListener: false,
+    fullyRevoked:         false,
   }
 
   // ── Usuário não autenticado ──────────────────────────────────────────────────
@@ -48,6 +49,30 @@ export function bootSequence(user, userSnap, availableSchools, savedSchoolId, is
       schoolId:             resolvedId,
       clearLocalStorage:    false,
       startPendingListener: resolvedId != null,
+    }
+  }
+
+  // ── Guard: revogação total (heurística) ─────────────────────────────────────
+  // Fecha o caso do usuário removido antes do deploy do índice invertido:
+  // users/{uid} existe mas schools={} e nenhuma escola disponível listou ele.
+  // Sem este guard, cairíamos em Etapa 2 e retornaríamos role 'pending', dando
+  // acesso indevido à PendingPage.
+  const userExists = userSnap?.exists?.() === true
+  const schoolsMapEmpty =
+    userExists &&
+    Object.keys(userSnap.data()?.schools ?? {}).length === 0
+  if (
+    userExists &&
+    schoolsMapEmpty &&
+    availableSchools.length === 0 &&
+    savedSchoolId == null
+  ) {
+    return {
+      ...BASE,
+      role:              null,
+      schoolId:          null,
+      clearLocalStorage: true,
+      fullyRevoked:      true,
     }
   }
 

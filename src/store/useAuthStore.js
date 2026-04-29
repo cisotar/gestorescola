@@ -298,7 +298,17 @@ const useAuthStore = create((set, get) => ({
     if (!isSaasAdminFlag) {
       let revokeInfo = { revoked: false, fullyRevoked: false, revokedSchoolIds: [] }
       try {
-        revokeInfo = await checkAccessRevoked(user.uid, userSnap)
+        // Passa availableSchools + currentSchoolId como hint para suprimir o
+        // fallback getDocs(schools) sempre que possível — neste contexto já
+        // temos a lista de escolas carregada por loadAvailableSchools, não
+        // precisamos varrer novamente. O currentSchoolId cobre o caso onde o
+        // user está em fluxo pending (sem availableSchools) mas tem uma escola
+        // ativa selecionada via /join/{slug}. Issue #479.
+        const knownIds = [
+          ...((availableSchools ?? []).map(s => s.schoolId)),
+          schoolId,
+        ].filter(Boolean)
+        revokeInfo = await checkAccessRevoked(user.uid, userSnap, knownIds)
       } catch (e) {
         // Fail-open: erro inesperado no helper não deve bloquear login válido.
         // Loga e prossegue como se não houvesse revogação detectada.
@@ -358,6 +368,37 @@ const useAuthStore = create((set, get) => ({
     // restaurado pelo useSchoolStore.init antes desta chamada.
     const result = bootSequence(user, userSnap, availableSchools, schoolId, isSaasAdminFlag)
     console.log('[auth._resolveRole] bootSequence →', result)
+
+    // ── 3b. fullyRevoked detectado pela heurística do bootSequence ────────────
+    // Issue #480: bootSequence sinaliza fullyRevoked quando users/{uid} existe
+    // mas schools={} e nenhuma escola disponível listou ele (caso legado, antes
+    // do deploy do índice removedFrom). Replica EXATAMENTE o fluxo do step 2b
+    // (revogação total via checkAccessRevoked): cancela listeners, signOut,
+    // limpa LS + schoolStore, dispara toast e seta loginError. SaaS admin
+    // não passa por aqui (bootSequence retorna fullyRevoked=false na branch
+    // isSuperUser=true), mas mantemos a guarda explícita por defesa em
+    // profundidade.
+    if (result.fullyRevoked === true && !isSaasAdminFlag) {
+      get()._unsubPending?.()
+      get()._unsubApproval?.()
+      get()._unsubMembership?.()
+      set({ _unsubPending: null, _unsubApproval: null, _unsubMembership: null })
+
+      try { await signOut(auth) } catch (e) { console.warn('[auth] signOut falhou:', e) }
+      try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
+      try {
+        useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+      } catch (e) { console.warn('[auth] limpar schoolStore:', e) }
+      toast('Seu acesso foi revogado pelo administrador desta escola', 'error')
+
+      set({
+        role: null,
+        teacher: null,
+        isSaasAdmin: false,
+        loginError: 'access-revoked',
+      })
+      return
+    }
 
     // ── 4. Aplicar role ───────────────────────────────────────────────────────
     if (result.role === null) {

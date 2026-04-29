@@ -52,7 +52,7 @@ vi.mock('../lib/firebase/multi-tenant', () => ({
   getSchoolRef: vi.fn((schoolId) => ({ _path: `schools/${schoolId}` })),
 }))
 
-import { getDoc } from 'firebase/firestore'
+import { getDoc, getDocs, collection } from 'firebase/firestore'
 import { checkAccessRevoked } from '../lib/db/index.js'
 
 const UID = 'user-1'
@@ -174,5 +174,133 @@ describe('checkAccessRevoked — helper puro de I/O', () => {
     await checkAccessRevoked(UID, snap)
     // getDoc é o ÚNICO contato externo permitido
     expect(getDoc).toHaveBeenCalledTimes(1)
+  })
+
+  // ── Cenários canônicos da issue 482 ─────────────────────────────────────────
+  // Blindagem regressiva contra reaparecimento de bugs em revogação legacy.
+  describe('Issue 482 — cenários canônicos de revogação legacy', () => {
+    it('Cenário 1 (regressão): schools={}, removedFrom=[A] → fullyRevoked=true, revokedSchoolIds=[A]', async () => {
+      // Estado legado pós-removeTeacherFromSchool: índice invertido populado,
+      // map schools já zerado. removedFrom é autoritativo — fallback NÃO deve
+      // disparar (removedFrom != []).
+      mockGetDocByMarker({})
+      const snap = makeSnap({ schools: {}, removedFrom: ['A'] })
+
+      const result = await checkAccessRevoked(UID, snap)
+
+      expect(result).toEqual({
+        revoked: true,
+        fullyRevoked: true,
+        revokedSchoolIds: ['A'],
+      })
+      // Como removedFrom já está populado, fallback não é necessário
+      expect(getDocs).not.toHaveBeenCalled()
+    })
+
+    it('Cenário 2 (NOVO — fallback): schools={}, removedFrom=[], marcador em A → fullyRevoked=true', async () => {
+      // Estado legacy mais profundo: usuário foi removido antes do deploy do
+      // índice invertido. schools={} e removedFrom=[] mas marcador canônico
+      // existe em alguma escola. Helper deve fazer fallback varrendo schools/.
+      getDocs.mockResolvedValueOnce({
+        docs: [{ id: 'A' }, { id: 'B' }],
+      })
+      // A tem marcador, B não
+      mockGetDocByMarker({ A: true, B: false })
+
+      const snap = makeSnap({ schools: {}, removedFrom: [] })
+      const result = await checkAccessRevoked(UID, snap)
+
+      // Validação principal: fallback identificou marcador órfão em A
+      expect(result.revoked).toBe(true)
+      expect(result.fullyRevoked).toBe(true)
+      expect(result.revokedSchoolIds).toEqual(['A'])
+
+      // Validação de comportamento: fallback foi efetivamente disparado
+      expect(getDocs).toHaveBeenCalledTimes(1)
+      expect(collection).toHaveBeenCalledWith(expect.anything(), 'schools')
+      // getDoc foi chamado uma vez por escola candidata (A e B)
+      expect(getDoc).toHaveBeenCalledTimes(2)
+    })
+
+    it('Cenário 2 (variante): fail-soft individual — uma escola lança erro, outra retorna marcador', async () => {
+      // Erro defensivo em uma escola NÃO derruba o helper; outras escolas
+      // continuam sendo verificadas e revogação parcial é detectada.
+      getDocs.mockResolvedValueOnce({
+        docs: [{ id: 'A' }, { id: 'B' }],
+      })
+      getDoc.mockImplementation(async (ref) => {
+        const path = ref?._path || ''
+        if (path.includes('schools/A/')) {
+          throw new Error('permission-denied em A')
+        }
+        // B retorna marcador
+        return { exists: () => true, data: () => ({}) }
+      })
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const snap = makeSnap({ schools: {}, removedFrom: [] })
+      const result = await checkAccessRevoked(UID, snap)
+
+      expect(result.revoked).toBe(true)
+      expect(result.fullyRevoked).toBe(true)
+      expect(result.revokedSchoolIds).toEqual(['B'])
+      warnSpy.mockRestore()
+    })
+
+    it('Cenário 2 (variante): fallback sem marcador em qualquer escola → não-revogado', async () => {
+      // Saneamento: usuário legacy com schools={} mas SEM marcador em
+      // qualquer escola. Helper retorna empty (não-revogado), deixando a
+      // heurística do bootSequence assumir o controle (Cenário 3).
+      getDocs.mockResolvedValueOnce({
+        docs: [{ id: 'A' }, { id: 'B' }, { id: 'C' }],
+      })
+      mockGetDocByMarker({}) // nenhum marcador
+
+      const snap = makeSnap({ schools: {}, removedFrom: [] })
+      const result = await checkAccessRevoked(UID, snap)
+
+      expect(result).toEqual({
+        revoked: false,
+        fullyRevoked: false,
+        revokedSchoolIds: [],
+      })
+      // Fallback foi disparado mesmo sem detectar marcador
+      expect(getDocs).toHaveBeenCalledTimes(1)
+    })
+
+    it('Cenário 2 (variante): knownSchoolIds suprime fallback getDocs(schools)', async () => {
+      // Quando o caller fornece hints (ex.: cache), o helper NÃO deve gastar
+      // um round-trip varrendo schools/. Itera apenas os IDs conhecidos.
+      mockGetDocByMarker({ A: true })
+
+      const snap = makeSnap({ schools: {}, removedFrom: [] })
+      const result = await checkAccessRevoked(UID, snap, ['A', 'B'])
+
+      expect(result.revoked).toBe(true)
+      expect(result.fullyRevoked).toBe(true)
+      expect(result.revokedSchoolIds).toEqual(['A'])
+      // Fallback NÃO foi chamado — knownSchoolIds tomou precedência
+      expect(getDocs).not.toHaveBeenCalled()
+      // Mas getDoc foi chamado uma vez por knownSchoolId
+      expect(getDoc).toHaveBeenCalledTimes(2)
+    })
+
+    it('Cenário 2 (fail-soft global): getDocs(schools) lança erro → não-revogado', async () => {
+      // Se a varredura inteira de schools/ falhar (offline, rules), o helper
+      // não deve crashar. Retorna empty para não bloquear usuários legítimos
+      // por erro transitório.
+      getDocs.mockRejectedValueOnce(new Error('network down'))
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const snap = makeSnap({ schools: {}, removedFrom: [] })
+      const result = await checkAccessRevoked(UID, snap)
+
+      expect(result).toEqual({
+        revoked: false,
+        fullyRevoked: false,
+        revokedSchoolIds: [],
+      })
+      warnSpy.mockRestore()
+    })
   })
 })

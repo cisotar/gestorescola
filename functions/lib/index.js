@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.applyPendingAction = exports.removeTeacherFromSchool = exports.joinSchoolAsAdmin = exports.designateSchoolAdmin = exports.setTeacherRoleInSchool = exports.reinstateRemovedUser = exports.rejectTeacher = exports.approveTeacher = exports.deleteAbsence = exports.updateAbsence = exports.createAbsence = void 0;
+exports.backfillRemovedFrom = exports.applyPendingAction = exports.removeTeacherFromSchool = exports.joinSchoolAsAdmin = exports.designateSchoolAdmin = exports.setTeacherRoleInSchool = exports.reinstateRemovedUser = exports.rejectTeacher = exports.approveTeacher = exports.deleteAbsence = exports.updateAbsence = exports.createAbsence = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const auth_1 = require("./auth");
@@ -772,5 +772,108 @@ exports.applyPendingAction = region.https.onCall(async (data, context) => {
         rejectionReason,
     });
     return { ok: true };
+});
+// ── backfillRemovedFrom ──────────────────────────────────────────────────────
+// Reconciliação histórica do índice invertido users/{uid}.removedFrom a partir
+// do source of truth schools/{schoolId}/removed_users/{docId}. Necessária para
+// usuários removidos antes do deploy do índice invertido (issue #483).
+//
+// Autorização: SaaS admin only (documento em /admins/{email_lower}).
+// NÃO aceita admin local — operação cruza escolas via collectionGroup.
+//
+// Estratégia:
+//   1. Iterar collectionGroup('removed_users') em uma única query.
+//   2. Para cada doc cujo id parece ser um uid (não começa com "email_"),
+//      extrair schoolId do parent.parent e adicionar a users/{uid}.removedFrom
+//      via arrayUnion (idempotente).
+//   3. Processar em batches de 400 (limite Firestore: 500/batch).
+//   4. Usar set+merge para cobrir docs users/{uid} que não existem ainda —
+//      evita NOT_FOUND no batch.update.
+//
+// Idempotência: arrayUnion garante que chamadas repetidas não duplicam
+// entradas no array removedFrom. Operação puramente aditiva — nunca remove.
+const BACKFILL_BATCH_SIZE = 400;
+exports.backfillRemovedFrom = region.https.onCall(async (_data, context) => {
+    var _a, _b;
+    // 1. Autenticação obrigatória
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Login required");
+    }
+    // 2. Autorização: somente SaaS admin (não aceita admin local)
+    const callerEmail = String((_b = (_a = context.auth.token) === null || _a === void 0 ? void 0 : _a.email) !== null && _b !== void 0 ? _b : "")
+        .toLowerCase()
+        .trim();
+    if (!callerEmail) {
+        throw new functions.https.HttpsError("permission-denied", "Conta sem email associado");
+    }
+    const adminSnap = await admin
+        .firestore()
+        .collection("admins")
+        .doc(callerEmail)
+        .get();
+    if (!adminSnap.exists) {
+        throw new functions.https.HttpsError("permission-denied", "Apenas SaaS admin pode executar backfill");
+    }
+    const db = admin.firestore();
+    // 3. Iterar todos os removed_users via collectionGroup
+    const groupSnap = await db.collectionGroup("removed_users").get();
+    let processed = 0;
+    let skipped = 0;
+    let errors = 0;
+    const samples = [];
+    // 4. Processar em batches de 400
+    let batch = db.batch();
+    let batchOps = 0;
+    for (const doc of groupSnap.docs) {
+        const docId = doc.id;
+        const parentSchool = doc.ref.parent.parent;
+        // Pular docs criados por email (key "email_..."): não há uid para indexar
+        if (docId.startsWith("email_")) {
+            skipped += 1;
+            continue;
+        }
+        // Sem parent.parent — registro defeituoso, pula
+        if (!parentSchool) {
+            skipped += 1;
+            continue;
+        }
+        const schoolId = parentSchool.id;
+        const userRef = db.doc(`users/${docId}`);
+        // set+merge cobre o caso de users/{uid} não existir.
+        // arrayUnion é idempotente: chamadas repetidas com o mesmo schoolId
+        // não duplicam a entrada.
+        batch.set(userRef, {
+            removedFrom: admin.firestore.FieldValue.arrayUnion(schoolId),
+        }, { merge: true });
+        processed += 1;
+        batchOps += 1;
+        if (samples.length < 5) {
+            samples.push({ uid: docId, schoolId });
+        }
+        // Commit quando atingir o limite do batch
+        if (batchOps >= BACKFILL_BATCH_SIZE) {
+            try {
+                await batch.commit();
+            }
+            catch (err) {
+                errors += 1;
+                console.error("[backfillRemovedFrom] Erro em commit de batch:", err);
+            }
+            batch = db.batch();
+            batchOps = 0;
+        }
+    }
+    // Commit final de operações restantes
+    if (batchOps > 0) {
+        try {
+            await batch.commit();
+        }
+        catch (err) {
+            errors += 1;
+            console.error("[backfillRemovedFrom] Erro em commit final:", err);
+        }
+    }
+    console.log(`[backfillRemovedFrom] Concluído: total=${groupSnap.size} processed=${processed} skipped=${skipped} errors=${errors}`, { samples });
+    return { ok: true, processed, skipped, errors };
 });
 //# sourceMappingURL=index.js.map

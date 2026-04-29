@@ -204,6 +204,13 @@ export class AccessRevokedError extends Error {
  * 3. Erros de rede em leituras defensivas são capturados (logger warn) e
  *    tratados como "marcador não detectado para essa escola" — `removedFrom`
  *    permanece como autoritativo.
+ * 4. Fallback (issue #479): quando `users/{uid}.schools` está vazio E
+ *    `removedFrom` está vazio E `knownSchoolIds` está vazio, executa
+ *    `getDocs(collection(db, 'schools'))` para obter todas as escolas e
+ *    iterar `removed_users/{uid}` em cada uma. Cobre usuários legados
+ *    removidos antes do deploy do índice invertido `removedFrom`, que de
+ *    outra forma não teriam nenhum schoolId para iterar e passariam pelo
+ *    helper como não-revogados.
  *
  * Regras de retorno:
  * - `revoked: true` quando há QUALQUER schoolId revogado (parcial ou total).
@@ -221,9 +228,13 @@ export class AccessRevokedError extends Error {
  * @param {string} uid - UID do usuário autenticado.
  * @param {import('firebase/firestore').DocumentSnapshot | null | undefined} userSnap
  *   Snapshot de `users/{uid}` já carregado pelo boot.
+ * @param {string[]} [knownSchoolIds=[]] - Lista opcional de schoolIds
+ *   conhecidos (ex.: vindos de cache local ou index invertido alternativo).
+ *   Quando informada, suprime o fallback `getDocs(schools)` e iterates esses
+ *   IDs diretamente.
  * @returns {Promise<{ revoked: boolean, fullyRevoked: boolean, revokedSchoolIds: string[] }>}
  */
-export async function checkAccessRevoked(uid, userSnap) {
+export async function checkAccessRevoked(uid, userSnap, knownSchoolIds = []) {
   const empty = { revoked: false, fullyRevoked: false, revokedSchoolIds: [] }
 
   if (!uid) return empty
@@ -243,7 +254,26 @@ export async function checkAccessRevoked(uid, userSnap) {
 
   const removedFrom = Array.isArray(data.removedFrom) ? data.removedFrom.filter(Boolean) : []
   const schoolsMap = data.schools && typeof data.schools === 'object' ? data.schools : {}
-  const schoolIds = Object.keys(schoolsMap)
+  const userSchoolIds = Object.keys(schoolsMap)
+  let schoolIds = userSchoolIds
+
+  // Fallback para usuários legados removidos antes do deploy do índice invertido
+  // `removedFrom`: quando `schools={}`, `removedFrom=[]` e nenhum hint via
+  // `knownSchoolIds`, varremos a coleção `schools/` para popular candidatos e
+  // detectar marcadores `removed_users/{uid}` órfãos. Permitido pelas rules
+  // (issue 479: `allow read: if isAuthenticated()`).
+  if (schoolIds.length === 0 && removedFrom.length === 0) {
+    if (Array.isArray(knownSchoolIds) && knownSchoolIds.length > 0) {
+      schoolIds = knownSchoolIds.filter(Boolean)
+    } else {
+      try {
+        const snap = await getDocs(collection(db, 'schools'))
+        schoolIds = snap.docs.map(d => d.id)
+      } catch (e) {
+        console.warn('[checkAccessRevoked] fallback getDocs(schools) falhou:', e)
+      }
+    }
+  }
 
   // Leituras defensivas em removed_users em paralelo, uma por schoolId ativo.
   // Falhas individuais não devem bloquear: trata como "não detectado".
@@ -269,17 +299,21 @@ export async function checkAccessRevoked(uid, userSnap) {
   const revoked = revokedSchoolIds.length > 0
 
   // fullyRevoked:
-  //  (a) sem schools mas com removedFrom (ou marcador) → sem escola limpa.
+  //  (a) sem schools (legacy) mas com removedFrom ou marcador via fallback
+  //      → sem escola limpa.
   //  (b) tem schools mas todas têm marcador detectado (defesa em profundidade).
   let fullyRevoked = false
   if (revoked) {
-    if (schoolIds.length === 0) {
+    if (userSchoolIds.length === 0) {
+      // Estado legacy: usuário tem `schools={}`. Qualquer revogação detectada
+      // (via removedFrom ou via fallback) significa fullyRevoked, já que o
+      // usuário não tem nenhuma escola "limpa" para entrar.
       fullyRevoked = true
     } else {
       // Cobre inconsistência: o boot deve filtrar availableSchools usando
       // este conjunto. Aqui marcamos fullyRevoked apenas quando não sobra
       // nenhuma escola viável (todas com marcador).
-      const cleanCount = schoolIds.filter(sid => !revokedSet.has(sid)).length
+      const cleanCount = userSchoolIds.filter(sid => !revokedSet.has(sid)).length
       fullyRevoked = cleanCount === 0
     }
   }

@@ -282,3 +282,126 @@ describe('bootSequence — casos de borda', () => {
     expect(result.clearLocalStorage).toBe(false)
   })
 })
+
+// ─── Issue 482: Cenário 3 — heurística de revogação total ─────────────────────
+// Cobre o estado patológico em que checkAccessRevoked falhou ou não detectou o
+// marcador (ex.: rules negaram leitura defensiva), mas o usuário tem schools={}
+// e nenhuma escola disponível. bootSequence DEVE assumir revogação total via
+// heurística adicionada na issue 480 — NÃO retornar role 'pending'.
+
+describe('Issue 482 — Cenário 3 — heurística fullyRevoked no bootSequence', () => {
+  it('schools={}, sem marcador, availableSchools=[], savedSchoolId=null, userSnap.exists() → fullyRevoked', () => {
+    // userSnap existe (legacy: documento criado antes do deploy do índice
+    // invertido), mas schools está zerado e nada está disponível.
+    const userSnap = makeSnap(true, {
+      schools: {},        // nenhum membership
+      // sem removedFrom — heurística deve lidar mesmo assim
+    })
+
+    const result = bootSequence(
+      FAKE_USER,
+      userSnap,
+      [],          // availableSchools vazio
+      null,        // savedSchoolId ausente
+      false,       // não é superUser
+    )
+
+    // Validação principal: NÃO é tratado como pending
+    expect(result.role).not.toBe('pending')
+    expect(result.role).toBeNull()
+
+    // Heurística de revogação total dispara o flag e limpa LS
+    expect(result.fullyRevoked).toBe(true)
+    expect(result.clearLocalStorage).toBe(true)
+    expect(result.schoolId).toBeNull()
+
+    // Sem listeners de qualquer tipo — usuário não tem contexto válido
+    expect(result.startApprovalListener).toBe(false)
+    expect(result.startPendingListener).toBe(false)
+  })
+
+  it('mesmo cenário com removedFrom=[] explícito → fullyRevoked', () => {
+    // Garantia: o estado completo descrito no issue 482 (sem removedFrom,
+    // sem marcador) é tratado pela heurística — equivalente ao teste anterior
+    // mas com `removedFrom` explicitamente vazio.
+    const userSnap = makeSnap(true, {
+      schools: {},
+      removedFrom: [],
+    })
+
+    const result = bootSequence(FAKE_USER, userSnap, [], null, false)
+
+    expect(result.role).toBeNull()
+    expect(result.fullyRevoked).toBe(true)
+    expect(result.clearLocalStorage).toBe(true)
+  })
+
+  it('regressão: heurística NÃO afeta saas-admin (isSuperUser=true)', () => {
+    // Saas-admin com mesmo estado patológico (schools={}, sem escolas) deve
+    // continuar a cair no ramo isSuperUser, retornando role 'admin' SEM
+    // fullyRevoked.
+    const userSnap = makeSnap(true, { schools: {} })
+
+    const result = bootSequence(
+      FAKE_USER,
+      userSnap,
+      [],
+      null,
+      true,   // isSuperUser
+    )
+
+    expect(result.role).toBe('admin')
+    expect(result.fullyRevoked).toBe(false)
+  })
+
+  it('regressão: heurística NÃO dispara quando userSnap não existe', () => {
+    // Sem doc users/{uid}, é usuário totalmente novo — não revogado, deve
+    // cair no fluxo normal de pending.
+    const userSnap = makeSnap(false)
+
+    const result = bootSequence(FAKE_USER, userSnap, [], null, false)
+
+    expect(result.fullyRevoked).toBe(false)
+    expect(result.role).toBe('pending')
+    expect(result.startApprovalListener).toBe(true)
+  })
+
+  it('regressão: heurística NÃO dispara quando há availableSchools', () => {
+    // Se há escolas disponíveis, o usuário tem onde entrar — não é revogação
+    // total, mesmo que schools={} e savedSchoolId=null.
+    const userSnap = makeSnap(true, { schools: {} })
+
+    const result = bootSequence(
+      FAKE_USER,
+      userSnap,
+      [{ schoolId: 'sch-1' }],   // escola disponível
+      null,
+      false,
+    )
+
+    expect(result.fullyRevoked).toBe(false)
+    // Cai no fluxo normal: candidateSchoolId = 'sch-1' (auto-seleção RN-6),
+    // mas schools[sch-1] não tem entry → role pending preservado
+    expect(result.role).toBe('pending')
+    expect(result.schoolId).toBe('sch-1')
+  })
+
+  it('regressão: heurística NÃO dispara quando savedSchoolId está presente', () => {
+    // savedSchoolId presente significa que o usuário tinha contexto antes —
+    // deve preservar e cair no fluxo normal pending (RN-2).
+    const userSnap = makeSnap(true, { schools: {} })
+
+    const result = bootSequence(
+      FAKE_USER,
+      userSnap,
+      [],
+      'sch-saved',   // savedSchoolId presente
+      false,
+    )
+
+    expect(result.fullyRevoked).toBe(false)
+    expect(result.role).toBe('pending')
+    expect(result.schoolId).toBe('sch-saved')
+    expect(result.startApprovalListener).toBe(true)
+  })
+})
