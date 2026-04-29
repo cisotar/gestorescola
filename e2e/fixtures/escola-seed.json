@@ -1,7 +1,7 @@
 {
-  "schoolId": "test-school-001",
+  "schoolId": "sch-test-001",
   "school": {
-    "id": "test-school-001",
+    "id": "sch-test-001",
     "name": "Escola Teste",
     "slug": "escola-teste",
     "adminEmail": "admin@test-escola.com",
@@ -75,34 +75,77 @@
     "workloadWarn": 20,
     "workloadDanger": 26
   },
-  "teachers": [
+  "schedules": [
     {
-      "id": "teacher-001",
-      "name": "Prof Teste A",
-      "email": "prof-a@test-escola.com",
-      "profile": "teacher",
-      "subjectIds": ["subj-port"],
-      "status": "approved",
-      "apelido": "Prof A"
+      "id": "sch-001",
+      "teacherUidRef": "uid-teacher",
+      "day": "Segunda",
+      "timeSlot": "seg-fund|manha|0",
+      "subjectId": "subj-port",
+      "turma": "6º Ano A"
     },
     {
-      "id": "teacher-002",
-      "name": "Prof Teste B",
-      "email": "prof-b@test-escola.com",
-      "profile": "teacher",
-      "subjectIds": ["subj-bio"],
-      "status": "approved",
-      "apelido": "Prof B"
+      "id": "sch-002",
+      "teacherUidRef": "uid-teacher",
+      "day": "Segunda",
+      "timeSlot": "seg-fund|manha|1",
+      "subjectId": "subj-port",
+      "turma": "6º Ano A"
     },
     {
-      "id": "teacher-coord-001",
-      "name": "Coord Teste",
-      "email": "coord@test-escola.com",
-      "profile": "coordinator",
-      "subjectIds": [],
-      "status": "approved",
-      "apelido": "Coord"
+      "id": "sch-003",
+      "teacherUidRef": "uid-teacher",
+      "day": "Segunda",
+      "timeSlot": "seg-fund|manha|2",
+      "subjectId": "subj-port",
+      "turma": "6º Ano B"
+    },
+    {
+      "id": "sch-004",
+      "teacherUidRef": "uid-teacher",
+      "day": "Segunda",
+      "timeSlot": "seg-fund|manha|3",
+      "subjectId": "subj-port",
+      "turma": "6º Ano B"
+    },
+    {
+      "id": "sch-005",
+      "teacherUidRef": "uid-teacher",
+      "day": "Segunda",
+      "timeSlot": "seg-fund|manha|4",
+      "subjectId": "subj-port",
+      "turma": "6º Ano A"
+    },
+    {
+      "id": "sch-006",
+      "teacherUidRef": "uid-teacher-coord",
+      "day": "Segunda",
+      "timeSlot": "seg-fund|manha|5",
+      "subjectId": "subj-port",
+      "turma": "6º Ano B"
+    },
+    {
+      "id": "sch-007",
+      "teacherUidRef": "uid-coord",
+      "day": "Terça",
+      "timeSlot": "seg-fund|manha|0",
+      "subjectId": "subj-bio",
+      "turma": "6º Ano A"
     }
   ],
-  "_notes": "Escola padrão para testes E2E. Contém 1 segmento (seg-fund), 2 professores de teste e 1 coordenador."
+  "teacherSubjects": {
+    "uid-teacher": ["subj-port"],
+    "uid-teacher-coord": ["subj-port"],
+    "uid-coord": [],
+    "uid-admin": []
+  },
+  "secondSchool": {
+    "id": "sch-test-002",
+    "name": "Escola Teste 2",
+    "slug": "escola-teste-002",
+    "adminEmail": "admin@test-escola.com",
+    "status": "active",
+    "plan": "trial"
+  },
+  "_notes": "Escola padrão para testes E2E. teacherUidRef em schedules referencia o uid do usuário em usuarios-teste.json (que também é usado como teacherId em teachers/{uid})."
 }
