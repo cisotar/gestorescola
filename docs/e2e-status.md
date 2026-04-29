@@ -1,8 +1,57 @@
 # Status — Testes E2E (Playwright + Firebase Emulator)
 
-**Última atualização:** 2026-04-29
+**Última atualização:** 2026-04-29 (revisão da spec)
 **Branch:** main
 **Commit base:** infra Firebase Emulator + Playwright para testes E2E
+
+---
+
+## Spec revisada (sessão 2026-04-29)
+
+A spec `specs/spec_e2e_fluxos_criticos.md` foi reescrita da v1.0 (1.228 linhas) para a v2.0 após confronto com o código real (`AbsencesPage.jsx`, `CalendarDayPage.jsx`, `SubstitutionsPage.jsx`, `JoinPage.jsx`, `AdminPanelPage.jsx`, `TabTeachers.jsx`, `useAuthStore.js`, `useAppStore.js`, `functions/src/index.ts`).
+
+### Por que revisar
+
+A v1.0 descrevia 9 fluxos genéricos baseados numa arquitetura imaginária. Três classes de problema:
+
+1. **Fluxos inventados.** Não existe modal "Criar Ausência" em `/absences`. Não existe "Aprovar/Rejeitar Ausência" — o `status` é derivado de `slots[].substituteId`. Faltas são marcadas em `CalendarDayPage` por slot.
+2. **Páginas/abas inexistentes.** Não existe aba "Solicitações", "Admins" ou "Auditoria" em `/settings`. Aprovação de pendentes está em `TabApprovals`/painel pendentes do `TabTeachers`. Auditoria fica em `schools/{id}/admin_actions/` (Firestore).
+3. **Mecanismos de bloqueio mal descritos.** Re-aprovação de email removido é bloqueada por `removed_users/{uid}` até `reinstateRemovedUser` ser chamado. Não existe "tela de bloqueio dedicada" — boot faz `signOut` + redirect `/login` com banner contextualizado.
+
+### Mapeamento dos 9 fluxos (original → corrigido)
+
+| # | v1 (inventado) | v2 (real) |
+|---|---|---|
+| 1 | Criar ausência → Aprovar → Gerar relatório | Marcar falta no `CalendarDayPage` → Atribuir substituto via `SubPicker` → Exportar PDF em `/absences` |
+| 2 | Criar → Rejeitar → Mudança de status | Atribuir → Remover via `Desfazer` ou `clear-day-subs` → Status volta a `open` |
+| 3 | Criar → Remover → Auditoria | Marcar falta → Excluir (bulk ou slot-delete) → Verificar entrada em `admin_actions/` |
+| 4 | Atribuir substituição → Acesso do substituto | Idêntico em essência: substituto loga e vê em `/grades` + `/substitutions` |
+| 5 | Atribuir → Remover → Bloqueio do substituto | Atribuir → `clear-day-subs` → Substituto não vê mais em `/grades` (limitação documentada: não há "remover só este sub do slot") |
+| 6 | Convidar → Aceitar → Login com acesso | `/join/<slug>` → OAuth (custom token) → Pending → Admin aprova em `TabApprovals` → Login com `/home` |
+| 7 | Remover → Bloqueio → Re-adição | Remover → boot revoga login → tentar /join falha (`AccessRevokedError`) → admin chama `reinstateRemovedUser` → re-cadastro normal |
+| 8 | Remover coord+prof → Re-adição → Permissões | Mesmo de #7 para coord+teacher; valida `profile`, `subjectIds: []` para coord puro, `users/{uid}.schools[id].role` correto |
+| 9 | Remover super admin → Re-adição → Acesso total | **Reinterpretado**: SaaS admin (em `/admins/{email}`) suspende escola via `AdminPanelPage` → membros bloqueados em `JoinPage` (`join-suspended`) → reativa. Sub-cenário 9b: `designateSchoolAdmin` rotaciona admin local. |
+
+### Cenários removidos por inviabilidade
+
+- **"Validar pelo menos um admin ativo"**: a app não tem essa restrição; o backend só impede self-removal.
+- **"Soft delete de pending_actions ao remover coord"**: misturava cadastro com fluxo de aprovação de ações. `pending_actions` é fluxo separado — vai virar spec/issue dedicada se for prioridade.
+- **"Aprovar e revogar no mesmo dia bloqueia"**: revogar funciona, mas o bloqueio depende de `removed_users` — coberto pelo cenário 7, não merece sub-teste isolado.
+- **"Limite semanal de substituições bloqueia atribuição"**: é apenas aviso visual (`atLimit`), não bloqueio. Pode virar sub-teste pequeno se necessário.
+- **"Tela de bloqueio dedicada com email de contato"**: não existe. O equivalente real é o banner em `LoginPage`.
+
+### Issues atualizadas
+
+- `#494` (Ausências) — 3 testes ancorados em `CalendarDayPage` + `/absences` + `admin_actions`. Lista completa de testids e seed estendido.
+- `#495` (Substituições) — 2 testes ancorados em multi-login admin↔substituto + `/grades` + `/substitutions`. Limitações UX documentadas.
+- `#496` (Usuários) — 4 testes incluindo reinstate via callable direto (não há UI), suspensão de escola, rotação de admin local.
+
+### Próximo passo recomendado
+
+1. PR único adicionando os `data-testid`s da spec §3 (sem lógica nova).
+2. PR estendendo `scripts/seed-emulator.js` com schedules + subjects + segunda escola.
+3. PR criando `e2e/helpers/assertions.js`.
+4. Implementar #494 → #495 → #496 em sessões separadas (uma issue por sessão).
 
 ---
 
