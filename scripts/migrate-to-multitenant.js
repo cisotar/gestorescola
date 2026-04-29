@@ -2,12 +2,25 @@
  * Script de migração: copia dados do projeto antigo (gestordesubstituicoes)
  * para a estrutura multi-tenant do projeto novo (saasgestaoescolar).
  *
- * Uso:
+ * Uso (com arquivos em disco — legado):
  *   node scripts/migrate-to-multitenant.js
  *
- * Requer na raiz do projeto:
+ * Uso (recomendado — via variáveis de ambiente, sem arquivos em disco):
+ *   SA_KEY_OLD_JSON='<conteúdo JSON>' SA_KEY_NEW_JSON='<conteúdo JSON>' \
+ *     node scripts/migrate-to-multitenant.js
+ *
+ *   Alternativamente, via caminhos em variáveis de ambiente:
+ *   SA_KEY_OLD_PATH=/caminho/sa-old.json SA_KEY_NEW_PATH=/caminho/sa-new.json \
+ *     node scripts/migrate-to-multitenant.js
+ *
+ * Fallback (arquivos em disco):
  *   serviceAccountKey-old.json  → chave do projeto gestordesubstituicoes (origem)
  *   serviceAccountKey.json      → chave do projeto saasgestaoescolar (destino)
+ *
+ * Precedência de credenciais (do maior para o menor):
+ *   1. SA_KEY_OLD_JSON / SA_KEY_NEW_JSON  (conteúdo JSON direto)
+ *   2. SA_KEY_OLD_PATH / SA_KEY_NEW_PATH  (caminho para arquivo externo ao projeto)
+ *   3. serviceAccountKey-old.json / serviceAccountKey.json na raiz do projeto (legado)
  *
  * Script idempotente — documentos existentes no destino são pulados.
  * Coleções originais nunca são alteradas ou deletadas.
@@ -21,24 +34,69 @@ import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+// ─── Helpers de credencial ────────────────────────────────────────────────────
+
+/**
+ * Resolve uma service account a partir de variáveis de ambiente ou arquivo em disco.
+ * @param {string} envJson  - nome da variável que contém o JSON diretamente
+ * @param {string} envPath  - nome da variável que contém o caminho para o arquivo
+ * @param {string} fallbackFile - caminho relativo ao projeto usado como último recurso
+ * @param {string} label    - rótulo para mensagens de erro
+ * @returns {object} credencial parseada como objeto JS
+ */
+function resolveCredential(envJson, envPath, fallbackFile, label) {
+  // 1. Conteúdo JSON direto na variável de ambiente
+  if (process.env[envJson]) {
+    console.log(`  ${label}: usando ${envJson} (variável de ambiente com JSON)`)
+    try {
+      return JSON.parse(process.env[envJson])
+    } catch (err) {
+      console.error(`ERRO: ${envJson} não contém um JSON válido: ${err.message}`)
+      process.exit(1)
+    }
+  }
+
+  // 2. Caminho para arquivo externo na variável de ambiente
+  if (process.env[envPath]) {
+    const p = process.env[envPath]
+    if (!existsSync(p)) {
+      console.error(`ERRO: arquivo apontado por ${envPath} não encontrado: ${p}`)
+      process.exit(1)
+    }
+    console.log(`  ${label}: usando ${envPath}=${p}`)
+    return JSON.parse(readFileSync(p, 'utf8'))
+  }
+
+  // 3. Arquivo em disco na raiz do projeto (legado — não recomendado)
+  const fallbackPath = resolve(__dirname, '..', fallbackFile)
+  if (!existsSync(fallbackPath)) {
+    console.error(`ERRO: credencial para "${label}" não encontrada.`)
+    console.error(`  Defina ${envJson} ou ${envPath}, ou coloque o arquivo em: ${fallbackPath}`)
+    process.exit(1)
+  }
+  console.warn(`  AVISO: ${label}: usando arquivo em disco ${fallbackFile} (legado).`)
+  console.warn(`  Prefira usar ${envJson} ou ${envPath} para evitar credenciais no diretório do projeto.`)
+  return JSON.parse(readFileSync(fallbackPath, 'utf8'))
+}
+
 // ─── Inicialização: duas conexões Firebase ────────────────────────────────────
 
-const oldKeyPath = resolve(__dirname, '../serviceAccountKey-old.json')
-const newKeyPath = resolve(__dirname, '../serviceAccountKey.json')
+console.log('Resolvendo credenciais...')
+const oldCredential = resolveCredential(
+  'SA_KEY_OLD_JSON',
+  'SA_KEY_OLD_PATH',
+  'serviceAccountKey-old.json',
+  'origem (gestordesubstituicoes)'
+)
+const newCredential = resolveCredential(
+  'SA_KEY_NEW_JSON',
+  'SA_KEY_NEW_PATH',
+  'serviceAccountKey.json',
+  'destino (saasgestaoescolar)'
+)
 
-if (!existsSync(oldKeyPath)) {
-  console.error('ERRO: serviceAccountKey-old.json não encontrado na raiz do projeto.')
-  console.error('Baixe a chave do projeto gestordesubstituicoes e coloque como serviceAccountKey-old.json')
-  process.exit(1)
-}
-
-if (!existsSync(newKeyPath)) {
-  console.error('ERRO: serviceAccountKey.json não encontrado na raiz do projeto.')
-  process.exit(1)
-}
-
-const oldApp = initializeApp({ credential: cert(JSON.parse(readFileSync(oldKeyPath, 'utf8'))) }, 'source')
-const newApp = initializeApp({ credential: cert(JSON.parse(readFileSync(newKeyPath, 'utf8'))) }, 'destination')
+const oldApp = initializeApp({ credential: cert(oldCredential) }, 'source')
+const newApp = initializeApp({ credential: cert(newCredential) }, 'destination')
 
 const srcDb = getFirestore(oldApp)   // leitura: gestordesubstituicoes
 const dstDb = getFirestore(newApp)   // escrita:  saasgestaoescolar
