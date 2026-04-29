@@ -14,7 +14,7 @@ import { toast } from '../hooks/useToast'
 
 function LoadingState() {
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg">
+    <div data-testid="join-loading" className="fixed inset-0 flex flex-col items-center justify-center bg-bg">
       <Spinner size={40} />
       <div className="mt-5 text-base font-bold text-t1">
         <span className="text-accent">Gestão</span>
@@ -27,7 +27,7 @@ function LoadingState() {
 
 function SlugErrorState() {
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg p-4">
+    <div data-testid="join-invalid" className="fixed inset-0 flex flex-col items-center justify-center bg-bg p-4">
       <div className="bg-surf border border-bdr rounded-2xl shadow-xl p-10 w-full max-w-sm text-center">
         <div className="text-3xl font-extrabold tracking-tight mb-2">
           <span className="text-accent">Gestão</span>
@@ -47,7 +47,7 @@ function SlugErrorState() {
 
 function SuspendedSchoolState() {
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center bg-bg p-4">
+    <div data-testid="join-suspended" className="fixed inset-0 flex flex-col items-center justify-center bg-bg p-4">
       <div className="bg-surf border border-bdr rounded-2xl shadow-xl p-10 w-full max-w-sm text-center">
         <div className="text-3xl font-extrabold tracking-tight mb-2">
           <span className="text-accent">Gestão</span>
@@ -252,7 +252,7 @@ export default function JoinPage() {
             <span className="text-navy">Escolar</span>
           </div>
           <div className="mt-6 mb-2 text-err font-semibold text-base">Erro</div>
-          <p className="text-sm text-t2 leading-relaxed">{errorMsg}</p>
+          <p data-testid="join-error-message" className="text-sm text-t2 leading-relaxed">{errorMsg}</p>
           <button
             onClick={() => { setStatus('loading'); resolveJoin(user) }}
             className="mt-6 btn btn-dark w-full"

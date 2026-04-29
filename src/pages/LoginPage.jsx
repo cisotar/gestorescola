@@ -54,6 +54,7 @@ export default function LoginPage() {
 
         {isAccessRevoked && (
           <div
+            data-testid="login-error-banner"
             role="alert"
             className="mb-6 flex items-start gap-2 rounded-lg border border-red-200 bg-err-l text-err px-3 py-2 text-left text-xs"
           >
@@ -77,6 +78,7 @@ export default function LoginPage() {
         )}
 
         <button
+          data-testid="login-google-btn"
           onClick={login}
           className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-xl border border-bdr bg-surf text-t1 font-semibold text-sm hover:bg-surf2 hover:border-t3 transition-all shadow-sm"
         >

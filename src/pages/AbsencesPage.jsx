@@ -17,6 +17,7 @@ function SelectionToolbar({ isAdmin, selectionMode, setSelectionMode, visibleSlo
   return (
     <div className="flex gap-2 flex-wrap items-center mb-3">
       <button
+        data-testid="select-mode-toggle"
         className={`btn btn-xs ${selectionMode ? 'btn-dark' : 'btn-ghost'}`}
         onClick={() => { setSelectionMode(v => !v); onClearAll() }}
       >
@@ -24,7 +25,7 @@ function SelectionToolbar({ isAdmin, selectionMode, setSelectionMode, visibleSlo
       </button>
       {selectionMode && (
         <>
-          <button className="btn btn-ghost btn-xs" onClick={() => onSelectAll(visibleSlots)}>Selecionar tudo</button>
+          <button data-testid="select-all" className="btn btn-ghost btn-xs" onClick={() => onSelectAll(visibleSlots)}>Selecionar tudo</button>
           <button className="btn btn-ghost btn-xs" onClick={onClearAll}>Desmarcar tudo</button>
           <button className="btn btn-ghost btn-xs" onClick={() => onSelectFaltas(visibleSlots)}>Só faltas</button>
           <button className="btn btn-ghost btn-xs" onClick={() => onSelectSubs(visibleSlots)}>Só substituições</button>
@@ -42,7 +43,7 @@ function BulkActionBar({ count, onDelete, onClear }) {
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-navy text-white px-5 py-3 flex items-center gap-3 shadow-2xl">
       <span className="text-sm font-semibold flex-1">{count} ausência{count !== 1 ? 's' : ''} selecionada{count !== 1 ? 's' : ''}</span>
       <button className="btn btn-ghost btn-sm text-white border-white/30 hover:border-white" onClick={onClear}>Desmarcar tudo</button>
-      <button className="btn btn-sm bg-err text-white border-err hover:bg-red-700" onClick={onDelete}>Excluir selecionadas</button>
+      <button data-testid="bulk-delete" className="btn btn-sm bg-err text-white border-err hover:bg-red-700" onClick={onDelete}>Excluir selecionadas</button>
     </div>
   )
 }
@@ -54,7 +55,7 @@ function UndoBar({ count, onUndo }) {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-amber-700 text-white px-5 py-3 flex items-center gap-3 shadow-2xl">
       <span className="text-sm font-semibold flex-1">{count} ausência{count !== 1 ? 's' : ''} removida{count !== 1 ? 's' : ''}</span>
-      <button className="btn btn-sm bg-white text-amber-800 border-white hover:bg-amber-50" onClick={onUndo}>Desfazer</button>
+      <button data-testid="undo-bulk" className="btn btn-sm bg-white text-amber-800 border-white hover:bg-amber-50" onClick={onUndo}>Desfazer</button>
     </div>
   )
 }
@@ -120,6 +121,7 @@ function SlotRow({ sl, store, isAdmin, showTeacher = false, selectionMode = fals
 
   return (
     <div
+      data-testid={`slot-row-${sl.id}`}
       className={`flex items-center gap-3 py-2.5 border-b border-bdr/60 last:border-0 transition-colors
         ${isSelected ? 'bg-accent-l' : ''}`}
     >
@@ -147,6 +149,7 @@ function SlotRow({ sl, store, isAdmin, showTeacher = false, selectionMode = fals
       </div>
       {isAdmin && !selectionMode && (
         <button
+          data-testid={`slot-delete-${sl.id}`}
           onClick={() => { deleteAbsenceSlot(sl.absenceId, sl.id); toast('Falta removida', 'ok') }}
           className="text-t3 hover:text-err transition-colors text-sm shrink-0"
           title="Remover"
@@ -240,6 +243,7 @@ export default function AbsencesPage() {
         {tabs.map(t => (
           <button
             key={t.id}
+            data-testid={`tab-${t.id}`}
             onClick={() => handleTabChange(t.id)}
             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors border
               ${mode === t.id ? 'bg-navy text-white border-navy' : 'bg-surf text-t2 border-bdr hover:border-t3'}`}
@@ -376,7 +380,7 @@ function ViewByTeacher({ store, isAdmin, allSlots, selTeacher, setSelTeacher, se
                   <div className="font-extrabold text-base" style={{ color: cv.tx }}>{teacher.name}</div>
                   <div className="text-xs opacity-70" style={{ color: cv.tx }}>{teacherSubjectNames(teacher, store.subjects) || '—'}</div>
                 </div>
-                <button onClick={handlePDF} className="btn btn-ghost btn-xs shrink-0">📄 PDF</button>
+                <button data-testid="export-pdf" onClick={handlePDF} className="btn btn-ghost btn-xs shrink-0">📄 PDF</button>
                 {(() => {
                   const waLabel = filter === 'day' ? formatBR(filterDate)
                     : filter === 'week' ? (() => { const ws = weekStart(filterDate); const d = parseDate(ws); d.setDate(d.getDate() + 4); return `${formatBR(ws)} – ${formatBR(formatISO(d))}` })()
@@ -508,7 +512,7 @@ function ViewByDay({ store, isAdmin, allSlots, selDate, setSelDate, selProps }) 
         )}
         {slotsOnDate.length > 0 && (
           <>
-            <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+            <button data-testid="export-pdf" onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
             <WhatsAppButton mode="day"
               context={{ slots: slotsOnDate, label: formatBR(date) }}
               store={store} />
@@ -586,7 +590,7 @@ function ViewByWeek({ store, isAdmin, allSlots, weekRef, setWeekRef, selProps })
 
         {weekSlots.length > 0 && (
           <>
-            <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+            <button data-testid="export-pdf" onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
             <WhatsAppButton mode="week"
               context={{ slots: weekSlots, label: weekLabel }}
               store={store} />
@@ -686,7 +690,7 @@ function ViewByMonth({ store, isAdmin, allSlots, monthRef, setMonthRef, selProps
 
         {monthSlots.length > 0 && (
           <>
-            <button onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
+            <button data-testid="export-pdf" onClick={handlePDF} className="btn btn-ghost btn-sm ml-auto">📄 Exportar PDF</button>
             <WhatsAppButton mode="month"
               context={{ slots: monthSlots, label: `${MONTH_NAMES[month]} ${year}` }}
               store={store} />

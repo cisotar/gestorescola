@@ -55,6 +55,7 @@ function SubFilterToolbar({ store, isAdmin,
         <div>
           <label className="lbl">Substituto</label>
           <select
+            data-testid="filter-substitute"
             className="inp"
             value={selSubstitute ?? ''}
             onChange={e => setSelSubstitute(e.target.value || null)}
@@ -69,6 +70,7 @@ function SubFilterToolbar({ store, isAdmin,
       <div>
         <label className="lbl">Segmento</label>
         <select
+          data-testid="filter-segment"
           className="inp"
           value={selSegment ?? ''}
           onChange={e => { setSelSegment(e.target.value || null); setSelTurma(null) }}
@@ -97,6 +99,7 @@ function SubFilterToolbar({ store, isAdmin,
       <div>
         <label className="lbl">Mês</label>
         <select
+          data-testid="filter-month"
           className="inp"
           value={filterMonth}
           onChange={e => setFilterMonth(Number(e.target.value))}
@@ -109,6 +112,7 @@ function SubFilterToolbar({ store, isAdmin,
       <div>
         <label className="lbl">Ano</label>
         <input
+          data-testid="filter-year"
           className="inp w-24"
           type="number"
           value={filterYear}
@@ -279,6 +283,7 @@ export default function SubstitutionsPage() {
         {tabs.map(t => (
           <button
             key={t.id}
+            data-testid={`tab-${t.id}`}
             onClick={() => handleTabChange(t.id)}
             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors border
               ${mode === t.id ? 'bg-navy text-white border-navy' : 'bg-surf text-t2 border-bdr hover:border-t3'}`}

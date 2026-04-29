@@ -156,6 +156,7 @@ export default function AdminPanelPage() {
 
         {/* Add school card */}
         <button
+          data-testid="add-school-btn"
           type="button"
           onClick={() => setModalOpen(true)}
           className="flex flex-col items-center justify-center gap-2 h-32 rounded-xl border-2 border-dashed border-bdr bg-surf hover:border-accent hover:bg-surf2 transition-colors text-t3 hover:text-accent group"
@@ -171,6 +172,7 @@ export default function AdminPanelPage() {
         {allSchools.map(school => (
           <div
             key={school.schoolId}
+            data-testid={`school-card-${school.schoolId}`}
             className="relative flex flex-col h-32 rounded-xl border border-bdr bg-surf hover:border-t3 hover:shadow-sm transition-all"
           >
             {/* Clickable area — navigates to school home */}
@@ -248,6 +250,7 @@ export default function AdminPanelPage() {
                 Cancelar
               </button>
               <button
+                data-testid="confirm-school-action"
                 type="button"
                 onClick={handleConfirm}
                 disabled={confirm.submitting}

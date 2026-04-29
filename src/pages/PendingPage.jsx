@@ -332,6 +332,7 @@
                     <div>
                       <label className="lbl">Telefone <span className="text-err">*</span></label>
                       <input
+                        data-testid="pending-celular"
                         type="tel"
                         className="inp"
                         placeholder="11987654321"
@@ -346,6 +347,7 @@
                     <div>
                       <label className="lbl">Como prefere ser chamado? <span className="text-t3 normal-case font-normal">(opcional)</span></label>
                       <input
+                        data-testid="pending-apelido"
                         className="inp"
                         type="text"
                         placeholder="Ex: Prof. João, Joãozinho..."
@@ -434,6 +436,7 @@
                     {/* Ações */}
                     <div className="flex flex-col gap-2 pt-1">
                       <button
+                        data-testid="pending-submit"
                         onClick={handleSubmit}
                         disabled={saving || hasHorarioError || !temAoMenosUmDiaCompleto}
                         className="btn btn-dark w-full disabled:opacity-40 disabled:cursor-not-allowed"

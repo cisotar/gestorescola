@@ -27,6 +27,7 @@ function FullCandidateList({ candidates, curSub, store, onSelect, matchLabel }) 
         return (
           <button
             key={c.teacher.id}
+            data-testid={`sub-candidate-${c.teacher.id}`}
             onClick={() => onSelect(c.teacher)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-all text-left
               ${isCur ? 'border-navy bg-surf2' : 'border-bdr hover:border-t3 hover:bg-surf2'}`}
@@ -135,6 +136,7 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
         {suggestions.map(t => (
           <div key={t.id} className="flex items-center gap-2">
             <button
+              data-testid={`sub-pill-${t.id}`}
               onClick={() => handleAssign(t)}
               className="flex-1 flex items-center gap-1.5 text-left px-2 py-1 rounded-lg bg-surf border border-bdr hover:border-navy hover:bg-surf2 transition-all text-[11px]"
             >
@@ -146,7 +148,9 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
             </button>
           </div>
         ))}
+        {/* testid duplicado proposital — ver task 110 (compact + modal) */}
         <button
+          data-testid="sub-picker-open"
           className="text-[11px] text-navy underline underline-offset-2"
           onClick={() => setOpen(true)}
         >ver todos ({candidates.length})</button>
@@ -172,7 +176,8 @@ function SubPicker({ absenceId, slotId, teacherId, date, slot, subjectId, store,
   // Versão modal (botão de troca quando já há substituto)
   return (
     <>
-      <button className="text-[11px] text-navy underline underline-offset-2" onClick={() => setOpen(true)}>
+      {/* testid duplicado proposital — ver task 110 (compact + modal) */}
+      <button data-testid="sub-picker-open" className="text-[11px] text-navy underline underline-offset-2" onClick={() => setOpen(true)}>
         {curSub ? '↺ Trocar' : '+ Escolher substituto'}
       </button>
       <Modal open={open} onClose={() => { setOpen(false); setAssignedTeacher(null) }} title="Selecionar Substituto">
@@ -425,6 +430,7 @@ export default function CalendarDayPage() {
         {DAYS.map((d, i) => (
           <button
             key={d}
+            data-testid={`day-pill-${i}`}
             onClick={() => setActiveDayIdx(i)}
             className={`flex flex-col items-center px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 transition-colors
               ${activeDayIdx === i
@@ -443,16 +449,16 @@ export default function CalendarDayPage() {
       {canManage && dayMine.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-4 p-3 bg-surf2 rounded-xl">
           {!allAbsent && (
-            <button className="btn btn-dark btn-sm" onClick={handleMarkAll}>Marcar dia inteiro</button>
+            <button data-testid="mark-day" className="btn btn-dark btn-sm" onClick={handleMarkAll}>Marcar dia inteiro</button>
           )}
           {anyAbsent && !allHasSub && (
-            <button className="btn btn-ghost btn-sm" onClick={handleAcceptAll}>✓ Aceitar sugestões</button>
+            <button data-testid="accept-suggestions" className="btn btn-ghost btn-sm" onClick={handleAcceptAll}>✓ Aceitar sugestões</button>
           )}
           {anyHasSub && (
-            <button className="btn btn-ghost btn-sm text-amber-700" onClick={handleClearSubs}>↺ Remover substitutos</button>
+            <button data-testid="clear-day-subs" className="btn btn-ghost btn-sm text-amber-700" onClick={handleClearSubs}>↺ Remover substitutos</button>
           )}
           {anyAbsent && (
-            <button className="btn btn-danger btn-sm" onClick={handleClearAll}>✕ Remover todas as faltas</button>
+            <button data-testid="clear-day-absences" className="btn btn-danger btn-sm" onClick={handleClearAll}>✕ Remover todas as faltas</button>
           )}
           {allHasSub && (
             <div className="flex gap-2 ml-auto">
@@ -575,6 +581,7 @@ export default function CalendarDayPage() {
                           <div className="shrink-0 flex-shrink-0">
                             {abs ? (
                               <button
+                                data-testid={`undo-absent-${p.slot}`}
                                 className="px-2.5 py-1 rounded-full text-[11px] font-semibold border border-[#FDB8A8] text-err bg-white hover:bg-[#FDB8A8]/30 transition-colors"
                                 onClick={() => { deleteAbsenceSlot(abs.absenceId, abs.slotId); toast('Falta removida', 'ok') }}
                               >
@@ -582,6 +589,7 @@ export default function CalendarDayPage() {
                               </button>
                             ) : (
                               <button
+                                data-testid={`mark-absent-${p.slot}`}
                                 className="btn btn-dark btn-xs disabled:opacity-50 disabled:cursor-not-allowed"
                                 disabled={blockAbsence}
                                 onClick={() => !blockAbsence && handleMarkAbsent(p, sched)}

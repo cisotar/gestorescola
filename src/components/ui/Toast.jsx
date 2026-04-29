@@ -12,7 +12,9 @@ export default function Toast() {
 
   return (
     <div
+      data-testid="toast"
       className={`
+        toast-${type ?? 'ok'}
         fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999]
         px-4 py-2.5 rounded-xl border text-sm font-semibold shadow-lg
         transition-all duration-300
@@ -20,7 +22,7 @@ export default function Toast() {
         ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3 pointer-events-none'}
       `}
     >
-      {message}
+      <span data-testid="toast-message">{message}</span>
     </div>
   )
 }

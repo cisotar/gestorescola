@@ -113,6 +113,7 @@ export default function SchoolActionsMenu({
         <button
           ref={triggerRef}
           type="button"
+          {...(school?.schoolId ? { 'data-testid': `school-actions-${school.schoolId}` } : {})}
           onClick={() => !disabled && setIsOpen((o) => !o)}
           onKeyDown={handleTriggerKeyDown}
           disabled={disabled}
@@ -130,6 +131,7 @@ export default function SchoolActionsMenu({
         <button
           ref={triggerRef}
           type="button"
+          {...(school?.schoolId ? { 'data-testid': `school-actions-${school.schoolId}` } : {})}
           onClick={() => !disabled && setIsOpen((o) => !o)}
           onKeyDown={handleTriggerKeyDown}
           disabled={disabled}

@@ -512,7 +512,7 @@ export default function TabTeachers() {
       {isAdminUser && <SlugEditor />}
 
       <div className="flex gap-2 mb-5 flex-wrap">
-        {isAdminUser && <button className="btn btn-dark" onClick={openAdd}>+ Novo Professor</button>}
+        {isAdminUser && <button data-testid="add-teacher-btn" className="btn btn-dark" onClick={openAdd}>+ Novo Professor</button>}
 
         {(isAdminUser || isCoordinator()) && pendLoaded && pending.length > 0 && (
           <button
@@ -555,7 +555,7 @@ export default function TabTeachers() {
             </thead>
             <tbody>
               {sortedRows.map(t => (
-                <tr key={t.id} className={`border-b border-bdr/50 hover:bg-surf2/50 ${t._isPending ? 'bg-amber-50/40' : ''}`}>
+                <tr key={t.id} data-testid={`teacher-row-${t.id}`} className={`border-b border-bdr/50 hover:bg-surf2/50 ${t._isPending ? 'bg-amber-50/40' : ''}`}>
                   <td className="px-3 py-2.5 font-semibold text-sm">{t.name}</td>
                   <td className="px-3 py-2.5 text-xs text-t1">
                     {t.email
@@ -591,8 +591,8 @@ export default function TabTeachers() {
                     {t._isPending ? (
                       (isAdminUser || isCoordinator()) && (
                         <div className="flex gap-1">
-                          <button className="btn btn-dark btn-xs" onClick={() => handleApprove(t)}>Aprovar</button>
-                          <button className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(t)}>✕</button>
+                          <button data-testid={`approve-pending-${t.id}`} className="btn btn-dark btn-xs" onClick={() => handleApprove(t)}>Aprovar</button>
+                          <button data-testid={`reject-pending-${t.id}`} className="btn btn-ghost btn-xs text-err" onClick={() => handleReject(t)}>✕</button>
                         </div>
                       )
                     ) : (
@@ -600,6 +600,7 @@ export default function TabTeachers() {
                         <div className="flex gap-1 justify-end">
                           <button className="btn btn-ghost btn-xs" title="Editar professor" onClick={() => openEdit(t)}>✏️</button>
                           <button
+                            data-testid={`remove-teacher-${t.id}`}
                             className="btn btn-ghost btn-xs text-err"
                             title="Remover professor"
                             disabled={removingIds.has(t.id)}
@@ -646,7 +647,7 @@ export default function TabTeachers() {
                     const cv = colorOfTeacher(t, store)
                     const ct = store.schedules.filter(s => s.teacherId === t.id).length
                     return (
-                      <div key={t.id} className="flex items-start gap-2 p-2 rounded-xl border border-bdr hover:border-t3 transition-colors">
+                      <div key={t.id} data-testid={`teacher-row-${t.id}`} className="flex items-start gap-2 p-2 rounded-xl border border-bdr hover:border-t3 transition-colors">
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
                           style={{ background: cv.tg, color: cv.tx }}>{t.name.charAt(0)}</div>
                         <div className="flex-1 min-w-0">
@@ -662,6 +663,7 @@ export default function TabTeachers() {
                           <button className="btn btn-ghost btn-xs" title="Ver Grade" onClick={() => navigate(`/grades?teacher=${t.id}`)}>📅</button>
                           {isAdminUser && <button className="btn btn-ghost btn-xs" onClick={() => openEdit(t)}>✏️</button>}
                           {isAdminUser && <button
+                            data-testid={`remove-teacher-${t.id}`}
                             className="btn btn-ghost btn-xs text-err"
                             disabled={removingIds.has(t.id)}
                             onClick={() => handleRemove(t)}
@@ -757,7 +759,7 @@ export default function TabTeachers() {
         ) : (
           <div className="space-y-3">
             {pending.map(p => (
-              <div key={p.id} className="flex flex-col gap-3 p-3 rounded-xl border border-bdr">
+              <div key={p.id} data-testid={`pending-teacher-${p.id}`} className="flex flex-col gap-3 p-3 rounded-xl border border-bdr">
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-sm font-bold shrink-0">
                     {p.name.charAt(0)}
@@ -802,6 +804,7 @@ export default function TabTeachers() {
                   />
                   <div className="flex gap-2">
                     <button
+                      data-testid={`approve-pending-${p.id}`}
                       className="btn btn-dark btn-sm disabled:opacity-40 disabled:cursor-not-allowed"
                       disabled={!pendingProfiles[p.id]}
                       onClick={async () => {
@@ -821,7 +824,7 @@ export default function TabTeachers() {
                     >
                       {pendingProfiles[p.id] ? `Aprovar como ${PROFILE_OPTIONS_NO_ADMIN.find(o => o.value === pendingProfiles[p.id])?.label}` : 'Aprovar'}
                     </button>
-                    <button className="btn btn-ghost btn-sm text-err" onClick={() => handleReject(p)}>Rejeitar</button>
+                    <button data-testid={`reject-pending-${p.id}`} className="btn btn-ghost btn-sm text-err" onClick={() => handleReject(p)}>Rejeitar</button>
                   </div>
                 </div>
               </div>
