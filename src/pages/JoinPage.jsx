@@ -146,28 +146,44 @@ export default function JoinPage() {
       }
     }
 
-    // 4. Verificar se usuário já está aprovado na escola via users/{uid}.schools
+    // 4. Verificar status atual em users/{uid}.schools[schoolId]
+    let userSnapData = null
     try {
       const userSnap = await getDoc(doc(db, 'users', currentUser.uid))
-      if (userSnap.exists()) {
-        const schoolEntry = userSnap.data().schools?.[schoolId]
-        const entryStatus = typeof schoolEntry === 'object' && schoolEntry !== null
-          ? schoolEntry?.status
-          : null
-        const entryRole = typeof schoolEntry === 'object' && schoolEntry !== null
-          ? schoolEntry?.role
-          : null
-
-        if (entryStatus === 'approved') {
-          // Usuário já aprovado: ativar escola e redirecionar conforme role
-          await useSchoolStore.getState().setCurrentSchool(schoolId)
-          const destination = (entryRole === 'teacher') ? '/home' : '/dashboard'
-          navigate(destination, { replace: true })
-          return
-        }
-      }
+      if (userSnap.exists()) userSnapData = userSnap.data()
     } catch (e) {
+      // permission-denied indica que a sessão foi invalidada em paralelo
+      // (ex.: _resolveRole fez signOut por rejected/órfão). Redireciona
+      // para LoginPage e deixa o banner do LoginPage exibir o motivo.
+      if (e?.code === 'permission-denied') {
+        navigate('/login', { replace: true })
+        return
+      }
       console.warn('[JoinPage] leitura users/{uid}:', e)
+    }
+
+    if (userSnapData) {
+      const schoolEntry = userSnapData.schools?.[schoolId]
+      const entryStatus = typeof schoolEntry === 'object' && schoolEntry !== null
+        ? schoolEntry?.status
+        : null
+      const entryRole = typeof schoolEntry === 'object' && schoolEntry !== null
+        ? schoolEntry?.role
+        : null
+
+      if (entryStatus === 'approved') {
+        await useSchoolStore.getState().setCurrentSchool(schoolId)
+        const destination = (entryRole === 'teacher') ? '/home' : '/dashboard'
+        navigate(destination, { replace: true })
+        return
+      }
+
+      // Entry rejected → não criar pending, mostrar mensagem clara
+      if (entryStatus === 'rejected' || entryRole === 'rejected') {
+        setErrorMsg('Seu cadastro foi rejeitado pelo administrador desta escola. Procure o coordenador para mais informações.')
+        setStatus('error')
+        return
+      }
     }
 
     // 5. Verificar se já está em pending_teachers
@@ -181,6 +197,10 @@ export default function JoinPage() {
         return
       }
     } catch (e) {
+      if (e?.code === 'permission-denied') {
+        navigate('/login', { replace: true })
+        return
+      }
       console.warn('[JoinPage] leitura pending_teachers:', e)
     }
 
@@ -195,6 +215,10 @@ export default function JoinPage() {
         toast('Seu acesso a esta escola foi revogado pelo administrador', 'err')
         setErrorMsg('Seu acesso a esta escola foi revogado. Contate o administrador.')
         setStatus('error')
+        return
+      }
+      if (e?.code === 'permission-denied') {
+        navigate('/login', { replace: true })
         return
       }
       console.error('[JoinPage] requestTeacherAccess falhou:', e)

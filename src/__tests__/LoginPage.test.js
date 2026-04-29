@@ -19,9 +19,12 @@ describe('LoginPage — banner access-revoked (issue #485)', () => {
     expect(SOURCE).toMatch(/location\.state\?\.error/)
   })
 
-  it('considera revogado quando loginError ou state.error === "access-revoked"', () => {
-    expect(SOURCE).toMatch(/loginError\s*===\s*'access-revoked'/)
-    expect(SOURCE).toMatch(/stateError\s*===\s*'access-revoked'/)
+  it('mapeia loginError/stateError para mensagem (suporta access-revoked, access-rejected, no-access)', () => {
+    // ERROR_MESSAGES expõe os códigos suportados; isAccessRevoked é true se houver match
+    expect(SOURCE).toMatch(/ERROR_MESSAGES/)
+    expect(SOURCE).toMatch(/'access-revoked'/)
+    expect(SOURCE).toMatch(/'access-rejected'/)
+    expect(SOURCE).toMatch(/'no-access'/)
   })
 
   it('renderiza banner condicional somente quando isAccessRevoked', () => {
@@ -46,11 +49,10 @@ describe('LoginPage — banner access-revoked (issue #485)', () => {
     expect(SOURCE).toMatch(/<svg[\s\S]+?aria-hidden="true"/)
   })
 
-  it('limpa state.redirect via navigate(replace: true) quando error === "access-revoked"', () => {
-    // Substitui a URL via navigate(pathname, { replace: true, state: { error: 'access-revoked' } })
+  it('limpa state.redirect via navigate(replace: true) preservando o errorCode', () => {
     expect(SOURCE).toMatch(/navigate\(\s*location\.pathname/)
     expect(SOURCE).toMatch(/replace:\s*true/)
-    expect(SOURCE).toMatch(/state:\s*\{\s*error:\s*'access-revoked'\s*\}/)
+    expect(SOURCE).toMatch(/state:\s*\{\s*error:\s*errorCode\s*\}/)
   })
 
   it('não segue redirect quando isAccessRevoked é verdadeiro (defesa em profundidade)', () => {

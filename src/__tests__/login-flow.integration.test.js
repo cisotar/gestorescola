@@ -468,7 +468,7 @@ describe('login-flow integration — pendente em espera (entry com role pending/
     expect(onSnapshot).toHaveBeenCalledTimes(1)
   })
 
-  it('users/{uid}.schools[A] = { role: "rejected" } → role null + signOut, mas SEM loginError "access-revoked" (rejeitado != revogado)', async () => {
+  it('users/{uid}.schools[A] = { role: "rejected" } → role null + signOut + loginError "access-rejected" + toast', async () => {
     setSchoolStore({
       currentSchoolId:  SCHOOL_ID,
       availableSchools: [{ schoolId: SCHOOL_ID, name: 'Escola Teste' }],
@@ -482,9 +482,10 @@ describe('login-flow integration — pendente em espera (entry com role pending/
 
     expect(useAuthStore.getState().role).toBeNull()
     expect(signOut).toHaveBeenCalledTimes(1)
-    // Cadastro rejeitado é fluxo distinto de revogação — não seta loginError.
-    expect(useAuthStore.getState().loginError).toBeNull()
-    expect(toastMock).not.toHaveBeenCalled()
+    // Cadastro rejeitado agora também sinaliza para a LoginPage exibir
+    // mensagem clara — distingue de "access-revoked" via código próprio.
+    expect(useAuthStore.getState().loginError).toBe('access-rejected')
+    expect(toastMock).toHaveBeenCalled()
   })
 })
 

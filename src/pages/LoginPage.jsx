@@ -2,6 +2,12 @@ import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 
+const ERROR_MESSAGES = {
+  'access-revoked':  'Seu acesso foi revogado pelo administrador desta escola. Procure o coordenador para mais informações.',
+  'access-rejected': 'Seu cadastro foi rejeitado pelo administrador. Procure o coordenador para mais informações.',
+  'no-access':       'Você ainda não tem acesso ao sistema. Peça ao administrador da sua escola o link de convite (URL com /join/...).',
+}
+
 export default function LoginPage() {
   const { login, user, loginError } = useAuthStore()
   const location = useLocation()
@@ -9,23 +15,24 @@ export default function LoginPage() {
   const stateError = location.state?.error
   const redirect  = location.state?.redirect
 
-  // Banner de "access-revoked": fonte da verdade é o store (loginError).
+  // Banner de erro: fonte da verdade é o store (loginError).
   // location.state?.error é fallback quando o boot navegou para /login com state.
-  const isAccessRevoked =
-    loginError === 'access-revoked' || stateError === 'access-revoked'
+  const errorCode = loginError ?? stateError
+  const isAccessRevoked = errorCode != null && ERROR_MESSAGES[errorCode] != null
+  const errorMessage = isAccessRevoked ? ERROR_MESSAGES[errorCode] : null
 
-  // Quando o usuário caiu em /login por revogação de acesso, devemos descartar
+  // Quando o usuário caiu em /login por algum erro de acesso, devemos descartar
   // qualquer `redirect` carregado em location.state — caso contrário, após o
   // próximo login bem-sucedido o efeito abaixo enviaria o usuário de volta a
-  // /join/:slug, recriando exatamente o cenário que acabou de ser revogado.
+  // /join/:slug, recriando exatamente o cenário que acabou de falhar.
   useEffect(() => {
-    if (stateError === 'access-revoked' && location.state?.redirect) {
+    if (isAccessRevoked && location.state?.redirect) {
       navigate(location.pathname, {
         replace: true,
-        state: { error: 'access-revoked' },
+        state: { error: errorCode },
       })
     }
-  }, [stateError, location.state, location.pathname, navigate])
+  }, [isAccessRevoked, errorCode, location.state, location.pathname, navigate])
 
   // Após login bem-sucedido, redireciona para a rota de origem (ex: /join/:slug).
   // Se o estado for de revogação, NÃO seguimos redirect — o useEffect acima já
@@ -65,9 +72,7 @@ export default function LoginPage() {
                 clipRule="evenodd"
               />
             </svg>
-            <span className="leading-snug">
-              Seu acesso foi revogado pelo administrador desta escola. Procure o coordenador para mais informações.
-            </span>
+            <span className="leading-snug">{errorMessage}</span>
           </div>
         )}
 

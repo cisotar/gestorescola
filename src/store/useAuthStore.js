@@ -402,11 +402,46 @@ const useAuthStore = create((set, get) => ({
 
     // ── 4. Aplicar role ───────────────────────────────────────────────────────
     if (result.role === null) {
-      // role null sem isSaasAdmin indica cadastro rejeitado
+      // role null sem isSaasAdmin indica cadastro rejeitado, login órfão
+      // (sem nenhum vínculo em Firestore), ou usuário com schools={} sem
+      // sinal claro de revogação. Em todos os casos, a UX deve ser a mesma:
+      // signOut imediato + mensagem clara na LoginPage + toast.
       if (!isSaasAdminFlag) {
-        console.log('[auth._resolveRole] cadastro rejeitado, deslogando')
-        set({ role: null })
-        await signOut(auth)
+        console.log('[auth._resolveRole] sem cadastro válido, deslogando')
+
+        // Cancelar listeners ativos antes do signOut
+        get()._unsubPending?.()
+        get()._unsubApproval?.()
+        get()._unsubMembership?.()
+        set({ _unsubPending: null, _unsubApproval: null, _unsubMembership: null })
+
+        try { await signOut(auth) } catch (e) { console.warn('[auth] signOut falhou:', e) }
+        try { localStorage.removeItem('gestao_active_school') } catch { /* ignore */ }
+        try {
+          useSchoolStore.setState({ currentSchoolId: null, currentSchool: null })
+        } catch (e) { console.warn('[auth] limpar schoolStore:', e) }
+
+        // Distingue mensagens: usuário com entry rejected → 'access-rejected';
+        // usuário sem nenhum vínculo (login órfão / não cadastrado) → 'no-access'.
+        const userExists = userSnap?.exists?.() === true
+        const schoolsMap = userExists ? (userSnap.data()?.schools ?? {}) : {}
+        const hasRejectedEntry = Object.values(schoolsMap).some(
+          v => typeof v === 'object' && v !== null && (v.role === 'rejected' || v.status === 'rejected')
+        )
+
+        const errorCode = hasRejectedEntry ? 'access-rejected' : 'no-access'
+        const message = hasRejectedEntry
+          ? 'Seu cadastro foi rejeitado. Procure o administrador da escola.'
+          : 'Você ainda não tem acesso a nenhuma escola. Peça ao administrador o link de convite.'
+
+        toast(message, 'error')
+
+        set({
+          role: null,
+          teacher: null,
+          isSaasAdmin: false,
+          loginError: errorCode,
+        })
       }
       return
     }
